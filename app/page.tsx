@@ -233,20 +233,104 @@ export default function Home() {
 
     const reconMetrics = processMetrics(getFilteredSubs(squadData[config.main].rawSubs)); 
     const mapMetrics = evaluateMapMetrics(squadData[config.main].rawSubs);
+    const now = Date.now() / 1000;
 
-    const findWinner = (pathFn: any, min = 0, isMin = false) => { let best = null; let bestVal = isMin ? Infinity : -Infinity; allPlayers.forEach(p => { let v = pathFn(sMatrix[p], bMatrix[p]); if (!isMin && v > bestVal && v > min) { bestVal = v; best = p; } else if (isMin && v < bestVal && v > min) { bestVal = v; best = p; } }); return best; };
-    const count30dAC = (p: string, condition: any) => { const now = Date.now() / 1000; return sMatrix[p].metrics.rawSubsList.filter((s:CFSubmission) => s.verdict==='OK' && ((now-s.creationTimeSeconds)/86400)<=30 && condition(s)).length; };
-    const maxRat30d = (p: string) => { const now = Date.now() / 1000; let m = 0; sMatrix[p].metrics.rawSubsList.forEach((s:CFSubmission) => { if(s.verdict==='OK' && ((now-s.creationTimeSeconds)/86400)<=30 && (s.problem.rating || 0) > m) m = s.problem.rating!; }); return m; };
+    // --- 76 BADGES ENGINE ---
+    const findWinner = (pathFn: (p: string) => number, min = 0, isMin = false) => { let best: string | null = null; let bestVal = isMin ? Infinity : -Infinity; allPlayers.forEach(p => { let v = pathFn(p); if (!isMin && v > bestVal && v >= min) { bestVal = v; best = p; } else if (isMin && v < bestVal && v <= min) { bestVal = v; best = p; } }); return best; };
+    const ac = (p: string, d: number) => sMatrix[p].metrics.rawSubsList.filter((s:CFSubmission) => s.verdict==='OK' && (now - s.creationTimeSeconds)/86400 <= d);
+    const subs = (p: string, d: number) => sMatrix[p].metrics.rawSubsList.filter((s:CFSubmission) => (now - s.creationTimeSeconds)/86400 <= d);
+    const tags = (p: string, d: number, t: string) => ac(p, d).filter((s:CFSubmission) => s.problem.tags?.includes(t)).length;
+    const maxR = (p: string, d: number) => Math.max(0, ...ac(p, d).map((s:CFSubmission) => s.problem.rating || 0));
+    const pts = (p: string, d: number) => ac(p, d).reduce((sum, s) => sum + (CF_SCORE_MAP[Math.min(2400, Math.floor((s.problem.rating||800)/100)*100)] || 10), 0);
+    const activeDays = (p: string, d: number) => new Set(ac(p, d).map((s:CFSubmission) => new Date(s.creationTimeSeconds*1000).toDateString())).size;
+    const acc = (p: string, d: number) => { let a = subs(p, d); let oks = ac(p, d); return a.length > 0 ? oks.length / a.length : 0; };
 
     let badges: BadgeDef[] = [
-      { id: 'vanguard', icon: '⚡', name: 'The Vanguard', desc: 'Highest Sprint Score (7 Days).', owner: findWinner((d:SquadMemberData) => d.metrics.weeklyScore, 50) },
-      { id: 'overlord', icon: '👑', name: 'Monthly Overlord', desc: 'Highest Sprint Score (30 Days).', owner: findWinner((d:SquadMemberData) => d.metrics.monthlyScore, 100) },
-      { id: 'architect', icon: '📐', name: 'The Architect', desc: 'Highest absolute First-Try Accuracy.', owner: findWinner((d:SquadMemberData) => d.metrics.acc, 0) },
-      { id: 'marathon', icon: '🏃', name: 'Marathon Runner', desc: 'Most active days (Last 30D).', owner: findWinner((d:SquadMemberData) => { let days=new Set(); d.metrics.rawSubsList.forEach((s:CFSubmission)=>{if(s.verdict==='OK' && (Date.now()/1000 - s.creationTimeSeconds)/86400 <= 30) days.add(new Date(s.creationTimeSeconds*1000).toDateString());}); return days.size; }, 5) },
-      { id: 'polymath', icon: '🌐', name: 'The Polymath', desc: 'Highest distinct algorithmic tags.', owner: findWinner((d:SquadMemberData) => Object.keys(d.metrics.tagsDist).length, 5) },
-      { id: 'titanslayer', icon: '🗡️', name: 'Titan Slayer', desc: 'Secured AC on highest rated problem.', owner: findWinner((d:SquadMemberData) => maxRat30d(d.info.handle), 1200) },
-      { id: 'b_recon', icon: '🥷', name: 'Recon Ghost', desc: 'Acquired at least 5 ACs +200 rating.', owner: reconMetrics.unique >= 5 ? config.main : null },
-      { id: 'b_emperor', icon: '🏰', name: 'The Emperor', desc: 'Constructed 5+ Citadels on Map.', owner: mapMetrics.citadel >= 5 ? config.main : null },
+      // --- DAILY (5%) ~ 4 badges ---
+      { id: 'd_hero', icon: '🔥', name: 'Daily Hero', desc: 'Highest Score (24h)', owner: findWinner(p => pts(p, 1), 0) },
+      { id: 'd_berserker', icon: '🩸', name: 'Bloodlust', desc: 'Most ACs today', owner: findWinner(p => ac(p, 1).length, 2) },
+      { id: 'd_titan', icon: '🗡️', name: 'Daily Slayer', desc: 'Max Rating AC (24h)', owner: findWinner(p => maxR(p, 1), 800) },
+      { id: 'd_owl', icon: '🦉', name: 'Midnight Oil', desc: 'Most ACs 12AM-5AM (24h)', owner: findWinner(p => ac(p, 1).filter((s:any) => { let h=new Date(s.creationTimeSeconds*1000).getHours(); return h>=0 && h<=5; }).length, 1) },
+
+      // --- WEEKLY (35%) ~ 26 badges ---
+      { id: 'w_vanguard', icon: '⚡', name: 'Vanguard', desc: 'Highest Score (7D)', owner: findWinner(p => pts(p, 7), 50) },
+      { id: 'w_marathon', icon: '🏃', name: 'Weekly Marathon', desc: 'Active days (7D)', owner: findWinner(p => activeDays(p, 7), 4) },
+      { id: 'w_architect', icon: '📐', name: 'Flawless', desc: 'Best Accuracy (7D, Min 5)', owner: findWinner(p => subs(p,7).length>=5 ? acc(p,7) : 0, 0) },
+      { id: 'w_tilter', icon: '🤡', name: 'Tilter', desc: '[NEGATIVE] Most WAs (7D)', owner: findWinner(p => subs(p, 7).filter((s:any) => s.verdict === 'WRONG_ANSWER').length, 5), isNegative: true },
+      { id: 'w_math', icon: '∑', name: 'Math Prodigy', desc: 'Most Math ACs (7D)', owner: findWinner(p => tags(p, 7, 'math') + tags(p, 7, 'number theory'), 1) },
+      { id: 'w_dp', icon: '🧠', name: 'DP Crown', desc: 'Most DP ACs (7D)', owner: findWinner(p => tags(p, 7, 'dp'), 1) },
+      { id: 'w_graph', icon: '🕸️', name: 'Graph Monarch', desc: 'Most Graph ACs (7D)', owner: findWinner(p => tags(p, 7, 'graphs') + tags(p, 7, 'trees'), 1) },
+      { id: 'w_greedy', icon: '🤑', name: 'Greedy God', desc: 'Most Greedy ACs (7D)', owner: findWinner(p => tags(p, 7, 'greedy'), 1) },
+      { id: 'w_ds', icon: '🗄️', name: 'Data Structurist', desc: 'Most DS ACs (7D)', owner: findWinner(p => tags(p, 7, 'data structures'), 1) },
+      { id: 'w_geom', icon: '◬', name: 'Geometry Master', desc: 'Most Geom ACs (7D)', owner: findWinner(p => tags(p, 7, 'geometry'), 1) },
+      { id: 'w_string', icon: '🔤', name: 'String Theorist', desc: 'Most String ACs (7D)', owner: findWinner(p => tags(p, 7, 'strings'), 1) },
+      { id: 'w_construct', icon: '🏗️', name: 'Builder', desc: 'Most Constructive ACs (7D)', owner: findWinner(p => tags(p, 7, 'constructive algorithms'), 1) },
+      { id: 'w_brute', icon: '🦍', name: 'Brute', desc: 'Most Brute Force ACs (7D)', owner: findWinner(p => tags(p, 7, 'brute force'), 1) },
+      { id: 'w_sort', icon: '📶', name: 'Sorter', desc: 'Most Sorting ACs (7D)', owner: findWinner(p => tags(p, 7, 'sortings'), 1) },
+      { id: 'w_bs', icon: '🔍', name: 'Searcher', desc: 'Most Binary Search ACs (7D)', owner: findWinner(p => tags(p, 7, 'binary search'), 1) },
+      { id: 'w_titan', icon: '⚔️', name: 'Weekly Slayer', desc: 'Highest Rated AC (7D)', owner: findWinner(p => maxR(p, 7), 1000) },
+      { id: 'w_volume', icon: '📦', name: 'Volume', desc: 'Most Total ACs (7D)', owner: findWinner(p => ac(p, 7).length, 5) },
+      { id: 'w_bird', icon: '🌅', name: 'Early Bird', desc: 'Most ACs 6AM-12PM (7D)', owner: findWinner(p => ac(p, 7).filter((s:any) => { let h=new Date(s.creationTimeSeconds*1000).getHours(); return h>=6 && h<12; }).length, 1) },
+      { id: 'w_vampire', icon: '🧛', name: 'Vampire', desc: 'Most ACs 12AM-6AM (7D)', owner: findWinner(p => ac(p, 7).filter((s:any) => { let h=new Date(s.creationTimeSeconds*1000).getHours(); return h>=0 && h<6; }).length, 1) },
+      { id: 'w_grinder', icon: '⏳', name: 'Grinder', desc: 'Most TLEs (7D)', owner: findWinner(p => subs(p, 7).filter((s:any) => s.verdict === 'TIME_LIMIT_EXCEEDED').length, 2) },
+      { id: 'w_headhunter', icon: '🦅', name: 'Headhunter', desc: 'Most Snipes (7D)', owner: findWinner(p => bMatrix[p].snipes, 0) },
+      { id: 'w_necro', icon: '🧟', name: 'Necromancer', desc: 'Most Resurrected (7D)', owner: findWinner(p => bMatrix[p].resurrected, 0) },
+      { id: 'w_explorer', icon: '🗺️', name: 'Explorer', desc: 'Most distinct tags (7D)', owner: findWinner(p => { let t=new Set(); ac(p,7).forEach((s:any)=>s.problem.tags?.forEach((x:string)=>t.add(x))); return t.size; }, 5) },
+      { id: 'w_contest', icon: '🏆', name: 'Gladiator', desc: 'Most in-contest ACs (7D)', owner: findWinner(p => ac(p, 7).filter((s:any) => s.author?.participantType === 'CONTESTANT').length, 1) },
+      { id: 'w_upsolve', icon: '🛠️', name: 'Mechanic', desc: 'Most upsolves (7D)', owner: findWinner(p => ac(p, 7).filter((s:any) => s.author?.participantType === 'PRACTICE').length, 5) },
+      { id: 'w_slacker', icon: '💤', name: 'Slacker', desc: '[NEGATIVE] Zero ACs (7D)', owner: findWinner(p => ac(p, 7).length === 0 ? 1 : 0, 0), isNegative: true },
+      
+      // --- MONTHLY (25%) ~ 19 badges ---
+      { id: 'm_overlord', icon: '👑', name: 'Overlord', desc: 'Highest Score (30D)', owner: findWinner(p => pts(p, 30), 100) },
+      { id: 'm_marathon', icon: '🏃‍♂️', name: 'Monthly Marathon', desc: 'Active days (30D)', owner: findWinner(p => activeDays(p, 30), 10) },
+      { id: 'm_architect', icon: '🏛️', name: 'Architect', desc: 'Best Accuracy (30D, Min 20)', owner: findWinner(p => subs(p,30).length>=20 ? acc(p,30) : 0, 0) },
+      { id: 'm_polymath', icon: '🌐', name: 'Polymath', desc: 'Distinct Tags (30D)', owner: findWinner(p => { let t=new Set(); ac(p,30).forEach((s:any)=>s.problem.tags?.forEach((x:string)=>t.add(x))); return t.size; }, 10) },
+      { id: 'm_titan', icon: '🗡️', name: 'Titan Slayer', desc: 'Max Rating AC (30D)', owner: findWinner(p => maxR(p, 30), 1200) },
+      { id: 'm_math', icon: '∑', name: 'Math Lord', desc: 'Most Math ACs (30D)', owner: findWinner(p => tags(p, 30, 'math') + tags(p, 30, 'number theory'), 5) },
+      { id: 'm_dp', icon: '🧠', name: 'DP God', desc: 'Most DP ACs (30D)', owner: findWinner(p => tags(p, 30, 'dp'), 5) },
+      { id: 'm_graph', icon: '🕸️', name: 'Graph Lord', desc: 'Most Graph ACs (30D)', owner: findWinner(p => tags(p, 30, 'graphs') + tags(p, 30, 'trees'), 5) },
+      { id: 'm_ds', icon: '🗄️', name: 'DS Lord', desc: 'Most DS ACs (30D)', owner: findWinner(p => tags(p, 30, 'data structures'), 5) },
+      { id: 'm_geom', icon: '◬', name: 'Geom Lord', desc: 'Most Geom ACs (30D)', owner: findWinner(p => tags(p, 30, 'geometry'), 2) },
+      { id: 'm_string', icon: '🔤', name: 'String Lord', desc: 'Most String ACs (30D)', owner: findWinner(p => tags(p, 30, 'strings'), 2) },
+      { id: 'm_greedy', icon: '🤑', name: 'Greedy Lord', desc: 'Most Greedy ACs (30D)', owner: findWinner(p => tags(p, 30, 'greedy'), 5) },
+      { id: 'm_construct', icon: '🏗️', name: 'Construct Lord', desc: 'Most Constructive ACs (30D)', owner: findWinner(p => tags(p, 30, 'constructive algorithms'), 5) },
+      { id: 'm_headhunter', icon: '🦅', name: 'Bounty Hunter', desc: 'Most Snipes (30D)', owner: findWinner(p => bMatrix[p].snipes, 0) },
+      { id: 'm_necro', icon: '🧟‍♂️', name: 'High Necromancer', desc: 'Most Resurrected (30D)', owner: findWinner(p => bMatrix[p].resurrected, 0) },
+      { id: 'm_untouch', icon: '🕴️', name: 'Untouchable', desc: 'Zero active bounties, 20+ ACs', owner: findWinner(p => (bMatrix[p].active.length === 0 && ac(p,30).length >= 20) ? 1 : 0, 0) },
+      { id: 'm_wanted', icon: '🚨', name: 'Most Wanted', desc: '[NEGATIVE] Most active bounties', owner: findWinner(p => bMatrix[p].active.length, 2), isNegative: true },
+      { id: 'm_tilter', icon: '🤡', name: 'Monthly Tilter', desc: '[NEGATIVE] Most WAs (30D)', owner: findWinner(p => subs(p, 30).filter((s:any) => s.verdict === 'WRONG_ANSWER').length, 15), isNegative: true },
+      { id: 'm_volume', icon: '📈', name: 'Grind Master', desc: 'Most Total ACs (30D)', owner: findWinner(p => ac(p, 30).length, 20) },
+
+      // --- 6 MONTHS / YEARLY (25%) ~ 19 badges ---
+      { id: 'h_emperor', icon: '👑', name: 'Emperor', desc: 'Highest Score (180D)', owner: findWinner(p => pts(p, 180), 500) },
+      { id: 'h_marathon', icon: '🏃‍♀️', name: 'Ironman', desc: 'Active days (180D)', owner: findWinner(p => activeDays(p, 180), 30) },
+      { id: 'h_architect', icon: '🏛️', name: 'Grand Architect', desc: 'Best Accuracy (180D, Min 50)', owner: findWinner(p => subs(p,180).length>=50 ? acc(p,180) : 0, 0) },
+      { id: 'h_polymath', icon: '🌌', name: 'Grand Polymath', desc: 'Distinct Tags (180D)', owner: findWinner(p => { let t=new Set(); ac(p,180).forEach((s:any)=>s.problem.tags?.forEach((x:string)=>t.add(x))); return t.size; }, 20) },
+      { id: 'h_titan', icon: '🗡️', name: 'God Slayer', desc: 'Max Rating AC (180D)', owner: findWinner(p => maxR(p, 180), 1500) },
+      { id: 'h_math', icon: '∑', name: 'Math Sage', desc: 'Most Math ACs (180D)', owner: findWinner(p => tags(p, 180, 'math') + tags(p, 180, 'number theory'), 15) },
+      { id: 'h_dp', icon: '🧠', name: 'DP Sage', desc: 'Most DP ACs (180D)', owner: findWinner(p => tags(p, 180, 'dp'), 15) },
+      { id: 'h_graph', icon: '🕸️', name: 'Graph Sage', desc: 'Most Graph ACs (180D)', owner: findWinner(p => tags(p, 180, 'graphs') + tags(p, 180, 'trees'), 15) },
+      { id: 'h_ds', icon: '🗄️', name: 'DS Sage', desc: 'Most DS ACs (180D)', owner: findWinner(p => tags(p, 180, 'data structures'), 15) },
+      { id: 'h_geom', icon: '◬', name: 'Geom Sage', desc: 'Most Geom ACs (180D)', owner: findWinner(p => tags(p, 180, 'geometry'), 5) },
+      { id: 'h_string', icon: '🔤', name: 'String Sage', desc: 'Most String ACs (180D)', owner: findWinner(p => tags(p, 180, 'strings'), 5) },
+      { id: 'h_greedy', icon: '🤑', name: 'Greedy Sage', desc: 'Most Greedy ACs (180D)', owner: findWinner(p => tags(p, 180, 'greedy'), 15) },
+      { id: 'h_construct', icon: '🏗️', name: 'Construct Sage', desc: 'Most Constructive ACs (180D)', owner: findWinner(p => tags(p, 180, 'constructive algorithms'), 15) },
+      { id: 'h_brute', icon: '🦍', name: 'Brute Sage', desc: 'Most Brute Force ACs (180D)', owner: findWinner(p => tags(p, 180, 'brute force'), 10) },
+      { id: 'h_headhunter', icon: '🦅', name: 'Apex Predator', desc: 'Most Snipes (180D)', owner: findWinner(p => bMatrix[p].snipes, 0) },
+      { id: 'h_necro', icon: '🧟‍♀️', name: 'Lich King', desc: 'Most Resurrected (180D)', owner: findWinner(p => bMatrix[p].resurrected, 0) },
+      { id: 'h_volume', icon: '📚', name: 'Library', desc: 'Most Total ACs (180D)', owner: findWinner(p => ac(p, 180).length, 50) },
+      { id: 'h_tilter', icon: '🤡', name: 'Grand Tilter', desc: '[NEGATIVE] Most WAs (180D)', owner: findWinner(p => subs(p, 180).filter((s:any) => s.verdict === 'WRONG_ANSWER').length, 50), isNegative: true },
+      { id: 'h_speed', icon: '🏎️', name: 'Speedster', desc: 'Most Sub-30m Solves (180D)', owner: findWinner(p => { let c=0; Object.entries(sMatrix[p].metrics.timeToSolveDist).forEach(([k,v])=> {if(k==='First Try (0m)'||k==='< 30m') c+=(v as number);}); return c; }, 10) },
+
+      // --- ALL-TIME / MAP BASED (10%) ~ 8 badges ---
+      { id: 'a_recon', icon: '🥷', name: 'Recon Ghost', desc: 'Acquired at least 5 ACs +200 rating.', owner: reconMetrics.unique >= 5 ? config.main : null },
+      { id: 'a_emperor', icon: '🏰', name: 'The Emperor', desc: 'Constructed 5+ Citadels on Map.', owner: mapMetrics.citadel >= 5 ? config.main : null },
+      { id: 'a_warlord', icon: '⚔️', name: 'The Warlord', desc: 'Conquered 10+ territories on Map.', owner: mapMetrics.conquered >= 10 ? config.main : null },
+      { id: 'a_tactician', icon: '♟️', name: 'Grand Tactician', desc: 'Maintained 0 Rebellions.', owner: (mapMetrics.rebellion === 0 && (mapMetrics.occupied > 0 || mapMetrics.conquered > 0)) ? config.main : null },
+      { id: 'a_preserver', icon: '🏺', name: 'The Preservationist', desc: 'Zero decaying territories.', owner: (mapMetrics.decaying === 0 && mapMetrics.occupied >= 10) ? config.main : null },
+      { id: 'a_pathfinder', icon: '🗺️', name: 'Pathfinder', desc: 'Scouted 10+ Incognito Nodes.', owner: mapMetrics.scouted >= 10 ? config.main : null },
+      { id: 'a_pyro', icon: '🔥', name: 'The Pyromancer', desc: '[NEGATIVE] Allowed 3+ Rebellions.', owner: mapMetrics.rebellion >= 3 ? config.main : null, isNegative: true },
+      { id: 'a_ruined', icon: '🏚️', name: 'Fallen Kingdom', desc: '[NEGATIVE] Allowed 5+ map ruins.', owner: mapMetrics.decaying >= 5 ? config.main : null, isNegative: true },
     ];
 
     return { mainMetrics, squadMatrix: sMatrix, bounties: uniqueBounties.slice(0,30), computedBadges: badges, absoluteMySolves: absSolves };
