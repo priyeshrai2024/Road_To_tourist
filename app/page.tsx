@@ -133,70 +133,59 @@ export default function Home() {
     else setShowSettings(true);
   }, []);
 
-  // THE HTML-ACCURATE CLIENT FETCH: Bypasses Vercel entirely and uses your local IP
+  // THE BULLETPROOF CLIENT FETCH: Auto-retries and strict 1.5s limits
   const fetchGlobalTelemetry = async (mainH: string, squadH: string[], titanH: string) => {
     if (!mainH) return;
     setLoading(true);
-    setLoadingMsg(`SYNCHRONIZING GLOBAL TELEMETRY... [||||||||||]`);
-    
-    const cooldown = () => new Promise(res => setTimeout(res, 1200));
+    setLoadingMsg(`ESTABLISHING SECURE UPLINK...`);
+
     const newSquadData: Record<string, any> = {};
     const allHandles = [mainH, ...squadH, titanH].filter(Boolean);
 
-    try {
-      // 1. Fetch Main Status
-      const mRaw = await fetch(`https://codeforces.com/api/user.status?handle=${mainH}`);
-      const mRes = await mRaw.json();
-      if (mRes.status !== 'OK') throw new Error("Main Status API Failed");
-      newSquadData[mainH] = { handle: mainH, rawSubs: mRes.result, history: [] };
+    // Auto-Retry Wrapper to defeat Rate Limits
+    const fetchCF = async (url: string, retries = 3) => {
+      for (let i = 0; i < retries; i++) {
+        try {
+          await new Promise(res => setTimeout(res, 1500)); // Strict 1.5s delay before EVERY request
+          const res = await fetch(url);
+          const data = await res.json();
+          if (data.status === 'OK') return data.result;
+          if (data.comment && data.comment.includes("not found")) return null; // Ignore invalid handles silently
+        } catch (e) {
+          console.warn(`Fetch glitch for ${url}, retrying...`);
+        }
+      }
+      throw new Error("API Timeout");
+    };
 
-      // 2. Fetch All Info
-      await cooldown();
-      const iRaw = await fetch(`https://codeforces.com/api/user.info?handles=${allHandles.join(';')}`);
-      const iRes = await iRaw.json();
-      if (iRes.status === 'OK') {
-        iRes.result.forEach((u: CFInfo) => {
-          if (!newSquadData[u.handle]) newSquadData[u.handle] = { handle: u.handle, rawSubs: [], history: [] };
-          newSquadData[u.handle].info = u;
+    try {
+      // 1. Fetch User Info (Bulk)
+      const infoResult = await fetchCF(`https://codeforces.com/api/user.info?handles=${allHandles.join(';')}`);
+      if (infoResult) {
+        allHandles.forEach(h => {
+          // Map exact case-insensitive matches back to the config handles
+          const info = infoResult.find((u: any) => u.handle.toLowerCase() === h.toLowerCase());
+          if (info) newSquadData[h] = { handle: h, info: info, rawSubs: [], history: [] };
         });
       }
 
-      // 3. Fetch Squad Subs sequentially
-      for (const h of squadH) {
-        await cooldown();
-        const sRaw = await fetch(`https://codeforces.com/api/user.status?handle=${h}`);
-        const sRes = await sRaw.json();
-        if (sRes.status === 'OK') {
-          if (!newSquadData[h]) newSquadData[h] = { handle: h, history: [] };
-          newSquadData[h].rawSubs = sRes.result;
-        }
-        await cooldown();
-        const rRaw = await fetch(`https://codeforces.com/api/user.rating?handle=${h}`);
-        const rRes = await rRaw.json();
-        if (rRes.status === 'OK') newSquadData[h].history = rRes.result;
-      }
+      // 2. Fetch Data Sequentially
+      for (const h of allHandles) {
+        if (!newSquadData[h]) continue; // Skip if the handle doesn't exist
+        
+        setLoadingMsg(`SYNCING OPERATIVE: ${h.toUpperCase()}...`);
+        
+        const subs = await fetchCF(`https://codeforces.com/api/user.status?handle=${h}`);
+        if (subs) newSquadData[h].rawSubs = subs;
 
-      // 4. Fetch Main Rating
-      await cooldown();
-      const rRaw = await fetch(`https://codeforces.com/api/user.rating?handle=${mainH}`);
-      const rRes = await rRaw.json();
-      if (rRes.status === 'OK') newSquadData[mainH].history = rRes.result;
-
-      // 5. Fetch Titan Rating
-      if (titanH) {
-        await cooldown();
-        const trRaw = await fetch(`https://codeforces.com/api/user.rating?handle=${titanH}`);
-        const trRes = await trRaw.json();
-        if (trRes.status === 'OK') {
-          if (!newSquadData[titanH]) newSquadData[titanH] = { handle: titanH, rawSubs: [], history: [] };
-          newSquadData[titanH].history = trRes.result;
-        }
+        const history = await fetchCF(`https://codeforces.com/api/user.rating?handle=${h}`);
+        if (history) newSquadData[h].history = history;
       }
 
       setSquadData(newSquadData);
-    } catch (err) { 
-      console.error(err); 
-      alert("Engine Failure: Codeforces API rejected the request or rate limit hit.");
+    } catch (err) {
+      console.error(err);
+      alert("Engine Failure: Codeforces API is overwhelmed. Please wait 60 seconds and try again.");
       setShowSettings(true);
     }
     setLoading(false);
