@@ -1,10 +1,12 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { VerdictChart, TagsRadarChart, TacticalBarChart, ResourceScatterChart, TimeToSolveChart, StressBarChart, RatingLineChart, ActivityHeatmap } from "@/components/Charts";
+import { VerdictChart, TagsRadarChart, TacticalBarChart, ResourceScatterChart, TimeToSolveChart, StressBarChart, RatingLineChart, ActivityHeatmap, ChronotypeChart } from "@/components/Charts";
 import WarMap, { T_NODES } from "@/components/WarMap";
 import SettingsModal from "@/components/SettingsModal";
 import Armory, { BadgeDef } from "@/components/Armory";
+import GrindMode from "@/components/GrindMode";
+import Nemesis from "@/components/Nemesis";
 import { Line, Bar, Radar } from 'react-chartjs-2';
 
 // --- STRICT TYPESCRIPT INTERFACES ---
@@ -117,6 +119,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [loadingMsg, setLoadingMsg] = useState("");
   const [activeTab, setActiveTab] = useState("TELEMETRY");
+  const [nemesisTarget, setNemesisTarget] = useState("");
   const [contextFilter, setContextFilter] = useState("ALL");
   const [timeFilter, setTimeFilter] = useState("ALL");
   const [showSettings, setShowSettings] = useState(false);
@@ -127,13 +130,13 @@ export default function Home() {
     if (saved) { 
       const parsed = JSON.parse(saved); 
       setConfig(parsed); 
-      setHandle(parsed.main || ""); 
+      setHandle(parsed.main || "");
+      if (parsed.squad && parsed.squad.length > 0) setNemesisTarget(parsed.squad[0]);
       if (parsed.main) fetchGlobalTelemetry(parsed.main, parsed.squad, parsed.titan); 
     }
     else setShowSettings(true);
   }, []);
 
-  // THE BULLETPROOF CLIENT FETCH: Auto-retries and strict 1.5s limits
   const fetchGlobalTelemetry = async (mainH: string, squadH: string[], titanH: string) => {
     if (!mainH) return;
     setLoading(true);
@@ -142,15 +145,14 @@ export default function Home() {
     const newSquadData: Record<string, any> = {};
     const allHandles = [mainH, ...squadH, titanH].filter(Boolean);
 
-    // Auto-Retry Wrapper to defeat Rate Limits
     const fetchCF = async (url: string, retries = 3) => {
       for (let i = 0; i < retries; i++) {
         try {
-          await new Promise(res => setTimeout(res, 1500)); // Strict 1.5s delay before EVERY request
+          await new Promise(res => setTimeout(res, 1500)); 
           const res = await fetch(url);
           const data = await res.json();
           if (data.status === 'OK') return data.result;
-          if (data.comment && data.comment.includes("not found")) return null; // Ignore invalid handles silently
+          if (data.comment && data.comment.includes("not found")) return null; 
         } catch (e) {
           console.warn(`Fetch glitch for ${url}, retrying...`);
         }
@@ -159,29 +161,22 @@ export default function Home() {
     };
 
     try {
-      // 1. Fetch User Info (Bulk)
       const infoResult = await fetchCF(`https://codeforces.com/api/user.info?handles=${allHandles.join(';')}`);
       if (infoResult) {
         allHandles.forEach(h => {
-          // Map exact case-insensitive matches back to the config handles
           const info = infoResult.find((u: any) => u.handle.toLowerCase() === h.toLowerCase());
           if (info) newSquadData[h] = { handle: h, info: info, rawSubs: [], history: [] };
         });
       }
 
-      // 2. Fetch Data Sequentially
       for (const h of allHandles) {
-        if (!newSquadData[h]) continue; // Skip if the handle doesn't exist
-        
+        if (!newSquadData[h]) continue; 
         setLoadingMsg(`SYNCING OPERATIVE: ${h.toUpperCase()}...`);
-        
         const subs = await fetchCF(`https://codeforces.com/api/user.status?handle=${h}`);
         if (subs) newSquadData[h].rawSubs = subs;
-
         const history = await fetchCF(`https://codeforces.com/api/user.rating?handle=${h}`);
         if (history) newSquadData[h].history = history;
       }
-
       setSquadData(newSquadData);
     } catch (err) {
       console.error(err);
@@ -248,31 +243,10 @@ export default function Home() {
       { id: 'overlord', icon: '👑', name: 'Monthly Overlord', desc: 'Highest Sprint Score (30 Days).', owner: findWinner((d:SquadMemberData) => d.metrics.monthlyScore, 100) },
       { id: 'architect', icon: '📐', name: 'The Architect', desc: 'Highest absolute First-Try Accuracy.', owner: findWinner((d:SquadMemberData) => d.metrics.acc, 0) },
       { id: 'marathon', icon: '🏃', name: 'Marathon Runner', desc: 'Most active days (Last 30D).', owner: findWinner((d:SquadMemberData) => { let days=new Set(); d.metrics.rawSubsList.forEach((s:CFSubmission)=>{if(s.verdict==='OK' && (Date.now()/1000 - s.creationTimeSeconds)/86400 <= 30) days.add(new Date(s.creationTimeSeconds*1000).toDateString());}); return days.size; }, 5) },
-      { id: 'nightowl', icon: '🦉', name: 'Night Owl', desc: 'Most problems solved 00:00-06:00 (Last 30D).', owner: findWinner((d:SquadMemberData) => count30dAC(d.info.handle, (s:CFSubmission) => new Date(s.creationTimeSeconds*1000).getHours() < 6), 2) },
-      { id: 'earlybird', icon: '🌅', name: 'Early Riser', desc: 'Most problems solved 06:00-12:00 (Last 30D).', owner: findWinner((d:SquadMemberData) => count30dAC(d.info.handle, (s:CFSubmission) => { let h=new Date(s.creationTimeSeconds*1000).getHours(); return h>=6 && h<12; }), 2) },
       { id: 'polymath', icon: '🌐', name: 'The Polymath', desc: 'Highest distinct algorithmic tags.', owner: findWinner((d:SquadMemberData) => Object.keys(d.metrics.tagsDist).length, 5) },
-      { id: 'grinder', icon: '⏳', name: 'The Grinder', desc: 'Most problems requiring 5+ hours.', owner: findWinner((d:SquadMemberData) => d.metrics.timeToSolveDist["> 5h (Grind)"], 0) },
-      { id: 'headhunter', icon: '🦅', name: 'The Headhunter', desc: 'Most bounties sniped.', owner: findWinner((d:SquadMemberData, b:any) => b.snipes, 0) },
-      { id: 'necromancer', icon: '🧟', name: 'The Necromancer', desc: 'Most personal bounties resurrected.', owner: findWinner((d:SquadMemberData, b:any) => b.resurrected, 0) },
-      { id: 'mostwanted', icon: '🚨', name: 'Most Wanted', desc: '[NEGATIVE] Highest volume of active bounties.', owner: findWinner((d:SquadMemberData, b:any) => b.active.length, 2) },
-      { id: 'untouchable', icon: '🕴️', name: 'Untouchable', desc: 'Zero active bounties (Min 20 solves).', owner: findWinner((d:SquadMemberData, b:any) => (b.active.length === 0 && b.solvedSet.size >= 20) ? b.solvedSet.size : 0, 0) },
-      { id: 'berserker', icon: '🩸', name: 'Berserker', desc: 'Most problems solved in a single day.', owner: findWinner((d:SquadMemberData) => { let c:Record<string,number>={}; d.metrics.rawSubsList.forEach((s:CFSubmission) => { if(s.verdict==='OK' && (Date.now()/1000-s.creationTimeSeconds)/86400<=30) { let k=new Date(s.creationTimeSeconds*1000).toDateString(); c[k]=(c[k]||0)+1; }}); return Math.max(...Object.values(c), 0); }, 3) },
       { id: 'titanslayer', icon: '🗡️', name: 'Titan Slayer', desc: 'Secured AC on highest rated problem.', owner: findWinner((d:SquadMemberData) => maxRat30d(d.info.handle), 1200) },
-      { id: 'efficiency', icon: '⚙️', name: 'Efficiency Node', desc: 'Lowest overall average execution time.', owner: findWinner((d:SquadMemberData) => { let arr = Object.values(d.metrics.tagResourceStress); return arr.length ? arr.reduce((sum,x)=>sum+x.timeAvg,0)/arr.length : 10000; }, 0, true) },
-      { id: 'math', icon: '∑', name: 'Math Prodigy', desc: 'Most math/number theory problems.', owner: findWinner((d:SquadMemberData) => (d.metrics.tagsDist['math']||0) + (d.metrics.tagsDist['number theory']||0), 1) },
-      { id: 'geom', icon: '◬', name: 'Geometry God', desc: 'Most geometry problems.', owner: findWinner((d:SquadMemberData) => d.metrics.tagsDist['geometry']||0, 1) },
-      { id: 'graph', icon: '🕸️', name: 'Graph Monarch', desc: 'Most graph/trees problems.', owner: findWinner((d:SquadMemberData) => (d.metrics.tagsDist['graphs']||0) + (d.metrics.tagsDist['dfs and similar']||0) + (d.metrics.tagsDist['trees']||0), 1) },
-      { id: 'dp', icon: '🧠', name: 'DP Crown', desc: 'Most DP problems solved.', owner: findWinner((d:SquadMemberData) => d.metrics.tagsDist['dp']||0, 1) },
-      { id: 'datastruct', icon: '🗄️', name: 'Data Structurist', desc: 'Most Data Structure problems.', owner: findWinner((d:SquadMemberData) => d.metrics.tagsDist['data structures']||0, 1) },
-      { id: 'sniper', icon: '🎯', name: 'The Sniper', desc: 'Highest First-Try AC percentage (Min 5 att).', owner: findWinner((d:SquadMemberData) => { let a=0,f=0; d.metrics.rawSubsList.forEach((s:CFSubmission)=>{if((now-s.creationTimeSeconds)/86400<=30){a++; if(s.verdict==='OK')f++;}}); return a>=5 ? f/a : 0; }, 0) },
       { id: 'b_recon', icon: '🥷', name: 'Recon Ghost', desc: 'Acquired at least 5 ACs +200 rating.', owner: reconMetrics.unique >= 5 ? config.main : null },
       { id: 'b_emperor', icon: '🏰', name: 'The Emperor', desc: 'Constructed 5+ Citadels on Map.', owner: mapMetrics.citadel >= 5 ? config.main : null },
-      { id: 'b_warlord', icon: '⚔️', name: 'The Warlord', desc: 'Conquered 10+ territories on Map.', owner: mapMetrics.conquered >= 10 ? config.main : null },
-      { id: 'b_tactician', icon: '♟️', name: 'Grand Tactician', desc: 'Maintained 0 Rebellions.', owner: (mapMetrics.rebellion === 0 && (mapMetrics.occupied > 0 || mapMetrics.conquered > 0)) ? config.main : null },
-      { id: 'b_pyro', icon: '🔥', name: 'The Pyromancer', desc: '[NEGATIVE] Allowed 3+ Rebellions.', owner: mapMetrics.rebellion >= 3 ? config.main : null },
-      { id: 'b_preserver', icon: '🏺', name: 'The Preservationist', desc: 'Zero decaying territories.', owner: (mapMetrics.decaying === 0 && mapMetrics.occupied >= 10) ? config.main : null },
-      { id: 'b_ruined', icon: '🏚️', name: 'Fallen Kingdom', desc: '[NEGATIVE] Allowed 5+ map ruins.', owner: mapMetrics.decaying >= 5 ? config.main : null },
-      { id: 'b_pathfinder', icon: '🗺️', name: 'Pathfinder', desc: 'Scouted 10+ Incognito Nodes.', owner: mapMetrics.scouted >= 10 ? config.main : null },
     ];
 
     return { mainMetrics, squadMatrix: sMatrix, bounties: uniqueBounties.slice(0,30), computedBadges: badges, absoluteMySolves: absSolves };
@@ -295,14 +269,12 @@ export default function Home() {
 
   let timeAvgData: Record<string, number> = {}; let memAvgData: Record<string, number> = {};
   if (mainMetrics) Object.keys(mainMetrics.tagResourceStress).forEach(t => { timeAvgData[t] = mainMetrics.tagResourceStress[t].timeAvg; memAvgData[t] = mainMetrics.tagResourceStress[t].memAvg; });
-
   let sortedWeaknesses = mainMetrics ? Object.keys(mainMetrics.weaknessRatios).sort((a,b) => mainMetrics.weaknessRatios[b] - mainMetrics.weaknessRatios[a]) : [];
 
   return (
     <main className="min-h-screen bg-[#111214] text-[#e0e6ed] font-['Inter',sans-serif] overflow-x-hidden pb-20 selection:bg-[#58a6ff]">
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)} onSave={(newCfg) => { setConfig(newCfg); setHandle(newCfg.main); setShowSettings(false); fetchGlobalTelemetry(newCfg.main, newCfg.squad, newCfg.titan); }} />}
       
-      {/* HEADER BAR */}
       <div className="flex justify-between items-center px-8 py-6 bg-[#1e2024] border-b border-[#30363d] sticky top-0 z-50 shadow-[0_4px_20px_rgba(0,0,0,0.5)]">
         <div>
           <h1 className="text-[1.5rem] font-bold text-white tracking-tight m-0 leading-none">Codeforces Synthesis Engine</h1>
@@ -321,25 +293,18 @@ export default function Home() {
       {!loading && mainMetrics && squadData[config.main] && (
         <div className="w-full max-w-[1400px] mx-auto p-8 animate-in fade-in duration-500">
           
-          {/* TAB NAV */}
-          <div className="flex justify-between items-center border-b border-[#30363d] bg-[rgba(30,32,36,0.8)] backdrop-blur-[10px] px-8 mb-8 -mx-8">
-            <div className="flex gap-8">
-              {['TELEMETRY', 'MAP', 'SQUAD', 'TITAN'].map(tab => {
+          <div className="flex justify-between items-center border-b border-[#30363d] bg-[rgba(30,32,36,0.8)] backdrop-blur-[10px] px-8 mb-8 -mx-8 overflow-x-auto">
+            <div className="flex gap-8 whitespace-nowrap">
+              {['TELEMETRY', 'MAP', 'SQUAD', 'NEMESIS', 'GRIND', 'TITAN'].map(tab => {
                 const isActive = activeTab === tab;
-                return <div key={tab} onClick={() => setActiveTab(tab)} className={`py-4 font-mono text-[0.9rem] uppercase cursor-pointer border-b-[3px] transition-all ${isActive ? 'text-[#e3b341] border-[#e3b341] font-bold drop-shadow-[0_0_10px_rgba(227,179,65,0.3)]' : 'text-[#8b949e] border-transparent'}`}>[ {tab === 'MAP' ? 'THE WAR MAP' : tab === 'SQUAD' ? 'SQUAD CLASH' : tab === 'TELEMETRY' ? 'MY TELEMETRY' : 'TITAN TRACKER'} ]</div>
+                return <div key={tab} onClick={() => setActiveTab(tab)} className={`py-4 font-mono text-[0.9rem] uppercase cursor-pointer border-b-[3px] transition-all ${isActive ? (tab === 'GRIND' ? 'text-[#f85149] border-[#f85149] drop-shadow-[0_0_10px_rgba(248,81,73,0.5)]' : 'text-[#e3b341] border-[#e3b341] font-bold drop-shadow-[0_0_10px_rgba(227,179,65,0.3)]') : 'text-[#8b949e] border-transparent'}`}>[ {tab === 'MAP' ? 'THE WAR MAP' : tab === 'SQUAD' ? 'SQUAD CLASH' : tab === 'TELEMETRY' ? 'MY TELEMETRY' : tab === 'GRIND' ? 'GRIND MODE' : tab === 'NEMESIS' ? 'TARGET LOCK' : 'TITAN TRACKER'} ]</div>
               })}
             </div>
-            {activeTab === "TELEMETRY" && (
-              <div className="flex gap-[5px]">
-                {['ALL', '30', '7'].map(t => <button key={t} onClick={() => setTimeFilter(t)} className={`px-[10px] py-[4px] text-[0.75rem] font-mono rounded-[6px] border transition-colors cursor-pointer ${timeFilter === t ? "bg-[#58a6ff] text-black border-[#58a6ff]" : "bg-[#1e2024] text-[#8b949e] border-[#30363d]"}`}>{t === 'ALL' ? 'ALL TIME' : `${t} DAYS`}</button>)}
-              </div>
-            )}
           </div>
 
-          {/* TAB 1: TELEMETRY */}
           {activeTab === "TELEMETRY" && (
             <div className="animate-in fade-in duration-400">
-              <div className="bg-[#1e2024] border border-[#30363d] rounded-[20px] p-8 flex items-center gap-8 mb-8 shadow-[0_4px_20px_rgba(0,0,0,0.2)] flex-wrap relative">
+               <div className="bg-[#1e2024] border border-[#30363d] rounded-[20px] p-8 flex items-center gap-8 mb-8 shadow-[0_4px_20px_rgba(0,0,0,0.2)] flex-wrap relative">
                 <img src={squadData[config.main].info.titlePhoto} alt="Avatar" className="w-[100px] h-[100px] rounded-[12px] border-2 border-[#30363d] object-cover" />
                 <div className="flex-1 min-w-[250px]">
                   <h2 className="text-[1.8rem] font-bold m-0 mb-1.5 flex items-center gap-2.5 flex-wrap">
@@ -349,7 +314,6 @@ export default function Home() {
                   <div className="flex gap-8 mt-[15px] flex-wrap">
                     <div className="flex flex-col"><span className="font-mono text-[1.4rem] font-bold text-[#e3b341]">{squadData[config.main].info.rating || 0}</span><span className="text-[0.75rem] text-[#8b949e] uppercase font-semibold">Live Rating</span></div>
                     <div className="flex flex-col"><span className="font-mono text-[1.4rem] font-bold text-[#58a6ff]">{squadData[config.main].info.maxRating || 0}</span><span className="text-[0.75rem] text-[#8b949e] uppercase font-semibold">Max Rating</span></div>
-                    <div className="flex flex-col"><span className="font-mono text-[1.4rem] font-bold text-[#e3b341]">{squadData[config.main].info.contribution || 0}</span><span className="text-[0.75rem] text-[#8b949e] uppercase font-semibold">Contribution</span></div>
                   </div>
                   <Armory badges={computedBadges} mainHandle={config.main} variant="mini" />
                 </div>
@@ -388,7 +352,18 @@ export default function Home() {
                 <div className="bg-[#1e2024] border border-[#30363d] rounded-[12px] p-6 shadow-[0_4px_20px_rgba(0,0,0,0.2)]"><h3 className="text-white text-[0.9rem] uppercase tracking-[1px] border-b border-[#30363d] pb-2.5 mb-1.5 m-0">Memory Footprint Stress (Avg MB)</h3><p className="text-[#8b949e] text-[0.75rem] font-mono m-0 mb-6">Memory consumed per AC</p><div className="h-[300px] relative"><StressBarChart data={memAvgData} type="memory" /></div></div>
               </div>
 
-              <div className="bg-[#1e2024] border border-[#30363d] rounded-[12px] p-6 shadow-[0_4px_20px_rgba(0,0,0,0.2)] mb-6"><h3 className="text-white text-[0.9rem] uppercase tracking-[1px] border-b border-[#30363d] pb-2.5 mb-1.5 m-0">Resource Distribution (Scatter)</h3><p className="text-[#8b949e] text-[0.75rem] font-mono m-0 mb-6">Correlation between Time (ms) and Memory (MB)</p><div className="h-[300px] relative"><ResourceScatterChart subs={mainMetrics.rawSubsList} /></div></div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                <div className="bg-[#1e2024] border border-[#30363d] rounded-[12px] p-6 shadow-[0_4px_20px_rgba(0,0,0,0.2)]">
+                  <h3 className="text-white text-[0.9rem] uppercase tracking-[1px] border-b border-[#30363d] pb-2.5 mb-1.5 m-0">Resource Distribution</h3>
+                  <p className="text-[#8b949e] text-[0.75rem] font-mono m-0 mb-6">Time (ms) vs Memory (MB)</p>
+                  <div className="h-[300px] relative"><ResourceScatterChart subs={mainMetrics.rawSubsList} /></div>
+                </div>
+                <div className="bg-[#1e2024] border border-[#30363d] rounded-[12px] p-6 shadow-[0_4px_20px_rgba(0,0,0,0.2)]">
+                  <h3 className="text-white text-[0.9rem] uppercase tracking-[1px] border-b border-[#30363d] pb-2.5 mb-1.5 m-0">Chronotype Analysis</h3>
+                  <p className="text-[#8b949e] text-[0.75rem] font-mono m-0 mb-6">Peak algorithmic execution hours</p>
+                  <div className="h-[300px] relative"><ChronotypeChart subs={mainMetrics.rawSubsList} /></div>
+                </div>
+              </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
                 <div className="bg-[#1e2024] border border-[#30363d] rounded-[12px] p-6 shadow-[0_4px_20px_rgba(0,0,0,0.2)]"><h3 className="text-white text-[0.9rem] uppercase tracking-[1px] border-b border-[#30363d] pb-2.5 mb-1.5 m-0">Time-To-Solve (Debug Speed)</h3><p className="text-[#8b949e] text-[0.75rem] font-mono m-0 mb-6">First Attempt vs Final AC Timestamp</p><div className="h-[300px] relative"><TimeToSolveChart data={mainMetrics.timeToSolveDist} /></div></div>
@@ -399,10 +374,8 @@ export default function Home() {
             </div>
           )}
 
-          {/* TAB 2: WAR MAP */}
           {activeTab === "MAP" && <div className="animate-in fade-in duration-400"><WarMap subs={mainMetrics.rawSubsList} /></div>}
 
-          {/* TAB 3: SQUAD CLASH */}
           {activeTab === "SQUAD" && squadCharts && (
             <div className="space-y-8 animate-in fade-in duration-400">
               <div className="bg-[#1e2024] border border-[#30363d] rounded-[12px] p-6 shadow-[0_4px_20px_rgba(0,0,0,0.2)]">
@@ -473,7 +446,24 @@ export default function Home() {
             </div>
           )}
 
-          {/* TAB 4: TITAN TRACKER */}
+          {activeTab === "NEMESIS" && (
+            <div className="animate-in fade-in duration-400">
+               <div className="mb-6 flex gap-4 items-center">
+                 <span className="text-[#8b949e] font-mono text-sm uppercase">Select Target:</span>
+                 {config.squad.map(h => (
+                   <button key={h} onClick={() => setNemesisTarget(h)} className={`px-4 py-2 rounded border font-mono uppercase text-sm transition-colors cursor-pointer ${nemesisTarget === h ? 'bg-[#58a6ff]/20 text-[#58a6ff] border-[#58a6ff]' : 'bg-[#1e2024] text-[#8b949e] border-[#30363d] hover:bg-white/5'}`}>{h}</button>
+                 ))}
+               </div>
+               {nemesisTarget && squadData[nemesisTarget] ? (
+                 <Nemesis mySubs={squadData[config.main].rawSubs} targetSubs={squadData[nemesisTarget].rawSubs} targetHandle={nemesisTarget} myRating={squadData[config.main].info.rating || 1200} />
+               ) : (
+                 <div className="text-center py-20 text-[#8b949e] font-mono">Select a valid squad target to initiate Nemesis protocol.</div>
+               )}
+            </div>
+          )}
+
+          {activeTab === "GRIND" && <GrindMode handle={config.main} />}
+
           {activeTab === "TITAN" && (
             <div className="animate-in fade-in duration-400">
               {squadData[config.titan] ? (

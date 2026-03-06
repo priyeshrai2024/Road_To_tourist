@@ -1,6 +1,6 @@
 "use client";
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, BarElement, RadialLinearScale, Tooltip, Legend, Filler, ArcElement } from 'chart.js';
-import { Doughnut, Radar, Bar, Scatter, Line } from 'react-chartjs-2';
+import { Doughnut, Radar, Bar, Scatter, Line, PolarArea } from 'react-chartjs-2';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, RadialLinearScale, Tooltip, Legend, Filler, ArcElement);
 ChartJS.defaults.color = '#8b949e';
@@ -64,4 +64,52 @@ export function ActivityHeatmap({ subs }: { subs: any[] }) {
     cols.push(<div key={cols.length} className="flex flex-col gap-1">{col}</div>);
   }
   return <div className="flex gap-1 overflow-x-auto pb-2 h-full items-center">{cols}</div>;
+}
+
+export function ChronotypeChart({ subs }: { subs: any[] }) {
+  const hourCounts = new Array(24).fill(0);
+  
+  subs.forEach(s => {
+    if (s.verdict === 'OK') {
+      const date = new Date(s.creationTimeSeconds * 1000);
+      hourCounts[date.getHours()]++;
+    }
+  });
+
+  const labels = Array.from({ length: 24 }, (_, i) => `${i}:00`);
+  
+  return (
+    <PolarArea 
+      data={{
+        labels,
+        datasets: [{
+          data: hourCounts,
+          backgroundColor: hourCounts.map(count => 
+            count >= 10 ? 'rgba(248, 81, 73, 0.7)' : 
+            count >= 4 ? 'rgba(227, 179, 65, 0.5)' :  
+            'rgba(88, 166, 255, 0.2)'                 
+          ),
+          borderColor: '#30363d',
+          borderWidth: 1
+        }]
+      }}
+      options={{
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          r: {
+            grid: { color: '#30363d' },
+            ticks: { display: false },
+            angleLines: { color: '#30363d' },
+            pointLabels: { 
+              display: true, 
+              color: '#8b949e', 
+              font: { family: 'JetBrains Mono', size: 10 } 
+            }
+          }
+        },
+        plugins: { legend: { display: false } }
+      }}
+    />
+  );
 }
