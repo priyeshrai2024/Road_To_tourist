@@ -7,6 +7,7 @@ import SettingsModal from "@/components/SettingsModal";
 import Armory, { BadgeDef } from "@/components/Armory";
 import GrindMode from "@/components/GrindMode";
 import Nemesis from "@/components/Nemesis";
+import Forge from "@/components/Forge";
 import { Line, Bar, Radar } from 'react-chartjs-2';
 
 // --- STRICT TYPESCRIPT INTERFACES ---
@@ -232,11 +233,10 @@ export default function Home() {
 
     const reconMetrics = processMetrics(getFilteredSubs(squadData[config.main].rawSubs)); 
     const mapMetrics = evaluateMapMetrics(squadData[config.main].rawSubs);
-    const now = Date.now() / 1000;
 
     const findWinner = (pathFn: any, min = 0, isMin = false) => { let best = null; let bestVal = isMin ? Infinity : -Infinity; allPlayers.forEach(p => { let v = pathFn(sMatrix[p], bMatrix[p]); if (!isMin && v > bestVal && v > min) { bestVal = v; best = p; } else if (isMin && v < bestVal && v > min) { bestVal = v; best = p; } }); return best; };
-    const count30dAC = (p: string, condition: any) => { return sMatrix[p].metrics.rawSubsList.filter((s:CFSubmission) => s.verdict==='OK' && ((now-s.creationTimeSeconds)/86400)<=30 && condition(s)).length; };
-    const maxRat30d = (p: string) => { let m = 0; sMatrix[p].metrics.rawSubsList.forEach((s:CFSubmission) => { if(s.verdict==='OK' && ((now-s.creationTimeSeconds)/86400)<=30 && (s.problem.rating || 0) > m) m = s.problem.rating!; }); return m; };
+    const count30dAC = (p: string, condition: any) => { const now = Date.now() / 1000; return sMatrix[p].metrics.rawSubsList.filter((s:CFSubmission) => s.verdict==='OK' && ((now-s.creationTimeSeconds)/86400)<=30 && condition(s)).length; };
+    const maxRat30d = (p: string) => { const now = Date.now() / 1000; let m = 0; sMatrix[p].metrics.rawSubsList.forEach((s:CFSubmission) => { if(s.verdict==='OK' && ((now-s.creationTimeSeconds)/86400)<=30 && (s.problem.rating || 0) > m) m = s.problem.rating!; }); return m; };
 
     let badges: BadgeDef[] = [
       { id: 'vanguard', icon: '⚡', name: 'The Vanguard', desc: 'Highest Sprint Score (7 Days).', owner: findWinner((d:SquadMemberData) => d.metrics.weeklyScore, 50) },
@@ -271,6 +271,18 @@ export default function Home() {
   if (mainMetrics) Object.keys(mainMetrics.tagResourceStress).forEach(t => { timeAvgData[t] = mainMetrics.tagResourceStress[t].timeAvg; memAvgData[t] = mainMetrics.tagResourceStress[t].memAvg; });
   let sortedWeaknesses = mainMetrics ? Object.keys(mainMetrics.weaknessRatios).sort((a,b) => mainMetrics.weaknessRatios[b] - mainMetrics.weaknessRatios[a]) : [];
 
+  // THE GUILLOTINE LOGIC
+  const guillotineStatus = useMemo(() => {
+    if (!mainMetrics || mainMetrics.rawSubsList.length === 0) return { hoursInactive: 0, bleed: 0, isDecay: false, isWarning: false };
+    const okSubs = mainMetrics.rawSubsList.filter(s => s.verdict === 'OK');
+    const lastAC = okSubs.length > 0 ? okSubs[0].creationTimeSeconds : 0;
+    const hoursInactive = lastAC > 0 ? (Date.now() / 1000 - lastAC) / 3600 : 0;
+    const isDecay = hoursInactive > 48;
+    const isWarning = hoursInactive > 24 && hoursInactive <= 48;
+    const bleed = isDecay ? Math.floor((hoursInactive - 48) / 24) * 10 + 10 : 0;
+    return { hoursInactive: Math.floor(hoursInactive), bleed, isDecay, isWarning };
+  }, [mainMetrics]);
+
   return (
     <main className="min-h-screen bg-[#111214] text-[#e0e6ed] font-['Inter',sans-serif] overflow-x-hidden pb-20 selection:bg-[#58a6ff]">
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)} onSave={(newCfg) => { setConfig(newCfg); setHandle(newCfg.main); setShowSettings(false); fetchGlobalTelemetry(newCfg.main, newCfg.squad, newCfg.titan); }} />}
@@ -295,15 +307,27 @@ export default function Home() {
           
           <div className="flex justify-between items-center border-b border-[#30363d] bg-[rgba(30,32,36,0.8)] backdrop-blur-[10px] px-8 mb-8 -mx-8 overflow-x-auto">
             <div className="flex gap-8 whitespace-nowrap">
-              {['TELEMETRY', 'MAP', 'SQUAD', 'NEMESIS', 'GRIND', 'TITAN'].map(tab => {
+              {['TELEMETRY', 'MAP', 'SQUAD', 'NEMESIS', 'FORGE', 'GRIND', 'TITAN'].map(tab => {
                 const isActive = activeTab === tab;
-                return <div key={tab} onClick={() => setActiveTab(tab)} className={`py-4 font-mono text-[0.9rem] uppercase cursor-pointer border-b-[3px] transition-all ${isActive ? (tab === 'GRIND' ? 'text-[#f85149] border-[#f85149] drop-shadow-[0_0_10px_rgba(248,81,73,0.5)]' : 'text-[#e3b341] border-[#e3b341] font-bold drop-shadow-[0_0_10px_rgba(227,179,65,0.3)]') : 'text-[#8b949e] border-transparent'}`}>[ {tab === 'MAP' ? 'THE WAR MAP' : tab === 'SQUAD' ? 'SQUAD CLASH' : tab === 'TELEMETRY' ? 'MY TELEMETRY' : tab === 'GRIND' ? 'GRIND MODE' : tab === 'NEMESIS' ? 'TARGET LOCK' : 'TITAN TRACKER'} ]</div>
+                return <div key={tab} onClick={() => setActiveTab(tab)} className={`py-4 font-mono text-[0.9rem] uppercase cursor-pointer border-b-[3px] transition-all ${isActive ? (tab === 'GRIND' ? 'text-[#f85149] border-[#f85149] drop-shadow-[0_0_10px_rgba(248,81,73,0.5)]' : tab === 'FORGE' ? 'text-[#db6d28] border-[#db6d28] drop-shadow-[0_0_10px_rgba(219,109,40,0.5)]' : 'text-[#e3b341] border-[#e3b341] font-bold drop-shadow-[0_0_10px_rgba(227,179,65,0.3)]') : 'text-[#8b949e] border-transparent hover:text-[#e0e6ed]'}`}>[ {tab === 'MAP' ? 'THE WAR MAP' : tab === 'SQUAD' ? 'SQUAD CLASH' : tab === 'TELEMETRY' ? 'MY TELEMETRY' : tab === 'GRIND' ? 'GRIND MODE' : tab === 'NEMESIS' ? 'TARGET LOCK' : tab === 'FORGE' ? 'THE FORGE' : 'TITAN TRACKER'} ]</div>
               })}
             </div>
           </div>
 
           {activeTab === "TELEMETRY" && (
             <div className="animate-in fade-in duration-400">
+              
+              {/* THE GUILLOTINE WIDGET */}
+              {(guillotineStatus.isDecay || guillotineStatus.isWarning) && (
+                <div className={`mb-8 p-6 rounded-[12px] border flex justify-between items-center ${guillotineStatus.isDecay ? 'bg-[rgba(248,81,73,0.1)] border-[#f85149] animate-[pulse_2s_ease-in-out_infinite]' : 'bg-[rgba(227,179,65,0.1)] border-[#e3b341]'}`}>
+                  <div>
+                    <h2 className={`font-black uppercase tracking-widest m-0 ${guillotineStatus.isDecay ? 'text-[#f85149]' : 'text-[#e3b341]'}`}>{guillotineStatus.isDecay ? 'CRITICAL DECAY DETECTED' : 'RUST FORMING'}</h2>
+                    <p className="text-[#8b949e] font-mono text-sm mt-1 mb-0">Inactive for {guillotineStatus.hoursInactive} hours.</p>
+                  </div>
+                  {guillotineStatus.isDecay && <div className="text-right"><div className="text-3xl font-black text-[#f85149] font-mono">-{guillotineStatus.bleed} PTS</div><div className="text-[10px] text-[#f85149] uppercase tracking-widest">Simulated Elo Bleed</div></div>}
+                </div>
+              )}
+
                <div className="bg-[#1e2024] border border-[#30363d] rounded-[20px] p-8 flex items-center gap-8 mb-8 shadow-[0_4px_20px_rgba(0,0,0,0.2)] flex-wrap relative">
                 <img src={squadData[config.main].info.titlePhoto} alt="Avatar" className="w-[100px] h-[100px] rounded-[12px] border-2 border-[#30363d] object-cover" />
                 <div className="flex-1 min-w-[250px]">
@@ -462,6 +486,8 @@ export default function Home() {
             </div>
           )}
 
+          {activeTab === "FORGE" && <Forge rawSubsList={mainMetrics.rawSubsList} />}
+          
           {activeTab === "GRIND" && <GrindMode handle={config.main} />}
 
           {activeTab === "TITAN" && (
