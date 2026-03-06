@@ -133,27 +133,70 @@ export default function Home() {
     else setShowSettings(true);
   }, []);
 
+  // THE HTML-ACCURATE CLIENT FETCH: Bypasses Vercel entirely and uses your local IP
   const fetchGlobalTelemetry = async (mainH: string, squadH: string[], titanH: string) => {
     if (!mainH) return;
     setLoading(true);
     setLoadingMsg(`SYNCHRONIZING GLOBAL TELEMETRY... [||||||||||]`);
     
+    const cooldown = () => new Promise(res => setTimeout(res, 1200));
     const newSquadData: Record<string, any> = {};
     const allHandles = [mainH, ...squadH, titanH].filter(Boolean);
 
     try {
-      for (const h of allHandles) {
-        const res = await fetch(`/api/cf?handle=${h}`);
-        const data = await res.json();
-        
-        if (!data.error && data.submissions) {
-          newSquadData[h] = { handle: h, info: data.info, rawSubs: data.submissions, history: data.ratingHistory || [] };
+      // 1. Fetch Main Status
+      const mRaw = await fetch(`https://codeforces.com/api/user.status?handle=${mainH}`);
+      const mRes = await mRaw.json();
+      if (mRes.status !== 'OK') throw new Error("Main Status API Failed");
+      newSquadData[mainH] = { handle: mainH, rawSubs: mRes.result, history: [] };
+
+      // 2. Fetch All Info
+      await cooldown();
+      const iRaw = await fetch(`https://codeforces.com/api/user.info?handles=${allHandles.join(';')}`);
+      const iRes = await iRaw.json();
+      if (iRes.status === 'OK') {
+        iRes.result.forEach((u: CFInfo) => {
+          if (!newSquadData[u.handle]) newSquadData[u.handle] = { handle: u.handle, rawSubs: [], history: [] };
+          newSquadData[u.handle].info = u;
+        });
+      }
+
+      // 3. Fetch Squad Subs sequentially
+      for (const h of squadH) {
+        await cooldown();
+        const sRaw = await fetch(`https://codeforces.com/api/user.status?handle=${h}`);
+        const sRes = await sRaw.json();
+        if (sRes.status === 'OK') {
+          if (!newSquadData[h]) newSquadData[h] = { handle: h, history: [] };
+          newSquadData[h].rawSubs = sRes.result;
+        }
+        await cooldown();
+        const rRaw = await fetch(`https://codeforces.com/api/user.rating?handle=${h}`);
+        const rRes = await rRaw.json();
+        if (rRes.status === 'OK') newSquadData[h].history = rRes.result;
+      }
+
+      // 4. Fetch Main Rating
+      await cooldown();
+      const rRaw = await fetch(`https://codeforces.com/api/user.rating?handle=${mainH}`);
+      const rRes = await rRaw.json();
+      if (rRes.status === 'OK') newSquadData[mainH].history = rRes.result;
+
+      // 5. Fetch Titan Rating
+      if (titanH) {
+        await cooldown();
+        const trRaw = await fetch(`https://codeforces.com/api/user.rating?handle=${titanH}`);
+        const trRes = await trRaw.json();
+        if (trRes.status === 'OK') {
+          if (!newSquadData[titanH]) newSquadData[titanH] = { handle: titanH, rawSubs: [], history: [] };
+          newSquadData[titanH].history = trRes.result;
         }
       }
+
       setSquadData(newSquadData);
     } catch (err) { 
       console.error(err); 
-      alert("Engine Failure: Network error. Please check backend connection.");
+      alert("Engine Failure: Codeforces API rejected the request or rate limit hit.");
       setShowSettings(true);
     }
     setLoading(false);
@@ -168,8 +211,8 @@ export default function Home() {
     return filtered;
   };
 
-  const { mainMetrics, squadMatrix, bounties, computedBadges } = useMemo(() => {
-    if (!squadData[config.main]) return { mainMetrics: null, squadMatrix: {} as Record<string, SquadMemberData>, bounties: [], computedBadges: [] };
+  const { mainMetrics, squadMatrix, bounties, computedBadges, absoluteMySolves } = useMemo(() => {
+    if (!squadData[config.main] || !squadData[config.main].rawSubs) return { mainMetrics: null, squadMatrix: {} as Record<string, SquadMemberData>, bounties: [], computedBadges: [], absoluteMySolves: new Set() };
     
     const mainSubsFiltered = getFilteredSubs(squadData[config.main].rawSubs);
     const mainMetrics = processMetrics(mainSubsFiltered);
@@ -243,7 +286,7 @@ export default function Home() {
       { id: 'b_pathfinder', icon: '🗺️', name: 'Pathfinder', desc: 'Scouted 10+ Incognito Nodes.', owner: mapMetrics.scouted >= 10 ? config.main : null },
     ];
 
-    return { mainMetrics, squadMatrix: sMatrix, bounties: uniqueBounties.slice(0,30), computedBadges: badges };
+    return { mainMetrics, squadMatrix: sMatrix, bounties: uniqueBounties.slice(0,30), computedBadges: badges, absoluteMySolves: absSolves };
   }, [squadData, config, contextFilter, timeFilter]);
 
   const getRankColor = (rank?: string) => { if(!rank) return '#e0e6ed'; if(rank.includes('newbie')) return '#8b949e'; if(rank.includes('pupil')) return '#56d364'; if(rank.includes('specialist')) return '#58a6ff'; if(rank.includes('expert')) return '#d2a8ff'; if(rank.includes('candidate master')) return '#e3b341'; if(rank.includes('master')) return '#db6d28'; return '#f85149'; };
@@ -433,9 +476,9 @@ export default function Home() {
               <div>
                 <h3 className="text-[#8b949e] font-mono text-[1rem] uppercase tracking-[1px] border-b-2 border-[#30363d] pb-[5px] mb-[1rem] mt-8">Squad Telemetry Synthesis</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="bg-[#1e2024] border border-[#30363d] rounded-[12px] p-6 shadow-[0_4px_20px_rgba(0,0,0,0.2)]"><h3 className="text-white text-[0.9rem] uppercase tracking-[1px] border-b border-[#30363d] pb-2.5 mb-1.5 m-0">Rating Warfare (Historical Trajectory)</h3><div className="h-[300px]"><Line data={squadCharts.lineData} options={{ responsive: true, maintainAspectRatio: false, scales: { x: { display: false }, y: { grid: { color: '#30363d' }, ticks: {font: {family: 'JetBrains Mono'}}} }, plugins: { legend: { labels: { color: '#e0e6ed', font: { family: 'JetBrains Mono' } } } } }} /></div></div>
-                  <div className="bg-[#1e2024] border border-[#30363d] rounded-[12px] p-6 shadow-[0_4px_20px_rgba(0,0,0,0.2)]"><h3 className="text-white text-[0.9rem] uppercase tracking-[1px] border-b border-[#30363d] pb-2.5 mb-1.5 m-0">Tactical Sprints (Sprint Scores)</h3><div className="h-[300px]"><Bar data={squadCharts.sprintData} options={{ responsive: true, maintainAspectRatio: false, scales: { x: { grid: { display: false }, ticks: {font: {family: 'JetBrains Mono'}} }, y: { grid: { color: '#30363d' } } }, plugins: { legend: { labels: { color: '#e0e6ed', font: { family: 'JetBrains Mono' } } } } }} /></div></div>
-                  <div className="bg-[#1e2024] border border-[#30363d] rounded-[12px] p-6 shadow-[0_4px_20px_rgba(0,0,0,0.2)] md:col-span-2"><h3 className="text-white text-[0.9rem] uppercase tracking-[1px] border-b border-[#30363d] pb-2.5 mb-1.5 m-0">The Triad (Combined Tag Radar)</h3><div className="h-[400px]"><Radar data={squadCharts.radarData} options={{ responsive: true, maintainAspectRatio: false, scales: { r: { angleLines: { color: '#30363d' }, grid: { color: '#30363d' }, ticks: { display: false }, pointLabels: { color: '#8b949e', font: {family: 'JetBrains Mono'} } } }, plugins: { legend: { position: 'top', labels: { color: '#e0e6ed', font: { family: 'JetBrains Mono' } } } } }} /></div></div>
+                  <div className="bg-[#1e2024] border border-[#30363d] rounded-[12px] p-6 shadow-[0_4px_20px_rgba(0,0,0,0.2)]"><h3 className="text-white text-[0.9rem] uppercase tracking-[1px] border-b border-[#30363d] pb-2.5 mb-1.5 m-0">Rating Warfare (Historical Trajectory)</h3><div className="h-[300px]"><Line data={squadCharts.lineData} options={{ responsive: true, maintainAspectRatio: false, scales: { x: { display: false }, y: { grid: { color: '#30363d' }, ticks: {font: {family: 'monospace'}}} }, plugins: { legend: { labels: { color: '#e0e6ed', font: { family: 'monospace' } } } } }} /></div></div>
+                  <div className="bg-[#1e2024] border border-[#30363d] rounded-[12px] p-6 shadow-[0_4px_20px_rgba(0,0,0,0.2)]"><h3 className="text-white text-[0.9rem] uppercase tracking-[1px] border-b border-[#30363d] pb-2.5 mb-1.5 m-0">Tactical Sprints (Sprint Scores)</h3><div className="h-[300px]"><Bar data={squadCharts.sprintData} options={{ responsive: true, maintainAspectRatio: false, scales: { x: { grid: { display: false }, ticks: {font: {family: 'monospace'}} }, y: { grid: { color: '#30363d' } } }, plugins: { legend: { labels: { color: '#e0e6ed', font: { family: 'monospace' } } } } }} /></div></div>
+                  <div className="bg-[#1e2024] border border-[#30363d] rounded-[12px] p-6 shadow-[0_4px_20px_rgba(0,0,0,0.2)] md:col-span-2"><h3 className="text-white text-[0.9rem] uppercase tracking-[1px] border-b border-[#30363d] pb-2.5 mb-1.5 m-0">The Triad (Combined Tag Radar)</h3><div className="h-[400px]"><Radar data={squadCharts.radarData} options={{ responsive: true, maintainAspectRatio: false, scales: { r: { angleLines: { color: '#30363d' }, grid: { color: '#30363d' }, ticks: { display: false }, pointLabels: { color: '#8b949e', font: {family: 'monospace'} } } }, plugins: { legend: { position: 'top', labels: { color: '#e0e6ed', font: { family: 'monospace' } } } } }} /></div></div>
                 </div>
               </div>
             </div>
