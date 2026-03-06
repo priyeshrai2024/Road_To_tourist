@@ -13,10 +13,11 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Road to tourist | CF Synthesis Engine",
+  title: "CF Synthesis Engine | Road to tourist",
   description: "Military-grade command center and telemetry dashboard for Codeforces. Track, snipe, and forge your way to the top.",
   icons: {
-    icon: "https://codeforces.com/favicon.ico",
+    // This points directly to the image you dropped in the public folder
+    icon: "/squad.jpg", 
   },
 };
 
