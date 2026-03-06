@@ -13,9 +13,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "CF Synthesis Engine | Road to tourist",
+  title: "Road to tourist | CF Synthesis Engine",
   description: "Military-grade command center and telemetry dashboard for Codeforces. Track, snipe, and forge your way to the top.",
-  // Notice we removed the 'icons' block. Next.js will now auto-detect app/icon.jpg natively!
+  icons: {
+    icon: "/icon.jpg?v=deploy",
+    apple: "/icon.jpg?v=deploy",
+  },
 };
 
 export default function RootLayout({
