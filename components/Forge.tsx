@@ -13,7 +13,7 @@ export default function Forge({ rawSubsList }: { rawSubsList: any[] }) {
 
     const solved = new Set<string>();
     const failed = new Map<string, any>();
-    
+
     // Process chronologically
     [...rawSubsList].reverse().forEach(s => {
       if (!s.problem) return;
@@ -31,7 +31,7 @@ export default function Forge({ rawSubsList }: { rawSubsList: any[] }) {
     // 1. Ingest new fails
     failed.forEach((s, pid) => {
       if (!solved.has(pid) && !currentForge[pid]) {
-        currentForge[pid] = { pid, name: s.problem.name, cid: s.problem.contestId, idx: s.problem.index, rating: s.problem.rating, level: 1, nextReview: now + 86400, // 24 hours 
+        currentForge[pid] = { pid, name: s.problem.name, cid: s.problem.contestId, idx: s.problem.index, rating: s.problem.rating, level: 1, nextReview: now + 86400, // 24 hours
         status: 'WAITING', added: now };
         updated = true;
       }
@@ -54,15 +54,15 @@ export default function Forge({ rawSubsList }: { rawSubsList: any[] }) {
   }, [rawSubsList]);
 
   const forgeItems = Object.values(forge);
-  const due = forgeItems.filter(f => f.status === 'DUE').sort((a,b) => a.nextReview - b.nextReview);
-  const waiting = forgeItems.filter(f => f.status === 'WAITING').sort((a,b) => a.nextReview - b.nextReview);
-  const forged = forgeItems.filter(f => f.status === 'FORGED').sort((a,b) => (b.forgedAt || 0) - (a.forgedAt || 0));
+  const due     = forgeItems.filter(f => f.status === 'DUE').sort((a, b) => a.nextReview - b.nextReview);
+  const waiting = forgeItems.filter(f => f.status === 'WAITING').sort((a, b) => a.nextReview - b.nextReview);
+  const forged  = forgeItems.filter(f => f.status === 'FORGED').sort((a, b) => (b.forgedAt || 0) - (a.forgedAt || 0));
 
   const markFailedAgain = (pid: string) => {
     const newForge = { ...forge };
     newForge[pid].level += 1;
     // Level 2 = 3 days, Level 3 = 7 days
-    const delay = newForge[pid].level === 2 ? 86400 * 3 : 86400 * 7; 
+    const delay = newForge[pid].level === 2 ? 86400 * 3 : 86400 * 7;
     newForge[pid].nextReview = (Date.now() / 1000) + delay;
     newForge[pid].status = 'WAITING';
     localStorage.setItem('cf_forge_v1', JSON.stringify(newForge));
@@ -70,69 +70,168 @@ export default function Forge({ rawSubsList }: { rawSubsList: any[] }) {
   };
 
   return (
-    <div className="animate-in fade-in duration-400">
-      
+    <div className="animate-in fade-in duration-500">
+
       {/* HEADER PANEL */}
-      <div className="bg-[#050505] border border-[#db6d28]/30 border-t-[3px] border-t-[#db6d28] rounded-[4px] p-6 shadow-[0_0_25px_rgba(219,109,40,0.1)] flex justify-between items-center mb-8 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-[150px] h-[150px] bg-[#db6d28] blur-[100px] opacity-10 pointer-events-none" />
-        <div className="relative z-10">
-          <h2 className="text-[#db6d28] text-lg font-black uppercase tracking-[3px] m-0 mb-2 flex items-center gap-2">
-            <span className="inline-block w-2 h-2 rounded-full bg-[#db6d28] animate-pulse" />
-            The Forge // Spaced Repetition
+      <div className="bg-[#020202] border-t border-t-[#c5a059]/40 border-x border-b border-white/[0.04] p-8 mb-10 flex justify-between items-center relative">
+        {/* Single razor gold line at top */}
+        <div className="absolute top-0 left-0 w-full h-px bg-[#c5a059]/50" />
+
+        <div>
+          <h2 className="font-serif text-xl font-normal text-white/85 tracking-wide m-0 mb-2">
+            The Forge
           </h2>
-          <p className="text-[#4a5568] font-mono text-[10px] uppercase tracking-[1px] m-0">Failed algorithms enter here. They do not leave until they are conquered.</p>
+          <p className="font-mono text-[9px] tracking-[3px] uppercase text-white/20 m-0">
+            Spaced Repetition // Failed algorithms enter. They do not leave until conquered.
+          </p>
         </div>
-        <div className="flex gap-6 relative z-10">
-          <div className="text-center"><div className="text-3xl font-mono font-bold text-[#f85149] drop-shadow-[0_0_10px_rgba(248,81,73,0.5)]">{due.length}</div><div className="text-[10px] text-[#4a5568] uppercase tracking-widest mt-1">Action Req</div></div>
-          <div className="text-center"><div className="text-3xl font-mono font-bold text-[#e3b341]">{waiting.length}</div><div className="text-[10px] text-[#4a5568] uppercase tracking-widest mt-1">Cooling</div></div>
-          <div className="text-center"><div className="text-3xl font-mono font-bold text-[#56d364]">{forged.length}</div><div className="text-[10px] text-[#4a5568] uppercase tracking-widest mt-1">Forged</div></div>
+
+        <div className="flex gap-10">
+          <div className="text-center">
+            <div className="font-mono text-3xl font-light text-[#f85149]">{due.length}</div>
+            <div className="font-mono text-[8px] tracking-[3px] uppercase text-white/20 mt-1">Action Req</div>
+          </div>
+          <div className="text-center">
+            <div className="font-mono text-3xl font-light text-[#c5a059]">{waiting.length}</div>
+            <div className="font-mono text-[8px] tracking-[3px] uppercase text-white/20 mt-1">Cooling</div>
+          </div>
+          <div className="text-center">
+            <div className="font-mono text-3xl font-light text-white/35">{forged.length}</div>
+            <div className="font-mono text-[8px] tracking-[3px] uppercase text-white/20 mt-1">Archived</div>
+          </div>
         </div>
       </div>
 
-      {/* TACTICAL TABS */}
-      <div className="flex gap-2 mb-6 border-b border-[#1a1a1a] pb-4">
-        <button onClick={() => setActiveTab('DUE')} className={`font-mono text-xs font-bold uppercase px-6 py-2.5 rounded-[4px] transition-all duration-200 cursor-pointer ${activeTab==='DUE'?'bg-[rgba(248,81,73,0.1)] text-[#f85149] border border-[#f85149]/50 shadow-[0_0_10px_rgba(248,81,73,0.2)]':'bg-[#0a0a0a] text-[#4a5568] border border-[#1a1a1a] hover:border-[#333]'}`}>Crucible ({due.length})</button>
-        <button onClick={() => setActiveTab('WAITING')} className={`font-mono text-xs font-bold uppercase px-6 py-2.5 rounded-[4px] transition-all duration-200 cursor-pointer ${activeTab==='WAITING'?'bg-[rgba(227,179,65,0.1)] text-[#e3b341] border border-[#e3b341]/50 shadow-[0_0_10px_rgba(227,179,65,0.2)]':'bg-[#0a0a0a] text-[#4a5568] border border-[#1a1a1a] hover:border-[#333]'}`}>Cooling ({waiting.length})</button>
-        <button onClick={() => setActiveTab('FORGED')} className={`font-mono text-xs font-bold uppercase px-6 py-2.5 rounded-[4px] transition-all duration-200 cursor-pointer ${activeTab==='FORGED'?'bg-[rgba(86,211,100,0.1)] text-[#56d364] border border-[#56d364]/50 shadow-[0_0_10px_rgba(86,211,100,0.2)]':'bg-[#0a0a0a] text-[#4a5568] border border-[#1a1a1a] hover:border-[#333]'}`}>Armory ({forged.length})</button>
+      {/* TABS */}
+      <div className="flex gap-8 mb-8 border-b border-white/[0.05]">
+        <button
+          onClick={() => setActiveTab('DUE')}
+          className={`font-mono text-[10px] tracking-[3px] uppercase pb-3 cursor-pointer bg-transparent border-none transition-all duration-200 ${
+            activeTab === 'DUE'
+              ? 'text-[#f85149] border-b border-b-[#f85149] -mb-px'
+              : 'text-white/20 hover:text-white/40'
+          }`}
+        >
+          Crucible ({due.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('WAITING')}
+          className={`font-mono text-[10px] tracking-[3px] uppercase pb-3 cursor-pointer bg-transparent border-none transition-all duration-200 ${
+            activeTab === 'WAITING'
+              ? 'text-[#c5a059] border-b border-b-[#c5a059] -mb-px'
+              : 'text-white/20 hover:text-white/40'
+          }`}
+        >
+          Cooling ({waiting.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('FORGED')}
+          className={`font-mono text-[10px] tracking-[3px] uppercase pb-3 cursor-pointer bg-transparent border-none transition-all duration-200 ${
+            activeTab === 'FORGED'
+              ? 'text-white/50 border-b border-b-white/30 -mb-px'
+              : 'text-white/20 hover:text-white/40'
+          }`}
+        >
+          Archived ({forged.length})
+        </button>
       </div>
 
       {/* LIST RENDER */}
-      <div className="space-y-3">
-        {activeTab === 'DUE' && (due.length === 0 ? <div className="text-[#4a5568] font-mono tracking-[1px] text-xs py-10 text-center border border-dashed border-[#1a1a1a] rounded-[4px] bg-[#050505]">// THE CRUCIBLE IS EMPTY. ALL WEAKNESSES FORGED.</div> : 
-          due.map(f => (
-            <div key={f.pid} className="flex justify-between items-center p-5 bg-[rgba(248,81,73,0.03)] border-l-[3px] border-[#f85149] border-y border-r border-y-[#1a1a1a] border-r-[#1a1a1a] rounded-[4px] group hover:bg-[rgba(248,81,73,0.05)] transition-colors">
-              <div>
-                <a href={`https://codeforces.com/contest/${f.cid}/problem/${f.idx}`} target="_blank" className="text-[#e0e6ed] font-mono text-[1rem] font-bold hover:text-[#f85149] transition-colors tracking-tight no-underline">{f.name}</a>
-                <div className="text-[#4a5568] text-[10px] uppercase font-mono mt-2 flex gap-4">
-                  <span>Added: <strong className="text-[#8b949e]">{new Date(f.added * 1000).toLocaleDateString()}</strong></span>
-                  <span>Rating: <strong className="text-[#e3b341]">{f.rating || '?'}</strong></span>
-                  <span>Target Level: <strong className="text-[#58a6ff]">{f.level}</strong></span>
+      <div className="space-y-px">
+
+        {/* DUE TAB */}
+        {activeTab === 'DUE' && (
+          due.length === 0
+            ? (
+              <div className="font-mono text-[10px] tracking-[3px] uppercase text-white/15 py-16 text-center border border-dashed border-white/[0.05]">
+                // The crucible is empty. All weaknesses forged.
+              </div>
+            )
+            : due.map(f => (
+              <div
+                key={f.pid}
+                className="flex justify-between items-center px-5 py-4 bg-[#020202] border-l border-l-[#f85149] hover:bg-white/[0.02] transition-all duration-200 group"
+              >
+                <div>
+                  <a
+                    href={`https://codeforces.com/contest/${f.cid}/problem/${f.idx}`}
+                    target="_blank"
+                    className="font-mono text-sm text-white/70 group-hover:text-white/90 transition-colors duration-200 no-underline tracking-tight"
+                  >
+                    {f.name}
+                  </a>
+                  <div className="font-mono text-[9px] tracking-[2px] uppercase text-white/20 mt-2 flex gap-5">
+                    <span>Added <span className="text-white/35">{new Date(f.added * 1000).toLocaleDateString()}</span></span>
+                    <span>Rating <span className="text-[#c5a059]/70">{f.rating || '?'}</span></span>
+                    <span>Level <span className="text-white/35">{f.level}</span></span>
+                  </div>
+                </div>
+                <div className="flex gap-3 shrink-0 ml-6">
+                  <button
+                    onClick={() => markFailedAgain(f.pid)}
+                    className="px-4 py-2 bg-transparent border border-white/[0.08] text-white/25 font-mono text-[9px] tracking-[2px] uppercase hover:border-white/20 hover:text-white/50 transition-all duration-200 cursor-pointer"
+                  >
+                    Failed Again
+                  </button>
+                  <a
+                    href={`https://codeforces.com/contest/${f.cid}/problem/${f.idx}`}
+                    target="_blank"
+                    className="px-5 py-2 bg-transparent border border-[#f85149]/50 text-[#f85149]/80 font-mono text-[9px] tracking-[2px] uppercase hover:bg-[rgba(248,81,73,0.06)] hover:border-[#f85149] hover:text-[#f85149] transition-all duration-200 no-underline flex items-center cursor-pointer"
+                  >
+                    Engage
+                  </a>
                 </div>
               </div>
-              <div className="flex gap-3">
-                <button onClick={() => markFailedAgain(f.pid)} className="px-4 py-2 bg-[#0a0a0a] border border-[#1a1a1a] text-[#4a5568] text-[10px] font-bold font-mono uppercase tracking-[1px] hover:border-[#f85149] hover:text-[#f85149] transition-colors rounded-[4px] cursor-pointer">Failed Again</button>
-                <a href={`https://codeforces.com/contest/${f.cid}/problem/${f.idx}`} target="_blank" className="px-6 py-2 bg-[#f85149] text-black text-[10px] font-black font-mono tracking-[1px] uppercase hover:bg-[#ff6a64] transition-colors rounded-[4px] no-underline flex items-center shadow-[0_0_10px_rgba(248,81,73,0.3)]">Engage Target</a>
-              </div>
-            </div>
-          ))
+            ))
         )}
-        
-        {activeTab === 'WAITING' && waiting.map(f => (
-          <div key={f.pid} className="flex justify-between items-center p-5 bg-[#050505] border border-[#1a1a1a] rounded-[4px] opacity-70 hover:opacity-100 transition-opacity">
-            <div>
-              <span className="text-[#c9d1d9] font-mono font-bold">{f.name}</span>
-              <div className="text-[#4a5568] text-[10px] uppercase tracking-[1px] font-mono mt-1">Level {f.level}</div>
-            </div>
-            <div className="text-[#e3b341] font-mono text-[10px] font-bold tracking-[1px] border border-[#e3b341]/30 bg-[#e3b341]/10 px-3 py-1.5 rounded-[4px] uppercase">Unlocks in {Math.ceil((f.nextReview - (Date.now()/1000))/3600)} Hrs</div>
-          </div>
-        ))}
-        
-        {activeTab === 'FORGED' && forged.map(f => (
-          <div key={f.pid} className="flex justify-between items-center p-5 bg-[rgba(86,211,100,0.02)] border border-[#1a1a1a] rounded-[4px]">
-            <div><span className="text-[#4a5568] font-mono font-bold line-through">{f.name}</span></div>
-            <div className="text-[#56d364] font-mono text-[10px] tracking-[1px] border border-[#56d364]/20 bg-[rgba(86,211,100,0.05)] px-3 py-1.5 rounded-[4px] uppercase font-bold">Forged @ {new Date(f.forgedAt! * 1000).toLocaleDateString()}</div>
-          </div>
-        ))}
+
+        {/* WAITING TAB */}
+        {activeTab === 'WAITING' && (
+          waiting.length === 0
+            ? (
+              <div className="font-mono text-[10px] tracking-[3px] uppercase text-white/15 py-16 text-center border border-dashed border-white/[0.05]">
+                // Nothing cooling.
+              </div>
+            )
+            : waiting.map(f => (
+              <div
+                key={f.pid}
+                className="flex justify-between items-center px-5 py-4 bg-[#020202] border-l border-l-[#c5a059]/30 hover:bg-white/[0.02] hover:border-l-[#c5a059]/60 transition-all duration-200"
+              >
+                <div>
+                  <span className="font-mono text-sm text-white/45 tracking-tight">{f.name}</span>
+                  <div className="font-mono text-[9px] tracking-[2px] uppercase text-white/20 mt-2">
+                    Level {f.level}
+                  </div>
+                </div>
+                <div className="font-mono text-[9px] tracking-[2px] uppercase text-[#c5a059]/60 border border-[#c5a059]/15 px-3 py-1.5 shrink-0 ml-6">
+                  Unlocks in {Math.ceil((f.nextReview - (Date.now() / 1000)) / 3600)} hrs
+                </div>
+              </div>
+            ))
+        )}
+
+        {/* FORGED TAB */}
+        {activeTab === 'FORGED' && (
+          forged.length === 0
+            ? (
+              <div className="font-mono text-[10px] tracking-[3px] uppercase text-white/15 py-16 text-center border border-dashed border-white/[0.05]">
+                // Nothing archived yet.
+              </div>
+            )
+            : forged.map(f => (
+              <div
+                key={f.pid}
+                className="flex justify-between items-center px-5 py-4 bg-[#020202] border-l border-l-white/[0.06] hover:bg-white/[0.01] transition-all duration-200"
+              >
+                <span className="font-mono text-sm text-white/20 line-through tracking-tight">{f.name}</span>
+                <div className="font-mono text-[9px] tracking-[2px] uppercase text-white/20 border border-white/[0.06] px-3 py-1.5 shrink-0 ml-6">
+                  Archived {new Date(f.forgedAt! * 1000).toLocaleDateString()}
+                </div>
+              </div>
+            ))
+        )}
+
       </div>
     </div>
   );

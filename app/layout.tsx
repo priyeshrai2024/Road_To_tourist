@@ -1,28 +1,23 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist_Mono } from "next/font/google";
+import { Playfair_Display } from "next/font/google";
 import "./globals.css";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
 
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
 });
 
+const playfair = Playfair_Display({
+  variable: "--font-serif",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  style: ["normal", "italic"],
+});
+
 export const metadata: Metadata = {
-  title: "Road to tourist | CF Synthesis Engine",
-  description: "Military-grade command center and telemetry dashboard for Codeforces. Track, snipe, and forge your way to the top.",
-  icons: {
-    icon: [
-      { url: "/icon.jpg?v=2", href: "/icon.jpg?v=2" }
-    ],
-    apple: [
-      { url: "/icon.jpg?v=2", href: "/icon.jpg?v=2" }
-    ]
-  },
+  title: "Codeforces Synthesis Engine",
+  description: "Tactical Competitive Intelligence Platform",
 };
 
 export default function RootLayout({
@@ -32,9 +27,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
+      <body className={`${geistMono.variable} ${playfair.variable} antialiased`}>
         {children}
       </body>
     </html>

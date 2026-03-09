@@ -18,9 +18,9 @@ interface ProcessedMetrics { score: number; weeklyScore: number; monthlyScore: n
 interface SquadMemberData { info: CFInfo; metrics: ProcessedMetrics; history: CFRating[]; }
 
 const CF_SCORE_MAP: Record<number, number> = { 800:15, 900:20, 1000:30, 1100:45, 1200:65, 1300:90, 1400:130, 1500:180, 1600:250, 1700:350, 1800:500, 1900:720, 2000:1050, 2100:1530, 2200:2250, 2300:3300, 2400:4800 };
-const SQUAD_COLORS = ['#58a6ff', '#d2a8ff', '#56d364', '#f85149'];
+const SQUAD_COLORS = ['#c5a059', 'rgba(255,255,255,0.45)', 'rgba(255,255,255,0.28)', 'rgba(255,255,255,0.18)'];
 const TABS = ["COMMAND", "WAR MAP", "ARMORY", "SQUAD OPS", "NEMESIS", "FORGE", "GRIND", "TITAN"];
-const TAB_COLORS: Record<string, string> = { COMMAND: "#f0a500", "WAR MAP": "#56d364", ARMORY: "#e879f9", "SQUAD OPS": "#58a6ff", NEMESIS: "#f85149", FORGE: "#db6d28", GRIND: "#f85149", TITAN: "#f85149" };
+const TAB_COLORS: Record<string, string> = { COMMAND: "#c5a059", "WAR MAP": "rgba(255,255,255,0.5)", ARMORY: "rgba(255,255,255,0.4)", "SQUAD OPS": "rgba(255,255,255,0.45)", NEMESIS: "#f85149", FORGE: "#c5a059", GRIND: "#f85149", TITAN: "#f85149" };
 
 // ─── CORE ENGINE LOGIC ────────────────────────────────────────────────────────
 function processMetrics(subs: CFSubmission[]): ProcessedMetrics {
@@ -118,32 +118,40 @@ const evaluateMapMetrics = (subs: CFSubmission[]) => {
 };
 
 // ─── UI ATOMS ─────────────────────────────────────────────────────────────────
-function GlowPulse({ color = "#f0a500" }) {
-  return <span className="inline-block w-2 h-2 rounded-full animate-[pulse_1.5s_ease-in-out_infinite]" style={{ background: color, boxShadow: `0 0 6px ${color}, 0 0 12px ${color}` }} />;
+
+// Sharp 1px blinking square — no glow, no blur, no rounded corners
+function GlowPulse({ color = "#c5a059" }: { color?: string }) {
+  return (
+    <span
+      className="inline-block w-1.5 h-1.5 animate-[blink_1.2s_step-start_infinite]"
+      style={{ background: color }}
+    />
+  );
 }
 
 function TopLine({ color }: { color: string }) {
-  return <div className="absolute top-0 left-0 right-0 h-px" style={{ background: `linear-gradient(90deg, transparent, ${color}, transparent)` }} />;
+  return <div className="absolute top-0 left-0 right-0 h-px" style={{ background: color, opacity: 0.5 }} />;
 }
 
-function StatusLabel({ label, color, icon }: { label: string, color: string, icon?: string }) {
+function StatusLabel({ label, color }: { label: string; color: string; icon?: string }) {
   return (
-    <div className="flex items-center gap-1.5 font-mono text-[0.6rem] uppercase tracking-widest" style={{ color }}>
-      <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: color }} />
-      {icon && <span>{icon}</span>}
+    <div className="flex items-center gap-2 font-mono text-[0.55rem] uppercase tracking-[3px]" style={{ color }}>
+      <span className="w-1 h-1 inline-block" style={{ background: color }} />
       {label}
     </div>
   );
 }
 
-function StatCard({ label, value, sub, color = "#f0a500", icon }: any) {
+function StatCard({ label, value, sub, color = "#c5a059", icon }: any) {
   return (
-    <div className="relative overflow-hidden rounded-2xl p-5 transition-transform hover:-translate-y-1" style={{ background: "linear-gradient(135deg, rgba(255,255,255,0.03) 0%, rgba(0,0,0,0.2) 100%)", border: `1px solid ${color}33`, boxShadow: `0 0 24px ${color}15, inset 0 1px 0 rgba(255,255,255,0.05)` }}>
+    <div className="relative overflow-hidden p-5 bg-[#020202] border border-white/[0.05] transition-all duration-200 hover:bg-white/[0.02]">
       <TopLine color={color} />
-      <div className="text-2xl mb-1">{icon}</div>
-      <div className="font-mono text-3xl font-black leading-none" style={{ color, letterSpacing: "-0.5px" }}>{value}</div>
-      <div className="font-mono text-[0.62rem] uppercase tracking-[2px] mt-1.5" style={{ color: "#666" }}>{label}</div>
-      {sub && <div className="font-mono text-[0.72rem] mt-0.5" style={{ color: "#888" }}>{sub}</div>}
+      <div className="text-xl mb-2 opacity-50">{icon}</div>
+      <div className="font-mono text-3xl font-light leading-none tracking-tight" style={{ color }}>
+        {value}
+      </div>
+      <div className="font-mono text-[0.6rem] uppercase tracking-[3px] mt-2 text-white/20">{label}</div>
+      {sub && <div className="font-mono text-[0.7rem] mt-1 text-white/25">{sub}</div>}
     </div>
   );
 }
@@ -154,81 +162,113 @@ function CommandTab({ metrics, info, filter, config, squadData }: any) {
   if (metrics) Object.keys(metrics.tagResourceStress).forEach(t => { timeAvgData[t] = metrics.tagResourceStress[t].timeAvg; memAvgData[t] = metrics.tagResourceStress[t].memAvg; });
   let sortedWeaknesses = metrics ? Object.keys(metrics.weaknessRatios).sort((a,b) => metrics.weaknessRatios[b] - metrics.weaknessRatios[a]) : [];
 
+  const panelCls = "bg-[#020202] border border-white/[0.04] p-6";
+
   return (
-    <div className="flex flex-col gap-6 animate-in fade-in duration-400">
-      <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))" }}>
-        <StatCard label={`${filter==='ALL'?'Lifetime':'Context'} XP`} value={metrics.score.toLocaleString()} color="#f0a500" icon="⚡" />
-        <StatCard label="Unique AC" value={metrics.unique.toLocaleString()} color="#58a6ff" icon="🎯" />
-        <StatCard label="First-Try Acc" value={`${metrics.acc}%`} color="#d2a8ff" icon="🔬" />
-        <StatCard label="Upsolve Rate" value={`${metrics.upsolveRate}%`} color="#db6d28" icon="🔁" />
+    <div className="flex flex-col gap-8 animate-in fade-in duration-400">
+
+      {/* Stat row */}
+      <div className="grid gap-px bg-white/[0.04]" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))" }}>
+        <StatCard label={`${filter==='ALL'?'Lifetime':'Context'} XP`} value={metrics.score.toLocaleString()} color="#c5a059" icon="⚡" />
+        <StatCard label="Unique AC" value={metrics.unique.toLocaleString()} color="rgba(255,255,255,0.6)" icon="◎" />
+        <StatCard label="First-Try Acc" value={`${metrics.acc}%`} color="rgba(255,255,255,0.5)" icon="◈" />
+        <StatCard label="Upsolve Rate" value={`${metrics.upsolveRate}%`} color="rgba(255,255,255,0.4)" icon="↺" />
       </div>
 
-      <div className="rounded-2xl p-6" style={{ background: "rgba(227,179,65,0.05)", border: "1px solid #30363d", borderLeft: "4px solid #e3b341", boxShadow: "0 4px 20px rgba(0,0,0,0.2)" }}>
-        <div className="font-mono text-[0.65rem] text-[#e3b341] uppercase tracking-[3px] mb-3">👁️ THE ORACLE [TACTICAL DIRECTIVES]</div>
-        <div className="font-mono text-[0.95rem] leading-[1.6]">
+      {/* The Oracle */}
+      <div className="bg-[#020202] border border-white/[0.04] p-7 relative">
+        <div className="absolute top-0 left-0 w-full h-px bg-[#c5a059]/40" />
+        <div className="absolute top-0 left-0 w-px h-full bg-[#c5a059]/20" />
+        <p className="font-serif text-base font-normal text-white/70 tracking-wide mb-1">The Oracle</p>
+        <p className="font-mono text-[8px] tracking-[3px] uppercase text-white/20 mb-6">Tactical Directives</p>
+        <div className="font-mono text-sm leading-relaxed text-white/50">
           {sortedWeaknesses.length > 0 ? (
             <>
-              <div className="mb-2"><span className="text-[#f85149] font-bold">[!] CRITICAL VULNERABILITY:</span> Failure rate in <strong className="text-white">{sortedWeaknesses[0]}</strong> is highly inefficient. Upsolve {Math.floor((info.rating || 1200)/100)*100} - {Math.floor((info.rating || 1200)/100)*100 + 200} rated problems.</div>
-              {sortedWeaknesses.length > 1 && <div><span className="text-[#e3b341] font-bold">[*] SECONDARY TARGET:</span> <strong className="text-white">{sortedWeaknesses[1]}</strong>. Run drills in this sector.</div>}
+              <div className="mb-3">
+                <span className="text-[#f85149]/80 font-mono text-[9px] tracking-[2px] uppercase">Critical Vulnerability — </span>
+                <span className="text-white/60">Failure rate in <strong className="text-white/80 font-normal">{sortedWeaknesses[0]}</strong> is highly inefficient. Upsolve {Math.floor((info.rating || 1200)/100)*100}–{Math.floor((info.rating || 1200)/100)*100 + 200} rated problems.</span>
+              </div>
+              {sortedWeaknesses.length > 1 && (
+                <div>
+                  <span className="text-[#c5a059]/70 font-mono text-[9px] tracking-[2px] uppercase">Secondary Target — </span>
+                  <span className="text-white/60"><strong className="text-white/80 font-normal">{sortedWeaknesses[1]}</strong>. Run drills in this sector.</span>
+                </div>
+              )}
             </>
-          ) : "Awaiting analysis..."}
+          ) : <span className="text-white/20 font-mono text-[10px] tracking-[2px] uppercase">Awaiting analysis...</span>}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="rounded-2xl p-5" style={{ background: "#050505", border: "1px solid #1a1a1a" }}>
-          <div className="font-mono text-[0.65rem] text-[#58a6ff] uppercase tracking-[2px] mb-4">📡 RATING TRAJECTORY (MOMENTUM)</div>
-          <div className="h-[300px] relative"><RatingLineChart history={squadData[config.main].history} /></div>
+      {/* Rating trajectory + heatmap */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-px bg-white/[0.04]">
+        <div className={panelCls}>
+          <p className="font-serif text-sm font-normal text-white/55 tracking-wide mb-1">Rating Trajectory</p>
+          <p className="font-mono text-[8px] tracking-[3px] uppercase text-white/20 mb-5">Momentum</p>
+          <div className="h-[280px] relative"><RatingLineChart history={squadData[config.main].history} /></div>
         </div>
-        <div className="rounded-2xl p-5" style={{ background: "#050505", border: "1px solid #1a1a1a" }}>
-          <div className="font-mono text-[0.65rem] text-[#56d364] uppercase tracking-[2px] mb-4">🔥 ACTIVITY HEATMAP</div>
-          <div className="h-[300px] flex items-center justify-center overflow-x-auto"><ActivityHeatmap subs={metrics.rawSubsList} /></div>
-        </div>
-      </div>
-
-      <div className="rounded-2xl p-5" style={{ background: "#050505", border: "1px solid #1a1a1a" }}>
-        <div className="font-mono text-[0.65rem] text-[#f85149] uppercase tracking-[2px] mb-4">🩸 ALGORITHMIC WEAKNESS MATRIX (FAILS / AC RATIO)</div>
-        <div className="h-[400px] relative"><TacticalBarChart data={metrics.weaknessRatios} color="#f85149" horizontal={true} /></div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="rounded-2xl p-5" style={{ background: "#050505", border: "1px solid #1a1a1a" }}>
-          <div className="font-mono text-[0.65rem] text-[#e879f9] uppercase tracking-[2px] mb-4">⏳ TIME EXECUTION STRESS (AVG MS)</div>
-          <div className="h-[300px] relative"><StressBarChart data={timeAvgData} type="time" /></div>
-        </div>
-        <div className="rounded-2xl p-5" style={{ background: "#050505", border: "1px solid #1a1a1a" }}>
-          <div className="font-mono text-[0.65rem] text-[#d2a8ff] uppercase tracking-[2px] mb-4">💾 MEMORY FOOTPRINT STRESS (AVG MB)</div>
-          <div className="h-[300px] relative"><StressBarChart data={memAvgData} type="memory" /></div>
+        <div className={panelCls}>
+          <p className="font-serif text-sm font-normal text-white/55 tracking-wide mb-1">Activity Heatmap</p>
+          <p className="font-mono text-[8px] tracking-[3px] uppercase text-white/20 mb-5">6-month cadence</p>
+          <div className="h-[280px] flex items-center justify-center overflow-x-auto"><ActivityHeatmap subs={metrics.rawSubsList} /></div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="rounded-2xl p-5" style={{ background: "#050505", border: "1px solid #1a1a1a" }}>
-          <div className="font-mono text-[0.65rem] text-[#f0a500] uppercase tracking-[2px] mb-4">⚡ RESOURCE DISTRIBUTION</div>
-          <div className="h-[300px] relative"><ResourceScatterChart subs={metrics.rawSubsList} /></div>
+      {/* Algorithmic Weakness Matrix */}
+      <div className={panelCls}>
+        <p className="font-serif text-sm font-normal text-white/55 tracking-wide mb-1">Algorithmic Weakness Matrix</p>
+        <p className="font-mono text-[8px] tracking-[3px] uppercase text-white/20 mb-5">Fails / AC ratio</p>
+        <div className="h-[380px] relative"><TacticalBarChart data={metrics.weaknessRatios} color="#f85149" horizontal={true} /></div>
+      </div>
+
+      {/* Time + Memory stress */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-px bg-white/[0.04]">
+        <div className={panelCls}>
+          <p className="font-serif text-sm font-normal text-white/55 tracking-wide mb-1">Time Execution Stress</p>
+          <p className="font-mono text-[8px] tracking-[3px] uppercase text-white/20 mb-5">Avg ms per tag</p>
+          <div className="h-[280px] relative"><StressBarChart data={timeAvgData} type="time" /></div>
         </div>
-        <div className="rounded-2xl p-5" style={{ background: "#050505", border: "1px solid #1a1a1a" }}>
-          <div className="font-mono text-[0.65rem] text-[#58a6ff] uppercase tracking-[2px] mb-4">⏰ CHRONOTYPE ANALYSIS</div>
-          <div className="h-[300px] relative"><ChronotypeChart subs={metrics.rawSubsList} /></div>
+        <div className={panelCls}>
+          <p className="font-serif text-sm font-normal text-white/55 tracking-wide mb-1">Memory Footprint Stress</p>
+          <p className="font-mono text-[8px] tracking-[3px] uppercase text-white/20 mb-5">Avg MB per tag</p>
+          <div className="h-[280px] relative"><StressBarChart data={memAvgData} type="memory" /></div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="rounded-2xl p-5" style={{ background: "#050505", border: "1px solid #1a1a1a" }}>
-          <div className="font-mono text-[0.65rem] text-[#56d364] uppercase tracking-[2px] mb-4">🕸 ALGORITHMIC MASTERY</div>
-          <div className="h-[300px] relative"><TagsRadarChart data={metrics.tagsDist} handle={info.handle} /></div>
+      {/* Resource scatter + Chronotype */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-px bg-white/[0.04]">
+        <div className={panelCls}>
+          <p className="font-serif text-sm font-normal text-white/55 tracking-wide mb-1">Resource Distribution</p>
+          <p className="font-mono text-[8px] tracking-[3px] uppercase text-white/20 mb-5">Time vs Memory scatter</p>
+          <div className="h-[280px] relative"><ResourceScatterChart subs={metrics.rawSubsList} /></div>
         </div>
-        <div className="rounded-2xl p-5" style={{ background: "#050505", border: "1px solid #1a1a1a" }}>
-          <div className="font-mono text-[0.65rem] text-[#db6d28] uppercase tracking-[2px] mb-4">⏱ TIME-TO-SOLVE (DEBUG SPEED)</div>
-          <div className="h-[300px] relative"><TimeToSolveChart data={metrics.timeToSolveDist} /></div>
+        <div className={panelCls}>
+          <p className="font-serif text-sm font-normal text-white/55 tracking-wide mb-1">Chronotype Analysis</p>
+          <p className="font-mono text-[8px] tracking-[3px] uppercase text-white/20 mb-5">Peak solve hours</p>
+          <div className="h-[280px] relative"><ChronotypeChart subs={metrics.rawSubsList} /></div>
         </div>
-        <div className="rounded-2xl p-5" style={{ background: "#050505", border: "1px solid #1a1a1a" }}>
-          <div className="font-mono text-[0.65rem] text-[#58a6ff] uppercase tracking-[2px] mb-4">📊 PROBLEM RATING DISTRIBUTION</div>
-          <div className="h-[300px] relative"><TacticalBarChart data={metrics.ratingsDist} color="#58a6ff" /></div>
+      </div>
+
+      {/* Bottom 4-chart grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-px bg-white/[0.04]">
+        <div className={panelCls}>
+          <p className="font-serif text-sm font-normal text-white/55 tracking-wide mb-1">Algorithmic Mastery</p>
+          <p className="font-mono text-[8px] tracking-[3px] uppercase text-white/20 mb-5">Tag radar</p>
+          <div className="h-[280px] relative"><TagsRadarChart data={metrics.tagsDist} handle={info.handle} /></div>
         </div>
-        <div className="rounded-2xl p-5" style={{ background: "#050505", border: "1px solid #1a1a1a" }}>
-          <div className="font-mono text-[0.65rem] text-[#8b949e] uppercase tracking-[2px] mb-4">🚫 SUBMISSION VERDICTS</div>
-          <div className="h-[300px] relative"><VerdictChart data={metrics.verdictsDist} /></div>
+        <div className={panelCls}>
+          <p className="font-serif text-sm font-normal text-white/55 tracking-wide mb-1">Time-to-Solve</p>
+          <p className="font-mono text-[8px] tracking-[3px] uppercase text-white/20 mb-5">Debug speed distribution</p>
+          <div className="h-[280px] relative"><TimeToSolveChart data={metrics.timeToSolveDist} /></div>
+        </div>
+        <div className={panelCls}>
+          <p className="font-serif text-sm font-normal text-white/55 tracking-wide mb-1">Problem Rating Distribution</p>
+          <p className="font-mono text-[8px] tracking-[3px] uppercase text-white/20 mb-5">AC by difficulty</p>
+          <div className="h-[280px] relative"><TacticalBarChart data={metrics.ratingsDist} color="#c5a059" /></div>
+        </div>
+        <div className={panelCls}>
+          <p className="font-serif text-sm font-normal text-white/55 tracking-wide mb-1">Submission Verdicts</p>
+          <p className="font-mono text-[8px] tracking-[3px] uppercase text-white/20 mb-5">Outcome distribution</p>
+          <div className="h-[280px] relative"><VerdictChart data={metrics.verdictsDist} /></div>
         </div>
       </div>
     </div>
@@ -237,68 +277,98 @@ function CommandTab({ metrics, info, filter, config, squadData }: any) {
 
 function SquadOpsTab({ squadMatrix, config, squadCharts, bounties }: any) {
   const allPlayers = [config.main, ...config.squad].filter(h => squadMatrix[h]).sort((a,b) => (squadMatrix[b].info.rating || 0) - (squadMatrix[a].info.rating || 0));
-  
+  const panelCls = "bg-[#020202] border border-white/[0.04] p-6";
+
   return (
-    <div className="flex flex-col gap-6 animate-in fade-in duration-400">
-      <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))" }}>
+    <div className="flex flex-col gap-8 animate-in fade-in duration-400">
+
+      {/* Player cards */}
+      <div className="grid gap-px bg-white/[0.04]" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))" }}>
         {allPlayers.map((handle, i) => {
           const p = squadMatrix[handle];
-          const color = handle === config.main ? '#f0a500' : SQUAD_COLORS[i % SQUAD_COLORS.length];
+          const color = handle === config.main ? '#c5a059' : SQUAD_COLORS[i % SQUAD_COLORS.length];
           return (
-            <div key={handle} className="relative overflow-hidden rounded-2xl p-6" style={{ background: `radial-gradient(ellipse at top left, ${color}08 0%, #050505 70%)`, border: `1px solid ${color}33`, boxShadow: `0 0 24px ${color}0a` }}>
+            <div key={handle} className="relative bg-[#020202] p-7 hover:bg-white/[0.02] transition-all duration-200">
               <TopLine color={color} />
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl" style={{ background: `${color}22`, border: `1px solid ${color}44` }}>
-                  {i === 0 ? "👑" : i === 1 ? "⚔️" : "🛡️"}
+              <div className="flex items-center gap-4 mb-6">
+                <div className="w-8 h-8 flex items-center justify-center text-base border border-white/[0.07] bg-[#020202] text-white/30">
+                  {i === 0 ? "◈" : i === 1 ? "◇" : "○"}
                 </div>
                 <div>
-                  <div className="font-mono font-bold text-base" style={{ color: color }}>{handle} {handle === config.main && <span className="text-[10px] text-[#444] tracking-widest">[YOU]</span>}</div>
-                  <div className="font-mono text-[0.6rem] uppercase tracking-wider" style={{ color: "#555" }}>{p.info.rank || 'Unrated'}</div>
+                  <div className="font-mono text-sm tracking-wide" style={{ color }}>
+                    {handle}
+                    {handle === config.main && <span className="text-[9px] text-white/20 tracking-[3px] ml-2">you</span>}
+                  </div>
+                  <div className="font-mono text-[9px] uppercase tracking-[2px] text-white/20 mt-0.5">{p.info.rank || 'Unrated'}</div>
                 </div>
               </div>
-              <div className="grid grid-cols-3 gap-2">
-                {[["Rating", p.info.rating || 0, color],["Unique AC", p.metrics.unique, "#ddd"],["Accuracy", p.metrics.acc + "%", "#ddd"]].map(([l, v, c]) => (
+              <div className="grid grid-cols-3 gap-4">
+                {[["Rating", p.info.rating || 0, color], ["Unique AC", p.metrics.unique, "rgba(255,255,255,0.5)"], ["Accuracy", p.metrics.acc + "%", "rgba(255,255,255,0.4)"]].map(([l, v, c]) => (
                   <div key={l as string} className="text-center">
-                    <div className="font-mono text-base font-black" style={{ color: c as string }}>{v}</div>
-                    <div className="font-mono text-[0.55rem] uppercase tracking-wider mt-0.5" style={{ color: "#444" }}>{l}</div>
+                    <div className="font-mono text-base font-light" style={{ color: c as string }}>{v}</div>
+                    <div className="font-mono text-[8px] uppercase tracking-[2px] mt-1 text-white/20">{l}</div>
                   </div>
                 ))}
               </div>
             </div>
-          )
+          );
         })}
       </div>
 
-      <div className="rounded-2xl p-6" style={{ background: "#050505", border: "1px solid #1a1a1a", borderLeft: "4px solid #f85149" }}>
-        <div className="font-mono text-[0.65rem] uppercase tracking-[3px] mb-4 text-[#f85149]">🪦 THE GRAVEYARD [ACTIVE BOUNTIES]</div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* The Graveyard */}
+      <div className="bg-[#020202] border border-white/[0.04] p-7 relative">
+        <div className="absolute top-0 left-0 w-full h-px bg-[#f85149]/40" />
+        <div className="absolute top-0 left-0 w-px h-full bg-[#f85149]/20" />
+        <p className="font-serif text-base font-normal text-white/70 tracking-wide mb-1">The Graveyard</p>
+        <p className="font-mono text-[8px] tracking-[3px] uppercase text-white/20 mb-7">Active Bounties</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-px bg-white/[0.04]">
           {bounties.map((b: any) => (
-            <div key={b.pid} className={`bg-[rgba(0,0,0,0.3)] border border-[#1a1a1a] rounded-[8px] p-[15px] flex flex-col gap-[10px] border-l-[3px] ${b.isOwn ? 'border-l-[#f85149]' : 'border-l-[#e3b341]'}`}>
-              <div className="flex justify-between items-start"><span className="text-[#58a6ff] font-bold text-[1rem] leading-[1.2] pr-[10px]">{b.name}</span><span className="text-[#e3b341] font-mono text-[0.7rem] font-bold bg-[rgba(227,179,65,0.1)] px-[6px] py-[2px] rounded-[4px]">{b.pts} PTS</span></div>
-              <p className="text-[0.75rem] text-[#8b949e] m-0 font-mono">Failed {b.fails}x by <span className="text-[#f85149] font-bold">{b.victim}</span></p>
-              <a href={`https://codeforces.com/contest/${b.prob.contestId}/problem/${b.prob.index}`} target="_blank" className={`mt-auto text-center font-mono text-[0.7rem] font-bold p-[8px] border rounded-[6px] transition-colors no-underline ${b.btnClass}`}>{b.status}</a>
+            <div key={b.pid} className={`bg-[#020202] p-4 flex flex-col gap-3 border-l hover:bg-white/[0.02] transition-all duration-200 ${b.isOwn ? 'border-l-[#f85149]/50' : 'border-l-[#c5a059]/30'}`}>
+              <div className="flex justify-between items-start gap-2">
+                <span className="font-mono text-xs text-white/55 leading-snug">{b.name}</span>
+                <span className="font-mono text-[9px] text-[#c5a059]/60 shrink-0 tabular-nums">{b.pts}</span>
+              </div>
+              <p className="font-mono text-[9px] uppercase tracking-[1px] text-white/20 m-0">
+                Failed {b.fails}× by <span className={b.isOwn ? "text-[#f85149]/60" : "text-white/35"}>{b.victim}</span>
+              </p>
+              <a
+                href={`https://codeforces.com/contest/${b.prob.contestId}/problem/${b.prob.index}`}
+                target="_blank"
+                className={`mt-auto text-center font-mono text-[9px] tracking-[2px] uppercase py-2 border transition-all duration-200 no-underline ${b.isOwn ? 'border-[#f85149]/40 text-[#f85149]/60 hover:border-[#f85149]/70 hover:text-[#f85149]' : b.isSniped ? 'border-white/10 text-white/20 pointer-events-none' : 'border-[#c5a059]/35 text-[#c5a059]/60 hover:border-[#c5a059]/70 hover:text-[#c5a059]'}`}
+              >
+                {b.isSniped ? 'Sniped' : b.isOwn ? 'Upsolve' : 'Engage'}
+              </a>
             </div>
           ))}
-          {bounties.length === 0 && <div className="col-span-4 text-[#8b949e] font-mono italic">No active bounties. The squad is clean.</div>}
+          {bounties.length === 0 && (
+            <div className="col-span-4 font-mono text-[9px] tracking-[3px] uppercase text-white/15 py-10 text-center">
+              // No active bounties. The squad is clean.
+            </div>
+          )}
         </div>
       </div>
 
-      <div className="rounded-2xl p-6" style={{ background: "#050505", border: "1px solid #1a1a1a" }}>
-        <div className="font-mono text-[0.65rem] uppercase tracking-[3px] mb-4" style={{ color: "#888" }}>⚔️ THE CRUCIBLE — 1v1 COMBINATORIAL DUELS</div>
-        <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))" }}>
+      {/* The Crucible */}
+      <div className="bg-[#020202] border border-white/[0.04] p-7">
+        <p className="font-serif text-base font-normal text-white/70 tracking-wide mb-1">The Crucible</p>
+        <p className="font-mono text-[8px] tracking-[3px] uppercase text-white/20 mb-7">1v1 Combinatorial Duels</p>
+        <div className="grid gap-px bg-white/[0.04]" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))" }}>
           {allPlayers.map((a, i) => allPlayers.slice(i+1).map(b => {
             const pa = squadMatrix[a]; const pb = squadMatrix[b];
-            const ca = a === config.main ? '#f0a500' : '#58a6ff'; const cb = b === config.main ? '#f0a500' : '#58a6ff';
+            const ca = a === config.main ? '#c5a059' : 'rgba(255,255,255,0.45)';
+            const cb = b === config.main ? '#c5a059' : 'rgba(255,255,255,0.45)';
             return (
-              <div key={`${a}-${b}`} className="rounded-xl p-5" style={{ background: "#0a0a0a", border: "1px solid #1a1a1a" }}>
-                <div className="flex justify-between mb-3 font-mono">
-                  <span className="font-bold" style={{ color: ca }}>{a}</span><span className="text-[0.7rem]" style={{ color: "#333" }}>VS</span><span className="font-bold" style={{ color: cb }}>{b}</span>
+              <div key={`${a}-${b}`} className="bg-[#020202] p-6">
+                <div className="flex justify-between mb-5 font-mono">
+                  <span className="text-xs" style={{ color: ca }}>{a}</span>
+                  <span className="font-mono text-[8px] tracking-[3px] uppercase text-white/15">vs</span>
+                  <span className="text-xs" style={{ color: cb }}>{b}</span>
                 </div>
-                {[["Rating", pa.info.rating||0, pb.info.rating||0],["Unique AC", pa.metrics.unique, pb.metrics.unique],["Accuracy", pa.metrics.acc, pb.metrics.acc]].map(([l, v1, v2]) => (
-                  <div key={l as string} className="flex justify-between font-mono text-[0.75rem] mb-1.5">
-                    <span style={{ color: (v1 as number) >= (v2 as number) ? "#56d364" : "#f85149", fontWeight: (v1 as number) >= (v2 as number) ? 700 : 400 }}>{v1}</span>
-                    <span className="uppercase text-[0.6rem]" style={{ color: "#444" }}>{l}</span>
-                    <span style={{ color: (v2 as number) >= (v1 as number) ? "#56d364" : "#f85149", fontWeight: (v2 as number) >= (v1 as number) ? 700 : 400 }}>{v2}</span>
+                {[["Rating", pa.info.rating||0, pb.info.rating||0], ["Unique AC", pa.metrics.unique, pb.metrics.unique], ["Accuracy", pa.metrics.acc, pb.metrics.acc]].map(([l, v1, v2]) => (
+                  <div key={l as string} className="flex justify-between font-mono text-xs mb-3">
+                    <span style={{ color: (v1 as number) >= (v2 as number) ? "rgba(255,255,255,0.7)" : "#f85149", fontWeight: (v1 as number) >= (v2 as number) ? 500 : 400 }}>{v1}</span>
+                    <span className="font-mono text-[8px] uppercase tracking-[2px] text-white/20">{l}</span>
+                    <span style={{ color: (v2 as number) >= (v1 as number) ? "rgba(255,255,255,0.7)" : "#f85149", fontWeight: (v2 as number) >= (v1 as number) ? 500 : 400 }}>{v2}</span>
                   </div>
                 ))}
               </div>
@@ -308,10 +378,25 @@ function SquadOpsTab({ squadMatrix, config, squadCharts, bounties }: any) {
       </div>
 
       {squadCharts && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="rounded-2xl p-5" style={{ background: "#050505", border: "1px solid #1a1a1a" }}><div className="font-mono text-[0.65rem] text-[#58a6ff] uppercase tracking-[2px] mb-4">RATING WARFARE</div><div className="h-[300px]"><Line data={squadCharts.lineData} options={{ responsive: true, maintainAspectRatio: false, scales: { x: { display: false }, y: { grid: { color: '#1a1a1a' }, ticks: {font: {family: 'monospace'}}} }, plugins: { legend: { labels: { color: '#e0e6ed', font: { family: 'monospace' } } } } }} /></div></div>
-          <div className="rounded-2xl p-5" style={{ background: "#050505", border: "1px solid #1a1a1a" }}><div className="font-mono text-[0.65rem] text-[#f0a500] uppercase tracking-[2px] mb-4">TACTICAL SPRINTS</div><div className="h-[300px]"><Bar data={squadCharts.sprintData} options={{ responsive: true, maintainAspectRatio: false, scales: { x: { grid: { display: false }, ticks: {font: {family: 'monospace'}} }, y: { grid: { color: '#1a1a1a' } } }, plugins: { legend: { labels: { color: '#e0e6ed', font: { family: 'monospace' } } } } }} /></div></div>
-          <div className="rounded-2xl p-5 md:col-span-2" style={{ background: "#050505", border: "1px solid #1a1a1a" }}><div className="font-mono text-[0.65rem] text-[#e879f9] uppercase tracking-[2px] mb-4">THE TRIAD (COMBINED RADAR)</div><div className="h-[400px]"><Radar data={squadCharts.radarData} options={{ responsive: true, maintainAspectRatio: false, scales: { r: { angleLines: { color: '#1a1a1a' }, grid: { color: '#1a1a1a' }, ticks: { display: false }, pointLabels: { color: '#8b949e', font: {family: 'monospace'} } } }, plugins: { legend: { position: 'top', labels: { color: '#e0e6ed', font: { family: 'monospace' } } } } }} /></div></div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-px bg-white/[0.04]">
+          <div className={panelCls}>
+            <p className="font-mono text-[9px] tracking-[3px] uppercase text-white/20 mb-5">Rating Warfare</p>
+            <div className="h-[280px]">
+              <Line data={squadCharts.lineData} options={{ responsive: true, maintainAspectRatio: false, scales: { x: { display: false }, y: { grid: { color: 'rgba(255,255,255,0.02)' }, ticks: { font: { family: 'monospace' }, color: 'rgba(255,255,255,0.2)' }, border: { display: false } } }, plugins: { legend: { labels: { color: 'rgba(255,255,255,0.25)', font: { family: 'monospace', size: 10 }, boxWidth: 8 } } } }} />
+            </div>
+          </div>
+          <div className={panelCls}>
+            <p className="font-mono text-[9px] tracking-[3px] uppercase text-white/20 mb-5">Tactical Sprints</p>
+            <div className="h-[280px]">
+              <Bar data={squadCharts.sprintData} options={{ responsive: true, maintainAspectRatio: false, scales: { x: { grid: { display: false }, ticks: { font: { family: 'monospace' }, color: 'rgba(255,255,255,0.2)' }, border: { display: false } }, y: { grid: { color: 'rgba(255,255,255,0.02)' }, ticks: { color: 'rgba(255,255,255,0.2)' }, border: { display: false } } }, plugins: { legend: { labels: { color: 'rgba(255,255,255,0.25)', font: { family: 'monospace', size: 10 }, boxWidth: 8 } } } }} />
+            </div>
+          </div>
+          <div className={`${panelCls} md:col-span-2`}>
+            <p className="font-mono text-[9px] tracking-[3px] uppercase text-white/20 mb-5">The Triad — Combined Radar</p>
+            <div className="h-[380px]">
+              <Radar data={squadCharts.radarData} options={{ responsive: true, maintainAspectRatio: false, scales: { r: { angleLines: { display: false }, grid: { color: 'rgba(255,255,255,0.03)' }, ticks: { display: false }, pointLabels: { color: 'rgba(255,255,255,0.2)', font: { family: 'monospace', size: 9 } } } }, plugins: { legend: { position: 'bottom', labels: { color: 'rgba(255,255,255,0.25)', font: { family: 'monospace', size: 10 }, boxWidth: 8 } } } }} />
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -319,38 +404,52 @@ function SquadOpsTab({ squadMatrix, config, squadCharts, bounties }: any) {
 }
 
 function TitanTab({ squadData, config }: any) {
-  if (!squadData[config.titan]) return <div className="text-center py-20 text-[#8b949e] font-mono animate-in fade-in">NO TITAN CONFIGURED. Access settings to lock target.</div>;
+  if (!squadData[config.titan]) return (
+    <div className="text-center py-20 font-mono text-[9px] tracking-[4px] uppercase text-white/15 animate-in fade-in">
+      // No Titan configured. Access settings to lock target.
+    </div>
+  );
   const tData = squadData[config.titan].info;
   const myRating = squadData[config.main].info.rating || 0;
   const tRating = tData.rating || 0;
   const gap = tRating - myRating;
 
   return (
-    <div className="flex flex-col gap-6 animate-in fade-in duration-400">
-      <div className="relative overflow-hidden rounded-[20px] p-8" style={{ background: "radial-gradient(ellipse at top, #1a0000 0%, #050505 70%)", border: "1px solid #f8514944", boxShadow: "0 0 40px #f8514915" }}>
-        <TopLine color="#f85149" />
-        <div className="absolute bottom-0 right-0 text-[8rem] opacity-[0.03] leading-none">💀</div>
+    <div className="flex flex-col gap-8 animate-in fade-in duration-400">
+
+      {/* Titan profile card */}
+      <div className="bg-[#020202] border border-white/[0.05] p-8 relative">
+        <div className="absolute top-0 left-0 w-full h-px bg-[#f85149]/50" />
+        <div className="absolute top-0 left-0 w-px h-full bg-[#f85149]/20" />
         <div className="flex items-center gap-8">
-          <img src={tData.titlePhoto} alt="Titan" className="w-20 h-20 rounded-2xl border-2 object-cover" style={{ borderColor: "#f8514966" }} />
+          <img src={tData.titlePhoto} alt="Titan" className="w-16 h-16 object-cover border border-[#f85149]/20" />
           <div>
-            <div className="font-mono text-[1.8rem] font-black tracking-tight text-[#f85149]">{tData.handle}</div>
-            <div className="font-mono text-[0.6rem] uppercase tracking-[3px]" style={{ color: "#666" }}>DESIGNATED TITAN — ASSASSINATION TARGET</div>
-            <div className="font-mono text-[1.4rem] font-bold text-[#f0a500] mt-1">
-              {tRating} <span className="text-[0.7rem]" style={{ color: "#666" }}>CURRENT RATING</span>
+            <div className="font-serif text-2xl font-normal text-[#f85149]/80 tracking-wide">{tData.handle}</div>
+            <div className="font-mono text-[9px] uppercase tracking-[4px] text-white/20 mt-1 mb-3">Designated Titan — Assassination Target</div>
+            <div className="font-mono text-2xl font-light text-[#c5a059]/80">
+              {tRating} <span className="font-mono text-[9px] tracking-[2px] uppercase text-white/25">current rating</span>
             </div>
           </div>
         </div>
       </div>
-      <div className="rounded-xl p-6" style={{ background: "#050505", borderLeft: "4px solid #f85149", border: "1px solid #f8514922" }}>
-        <div className="font-mono text-[0.65rem] text-[#f85149] uppercase tracking-[3px] mb-4">📋 ASSASSINATION PROTOCOL</div>
-        <div className="font-mono text-base leading-relaxed" style={{ color: "#e0e6ed" }}>
+
+      {/* Assassination Protocol */}
+      <div className="bg-[#020202] border border-white/[0.04] p-7 relative">
+        <div className="absolute top-0 left-0 w-full h-px bg-[#f85149]/30" />
+        <div className="absolute top-0 left-0 w-px h-full bg-[#f85149]/15" />
+        <p className="font-serif text-base font-normal text-white/70 tracking-wide mb-1">Assassination Protocol</p>
+        <p className="font-mono text-[8px] tracking-[3px] uppercase text-white/20 mb-6">Intercept analysis</p>
+        <div className="font-mono text-sm leading-loose text-white/50">
           {gap <= 0 ? (
-            <>Target neutralized. You surpassed <span className="text-[#f0a500] font-bold">{config.titan}</span> by {Math.abs(gap)} points. Find a new Titan.</>
+            <>Target neutralized. You surpassed <span className="text-[#c5a059]/80">{config.titan}</span> by {Math.abs(gap)} points. Find a new Titan.</>
           ) : (
             <>
-              Titan <span className="text-[#f0a500] font-bold">{config.titan}</span> is <span className="text-[#f85149] font-black text-xl">{gap}</span> points ahead.<br />
-              Target protocol: Sustain First-Try ACs on <span className="text-[#f0a500] font-bold">{Math.floor((tRating || 1500)/100)*100}+</span> rated problems.<br />
-              Estimated intercept: <span className="text-[#56d364]">~{Math.ceil(gap/15)} contest cycles</span> at current velocity.
+              Titan <span className="text-[#c5a059]/80">{config.titan}</span> is{" "}
+              <span className="text-[#f85149] font-mono text-lg font-light">{gap}</span> points ahead.<br />
+              Target protocol: Sustain First-Try ACs on{" "}
+              <span className="text-[#c5a059]/80">{Math.floor((tRating || 1500)/100)*100}+</span> rated problems.<br />
+              Estimated intercept:{" "}
+              <span className="text-white/60">~{Math.ceil(gap/15)} contest cycles</span> at current velocity.
             </>
           )}
         </div>
@@ -387,7 +486,7 @@ export default function Home() {
 
   const fetchGlobalTelemetry = async (mainH: string, squadH: string[], titanH: string) => {
     if (!mainH) return;
-    setLoading(true); setLoadingMsg(`ESTABLISHING SECURE UPLINK...`);
+    setLoading(true); setLoadingMsg(`Establishing secure uplink...`);
     const newSquadData: Record<string, any> = {};
     const allHandles = [mainH, ...squadH, titanH].filter(Boolean);
 
@@ -404,7 +503,7 @@ export default function Home() {
       if (infoResult) allHandles.forEach(h => { const info = infoResult.find((u: any) => u.handle.toLowerCase() === h.toLowerCase()); if (info) newSquadData[h] = { handle: h, info: info, rawSubs: [], history: [] }; });
       for (const h of allHandles) {
         if (!newSquadData[h]) continue; 
-        setLoadingMsg(`SYNCING OPERATIVE: ${h.toUpperCase()}...`);
+        setLoadingMsg(`Syncing operative: ${h.toUpperCase()}...`);
         const subs = await fetchCF(`https://codeforces.com/api/user.status?handle=${h}`); if (subs) newSquadData[h].rawSubs = subs;
         const history = await fetchCF(`https://codeforces.com/api/user.rating?handle=${h}`); if (history) newSquadData[h].history = history;
       }
@@ -451,8 +550,8 @@ export default function Home() {
     globalBounties.sort((a, b) => b.pts - a.pts || b.fails - a.fails).forEach(b => {
       if (!uniqueBounties.find(ub => ub.pid === b.pid)) {
         const isOwn = b.victim === config.main; const isSniped = absSolves.has(b.pid) && !isOwn;
-        let btnClass = isOwn ? 'bg-[rgba(248,81,73,0.1)] border-[#f85149] text-[#f85149]' : (isSniped ? 'bg-[rgba(46,160,67,0.1)] border-[#2ea043] text-[#2ea043] pointer-events-none' : 'bg-[rgba(227,179,65,0.1)] border-[#e3b341] text-[#e3b341] hover:bg-[#e3b341] hover:text-black');
-        let status = isOwn ? '🛠️ UPSOLVE REQUIRED' : (isSniped ? '🎯 ALREADY SNIPED' : '🔫 INITIATE SNIPE');
+        let btnClass = isOwn ? 'border-[#f85149]/40 text-[#f85149]/60' : (isSniped ? 'border-white/10 text-white/20 pointer-events-none' : 'border-[#c5a059]/35 text-[#c5a059]/60 hover:border-[#c5a059]/70 hover:text-[#c5a059]');
+        let status = isOwn ? 'Upsolve Required' : (isSniped ? 'Already Sniped' : 'Initiate Snipe');
         uniqueBounties.push({ ...b, status, btnClass, isOwn, isSniped });
       }
     });
@@ -555,13 +654,13 @@ export default function Home() {
   const squadCharts = useMemo(() => {
     if (!squadMatrix[config.main]) return null;
     const players = Object.keys(squadMatrix).sort((a,b) => (squadMatrix[b].info.rating||0) - (squadMatrix[a].info.rating||0));
-    const sprintData = { labels: players, datasets: [ { label: '7-Day Score', data: players.map(p => squadMatrix[p].metrics.weeklyScore), backgroundColor: '#f85149', borderRadius: 4 }, { label: '30-Day Score', data: players.map(p => squadMatrix[p].metrics.monthlyScore), backgroundColor: '#d2a8ff', borderRadius: 4 } ] };
+    const sprintData = { labels: players, datasets: [ { label: '7-Day Score', data: players.map(p => squadMatrix[p].metrics.weeklyScore), backgroundColor: 'rgba(248,81,73,0.5)', borderRadius: 2, borderWidth: 0 }, { label: '30-Day Score', data: players.map(p => squadMatrix[p].metrics.monthlyScore), backgroundColor: 'rgba(197,160,89,0.45)', borderRadius: 2, borderWidth: 0 } ] };
     let allTags: Record<string, number> = {}; players.forEach(p => Object.keys(squadMatrix[p].metrics.tagsDist).forEach(t => allTags[t] = (allTags[t] || 0) + squadMatrix[p].metrics.tagsDist[t]));
     const topTags = Object.keys(allTags).sort((a,b) => allTags[b] - allTags[a]).slice(0, 15);
-    const radarData = { labels: topTags, datasets: players.map((p, i) => ({ label: p, data: topTags.map(t => squadMatrix[p].metrics.tagsDist[t] || 0), borderColor: p === config.main ? '#e3b341' : SQUAD_COLORS[i % SQUAD_COLORS.length], backgroundColor: p === config.main ? 'rgba(227, 179, 65, 0.2)' : 'transparent', borderDash: p === config.main ? [] : [5, 5], borderWidth: 2 })) };
+    const radarData = { labels: topTags, datasets: players.map((p, i) => ({ label: p, data: topTags.map(t => squadMatrix[p].metrics.tagsDist[t] || 0), borderColor: p === config.main ? '#c5a059' : SQUAD_COLORS[i % SQUAD_COLORS.length], backgroundColor: p === config.main ? 'rgba(197,160,89,0.04)' : 'transparent', borderDash: p === config.main ? [] : [5, 5], borderWidth: 1, pointRadius: 2 })) };
     let allTS = new Set<number>(); players.forEach(p => Object.values(squadMatrix[p].history).forEach((h:any) => allTS.add(h.ratingUpdateTimeSeconds)));
     const sortedTS = Array.from(allTS).sort((a,b) => a-b);
-    const lineData = { labels: sortedTS.map(ts => { const d = new Date(ts*1000); return `${d.getMonth()+1}/${d.getFullYear().toString().substring(2)}`; }), datasets: players.map((p, i) => { let data: number[] = []; let lastR = squadMatrix[p].history.length ? (squadMatrix[p].history[0].oldRating || 1500) : 1500; let hMap: Record<number, number> = {}; squadMatrix[p].history.forEach((h:CFRating) => hMap[h.ratingUpdateTimeSeconds] = h.newRating); sortedTS.forEach(ts => { if(hMap[ts]) lastR = hMap[ts]; data.push(lastR); }); return { label: p, data, borderColor: p === config.main ? '#e3b341' : SQUAD_COLORS[i % SQUAD_COLORS.length], backgroundColor: 'transparent', borderWidth: 2, pointRadius: 2, tension: 0.2 } }) };
+    const lineData = { labels: sortedTS.map(ts => { const d = new Date(ts*1000); return `${d.getMonth()+1}/${d.getFullYear().toString().substring(2)}`; }), datasets: players.map((p, i) => { let data: number[] = []; let lastR = squadMatrix[p].history.length ? (squadMatrix[p].history[0].oldRating || 1500) : 1500; let hMap: Record<number, number> = {}; squadMatrix[p].history.forEach((h:CFRating) => hMap[h.ratingUpdateTimeSeconds] = h.newRating); sortedTS.forEach(ts => { if(hMap[ts]) lastR = hMap[ts]; data.push(lastR); }); return { label: p, data, borderColor: p === config.main ? '#c5a059' : SQUAD_COLORS[i % SQUAD_COLORS.length], backgroundColor: 'transparent', borderWidth: 1, pointRadius: 0, tension: 0.2 } }) };
     return { sprintData, radarData, lineData, players };
   }, [squadMatrix, config.main]);
 
@@ -579,63 +678,102 @@ export default function Home() {
   const timeStr = new Date().toTimeString().slice(0, 8);
 
   return (
-    <div className="min-h-screen bg-[#030305] text-[#e0e6ed] selection:bg-[#f0a500] font-sans">
+    <div className="min-h-screen bg-[#000000] text-[#d1d5db] selection:bg-[#c5a059]/30 font-mono">
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)} onSave={(newCfg) => { setConfig(newCfg); setHandle(newCfg.main); setShowSettings(false); fetchGlobalTelemetry(newCfg.main, newCfg.squad, newCfg.titan); }} />}
+
       <style>{`
-        @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.5;transform:scale(0.85)} }
-        @keyframes flicker { 0%,100%{opacity:1} 92%{opacity:1} 93%{opacity:0.8} 94%{opacity:1} }
+        @keyframes blink { 0%,49%{opacity:1} 50%,100%{opacity:0} }
+        @keyframes flicker { 0%,100%{opacity:1} 92%{opacity:1} 93%{opacity:0.6} 94%{opacity:1} }
         * { box-sizing: border-box; }
-        ::-webkit-scrollbar{width:4px;background:#050505} ::-webkit-scrollbar-thumb{background:#1a1a1a;border-radius:2px}
       `}</style>
 
-      <div className="fixed inset-0 pointer-events-none z-0" style={{ background: "repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px)" }} />
-
-      <header className="sticky top-0 z-50 border-b border-[#1a1a2a] px-8" style={{ background: "rgba(3,3,5,0.95)", backdropFilter: "blur(16px)" }}>
+      {/* Header — flat black, no blur */}
+      <header className="sticky top-0 z-50 border-b border-white/[0.05] bg-[#000000] px-8">
         <div className="max-w-[1400px] mx-auto">
-          <div className="flex items-center justify-between py-3">
-            <div className="flex items-center gap-4">
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center text-base" style={{ background: "linear-gradient(135deg,#f0a500,#f85149)", boxShadow: "0 0 16px #f0a50044" }}>⚡</div>
+          <div className="flex items-center justify-between py-4">
+
+            {/* Brand */}
+            <div className="flex items-center gap-5">
+              <div className="w-1 h-6 bg-[#c5a059]/60" />
               <div>
-                <div className="font-mono font-black text-base tracking-[3px] text-[#f0a500] uppercase animate-[flicker_4s_infinite]">CODEFORCES SYNTHESIS ENGINE</div>
-                <div className="font-mono text-[0.55rem] tracking-[2px] text-[#444]">TACTICAL COMPETITIVE INTELLIGENCE PLATFORM v4.2.1</div>
+                <div className="font-mono text-sm tracking-[4px] text-[#c5a059]/80 uppercase animate-[flicker_5s_infinite]">
+                  CF Synthesis Engine
+                </div>
+                <div className="font-mono text-[9px] tracking-[2px] text-white/15 uppercase">
+                  Tactical Intelligence Platform v4.2.1
+                </div>
               </div>
             </div>
 
-            <div className="flex items-center gap-6">
+            {/* Controls */}
+            <div className="flex items-center gap-5">
               {/* Context Filters */}
-              <div className="flex bg-[#050505] rounded-[6px] border border-[#1a1a1a] overflow-hidden">
+              <div className="flex border border-white/[0.06] overflow-hidden">
                 {['ALL', 'CONTEST', 'PRACTICE', 'RECON'].map(ctx => (
-                  <button key={ctx} onClick={() => setContextFilter(ctx)} className={`px-3 py-1 border-r border-[#1a1a1a] last:border-0 font-mono text-[0.65rem] transition-colors cursor-pointer ${contextFilter === ctx ? 'bg-[#f0a500] text-black font-bold' : 'bg-transparent text-[#888] hover:bg-white/5'}`}>{ctx}</button>
+                  <button
+                    key={ctx}
+                    onClick={() => setContextFilter(ctx)}
+                    className={`px-3 py-1.5 border-r border-white/[0.05] last:border-0 font-mono text-[9px] tracking-[2px] uppercase transition-all duration-200 cursor-pointer ${contextFilter === ctx ? 'bg-[#c5a059]/10 text-[#c5a059]/80' : 'bg-transparent text-white/20 hover:text-white/40'}`}
+                  >
+                    {ctx}
+                  </button>
                 ))}
               </div>
-              
+
               {/* Time Filters */}
-              <div className="flex bg-[#050505] rounded-[6px] border border-[#1a1a1a] overflow-hidden mr-4">
+              <div className="flex border border-white/[0.06] overflow-hidden">
                 {['ALL', '30', '7'].map(tf => (
-                  <button key={tf} onClick={() => setTimeFilter(tf)} className={`px-3 py-1 border-r border-[#1a1a1a] last:border-0 font-mono text-[0.65rem] transition-colors cursor-pointer ${timeFilter === tf ? 'bg-[#58a6ff] text-black font-bold' : 'bg-transparent text-[#888] hover:bg-white/5'}`}>{tf === 'ALL' ? 'ALL TIME' : tf + ' DAYS'}</button>
+                  <button
+                    key={tf}
+                    onClick={() => setTimeFilter(tf)}
+                    className={`px-3 py-1.5 border-r border-white/[0.05] last:border-0 font-mono text-[9px] tracking-[2px] uppercase transition-all duration-200 cursor-pointer ${timeFilter === tf ? 'bg-white/[0.06] text-white/70' : 'bg-transparent text-white/20 hover:text-white/40'}`}
+                  >
+                    {tf === 'ALL' ? 'All Time' : tf + 'D'}
+                  </button>
                 ))}
               </div>
-              
+
+              {/* User info */}
               <div className="text-right">
-                <div className="font-mono text-lg font-bold text-[#f0a500] tracking-wider">{handle || "OFFLINE"}</div>
-                {mainMetrics && <div className="font-mono text-[0.6rem] tracking-wider text-[#56d364]">{squadData[config.main]?.info.rank || "Unrated"} · {squadData[config.main]?.info.rating || 0}</div>}
+                <div className="font-mono text-sm text-[#c5a059]/80 tracking-wide">{handle || "Offline"}</div>
+                {mainMetrics && <div className="font-mono text-[9px] tracking-[2px] uppercase text-white/25">{squadData[config.main]?.info.rank || "Unrated"} · {squadData[config.main]?.info.rating || 0}</div>}
               </div>
-              <img src={squadData[config.main]?.info.titlePhoto || "/api/placeholder/44/44"} alt="Avatar" className="w-11 h-11 rounded-xl object-cover" style={{ border: "1px solid #f0a50033" }} />
+
+              <img
+                src={squadData[config.main]?.info.titlePhoto || "/api/placeholder/40/40"}
+                alt="Avatar"
+                className="w-9 h-9 object-cover border border-white/[0.08]"
+              />
+
               <div className="text-right font-mono hidden md:block">
-                <div className="text-[0.85rem] text-[#58a6ff] tracking-wider">{timeStr}</div>
-                <div className="text-[0.55rem] tracking-wider text-[#333]">UTC SYSTEM CLOCK</div>
+                <div className="text-xs text-white/40 tracking-wider">{timeStr}</div>
+                <div className="text-[8px] tracking-[2px] uppercase text-white/15">UTC</div>
               </div>
-              <button onClick={() => setShowSettings(true)} className="bg-[#050505] border border-[#1a1a1a] text-[#888] px-3 py-2 rounded-lg cursor-pointer transition-colors hover:text-[#f0a500] hover:border-[#f0a500]">⚙️</button>
+
+              <button
+                onClick={() => setShowSettings(true)}
+                className="bg-transparent border border-white/[0.07] text-white/25 px-3 py-2 font-mono text-xs cursor-pointer transition-all duration-200 hover:border-[#c5a059]/40 hover:text-[#c5a059]/60"
+              >
+                ⚙
+              </button>
             </div>
           </div>
 
-          <div className="flex gap-0.5 overflow-x-auto pb-0">
+          {/* Tabs — minimalist text toggles, 1px bottom accent only */}
+          <div className="flex gap-0 overflow-x-auto border-b border-white/[0.04] -mb-px">
             {TABS.map(tab => {
-              const isActive = activeTab === tab; const tabColor = TAB_COLORS[tab] || "#888";
+              const isActive = activeTab === tab;
+              const tabColor = TAB_COLORS[tab] || "rgba(255,255,255,0.3)";
               return (
-                <button key={tab} onClick={() => setActiveTab(tab)} className="relative font-mono text-[0.62rem] font-bold tracking-[2px] uppercase px-4 py-2.5 cursor-pointer transition-all duration-150 rounded-t-md border-0 whitespace-nowrap"
-                  style={{ background: isActive ? `${tabColor}12` : "transparent", color: isActive ? tabColor : "#444", borderBottom: `2px solid ${isActive ? tabColor : "transparent"}`, borderTop: `1px solid ${isActive ? tabColor + "44" : "transparent"}`, borderLeft: `1px solid ${isActive ? tabColor + "22" : "transparent"}`, borderRight: `1px solid ${isActive ? tabColor + "22" : "transparent"}`, boxShadow: isActive ? `0 0 12px ${tabColor}22, inset 0 1px 0 ${tabColor}22` : "none" }}>
-                  {isActive && <div className="absolute top-0 left-[20%] right-[20%] h-px" style={{ background: `linear-gradient(90deg, transparent, ${tabColor}, transparent)` }} />}
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  className="relative font-mono text-[9px] tracking-[3px] uppercase px-5 py-3 cursor-pointer transition-all duration-200 bg-transparent border-none whitespace-nowrap"
+                  style={{
+                    color: isActive ? tabColor : 'rgba(255,255,255,0.2)',
+                    borderBottom: `1px solid ${isActive ? tabColor : 'transparent'}`,
+                  }}
+                >
                   {tab}
                 </button>
               );
@@ -644,28 +782,49 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="max-w-[1400px] mx-auto px-8 pt-6 pb-16 relative z-10 min-h-[70vh]">
-        <div className="flex items-center gap-3 mb-6 font-mono text-[0.6rem] text-[#333] flex-wrap">
-          <GlowPulse color="#56d364" />
-          <span className="text-[#444]">MODULE:</span><span className="text-[#56d364] tracking-[2px]">{activeTab}</span><span className="text-[#1a1a1a]">|</span>
-          <span className="text-[#444]">OPERATOR:</span><span className="text-[#f0a500]">{handle || "N/A"}</span><span className="text-[#1a1a1a]">|</span>
-          <span className="text-[#444]">UPTIME:</span><span className="text-[#58a6ff]">{tick}s</span>
+      <main className="max-w-[1400px] mx-auto px-8 pt-8 pb-20 relative z-10 min-h-[70vh]">
+
+        {/* Breadcrumb / status bar */}
+        <div className="flex items-center gap-3 mb-8 font-mono text-[9px] text-white/15 flex-wrap">
+          <GlowPulse color="#c5a059" />
+          <span className="tracking-[2px] uppercase">Module</span>
+          <span className="text-[#c5a059]/50 tracking-[2px] uppercase">{activeTab}</span>
+          <span className="text-white/[0.06]">|</span>
+          <span className="tracking-[2px] uppercase">Operator</span>
+          <span className="text-white/30">{handle || "N/A"}</span>
+          <span className="text-white/[0.06]">|</span>
+          <span className="tracking-[2px] uppercase">Uptime</span>
+          <span className="text-white/25">{tick}s</span>
           <div className="flex-1" />
-          <span className="text-[#1a1a1a]">SYS.INTEGRITY: </span><span className="text-[#56d364]">■■■■■■■■■■ 100%</span>
+          <span className="text-white/[0.08] tracking-[2px]">sys.integrity</span>
+          <span className="text-white/15">■■■■■■■■■■ 100%</span>
         </div>
 
-        {loading && <div className="text-center my-20 font-mono text-[#f0a500] text-[1.2rem] animate-pulse">{loadingMsg}</div>}
+        {loading && (
+          <div className="text-center my-20 font-mono text-[10px] tracking-[5px] uppercase text-[#c5a059]/50 animate-pulse">
+            {loadingMsg}
+          </div>
+        )}
 
         {!loading && mainMetrics && squadData[config.main] && (
           <>
             {/* The Guillotine */}
             {activeTab === "COMMAND" && (guillotineStatus.isDecay || guillotineStatus.isWarning) && (
-              <div className={`mb-8 p-6 rounded-2xl border flex justify-between items-center ${guillotineStatus.isDecay ? 'bg-[rgba(248,81,73,0.05)] border-[#f85149] animate-[pulse_2s_ease-in-out_infinite]' : 'bg-[rgba(227,179,65,0.05)] border-[#e3b341]'}`}>
+              <div className={`mb-8 p-6 flex justify-between items-center border-l ${guillotineStatus.isDecay ? 'bg-[rgba(248,81,73,0.02)] border-l-[#f85149]/60 border border-[#f85149]/10 animate-[blink_2s_step-start_infinite]' : 'bg-transparent border-l-[#c5a059]/40 border border-white/[0.05]'}`}>
                 <div>
-                  <h2 className={`font-black uppercase tracking-widest m-0 font-mono ${guillotineStatus.isDecay ? 'text-[#f85149]' : 'text-[#e3b341]'}`}>{guillotineStatus.isDecay ? 'CRITICAL DECAY DETECTED' : 'RUST FORMING'}</h2>
-                  <p className="text-[#888] font-mono text-xs mt-1 mb-0">Inactive for {guillotineStatus.hoursInactive} hours.</p>
+                  <h2 className={`font-mono text-xs tracking-[4px] uppercase m-0 ${guillotineStatus.isDecay ? 'text-[#f85149]/70' : 'text-[#c5a059]/70'}`}>
+                    {guillotineStatus.isDecay ? 'Critical Decay Detected' : 'Rust Forming'}
+                  </h2>
+                  <p className="font-mono text-[9px] tracking-[2px] uppercase text-white/20 mt-1 mb-0">
+                    Inactive for {guillotineStatus.hoursInactive} hours.
+                  </p>
                 </div>
-                {guillotineStatus.isDecay && <div className="text-right"><div className="text-3xl font-black text-[#f85149] font-mono">-{guillotineStatus.bleed} PTS</div><div className="text-[10px] text-[#f85149] uppercase tracking-widest font-mono">Simulated Elo Bleed</div></div>}
+                {guillotineStatus.isDecay && (
+                  <div className="text-right">
+                    <div className="font-mono text-2xl font-light text-[#f85149]/70">-{guillotineStatus.bleed}</div>
+                    <div className="font-mono text-[8px] tracking-[3px] uppercase text-[#f85149]/40">Simulated Elo Bleed</div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -675,13 +834,22 @@ export default function Home() {
             {activeTab === "SQUAD OPS" && <SquadOpsTab squadMatrix={squadMatrix} config={config} squadCharts={squadCharts} bounties={bounties} />}
             {activeTab === "NEMESIS" && (
               <div className="animate-in fade-in">
-                <div className="mb-6 flex gap-4 items-center">
-                  <span className="text-[#888] font-mono text-xs uppercase">Select Target:</span>
+                <div className="mb-8 flex gap-3 items-center">
+                  <span className="font-mono text-[9px] tracking-[3px] uppercase text-white/20">Select Target</span>
                   {config.squad.map(h => (
-                    <button key={h} onClick={() => setNemesisTarget(h)} className={`px-4 py-2 rounded-lg font-mono uppercase text-xs transition-colors cursor-pointer border ${nemesisTarget === h ? 'bg-[#f85149]/10 text-[#f85149] border-[#f85149]' : 'bg-[#050505] text-[#888] border-[#1a1a1a] hover:bg-white/5'}`}>{h}</button>
+                    <button
+                      key={h}
+                      onClick={() => setNemesisTarget(h)}
+                      className={`px-4 py-2 font-mono text-[9px] tracking-[2px] uppercase transition-all duration-200 cursor-pointer border bg-transparent ${nemesisTarget === h ? 'border-[#f85149]/50 text-[#f85149]/70' : 'border-white/[0.07] text-white/20 hover:border-white/20 hover:text-white/40'}`}
+                    >
+                      {h}
+                    </button>
                   ))}
                 </div>
-                {nemesisTarget && squadData[nemesisTarget] ? <Nemesis mySubs={squadData[config.main].rawSubs} targetSubs={squadData[nemesisTarget].rawSubs} targetHandle={nemesisTarget} myRating={squadData[config.main].info.rating || 1200} /> : <div className="text-center py-20 text-[#888] font-mono">Select a valid squad target to initiate Nemesis protocol.</div>}
+                {nemesisTarget && squadData[nemesisTarget]
+                  ? <Nemesis mySubs={squadData[config.main].rawSubs} targetSubs={squadData[nemesisTarget].rawSubs} targetHandle={nemesisTarget} myRating={squadData[config.main].info.rating || 1200} />
+                  : <div className="text-center py-20 font-mono text-[9px] tracking-[4px] uppercase text-white/15">Select a valid squad target to initiate Nemesis protocol.</div>
+                }
               </div>
             )}
             {activeTab === "FORGE" && <Forge rawSubsList={mainMetrics.rawSubsList} />}
@@ -691,10 +859,15 @@ export default function Home() {
         )}
       </main>
 
-      <div className="fixed bottom-0 left-0 right-0 h-7 flex items-center px-8 gap-8 z-50 hidden md:flex" style={{ background: "rgba(3,3,5,0.98)", borderTop: "1px solid #0f0f1a" }}>
-        {[["CF API","#56d364"],["SQUAD SYNC","#56d364"],["NEMESIS ENGINE","#f0a500"],["FORGE MODULE","#58a6ff"]].map(([l, col]) => <StatusLabel key={l} label={l as string} color={col as string} />)}
+      {/* Status bar */}
+      <div className="fixed bottom-0 left-0 right-0 h-7 hidden md:flex items-center px-8 gap-8 z-50 bg-[#000000] border-t border-white/[0.04]">
+        {[["CF API", "#c5a059"], ["Squad Sync", "#c5a059"], ["Nemesis Engine", "rgba(255,255,255,0.3)"], ["Forge Module", "rgba(255,255,255,0.25)"]].map(([l, col]) => (
+          <StatusLabel key={l} label={l as string} color={col as string} />
+        ))}
         <div className="flex-1" />
-        <div className="font-mono text-[0.55rem] text-[#1a1a2a]">{"<<<"} CODEFORCES SYNTHESIS ENGINE · TACTICAL EDGE {">>>"}</div>
+        <div className="font-mono text-[8px] tracking-[3px] text-white/[0.08] uppercase">
+          CF Synthesis Engine · Tactical Edge
+        </div>
       </div>
     </div>
   );

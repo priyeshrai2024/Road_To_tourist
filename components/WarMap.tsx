@@ -93,119 +93,270 @@ export const T_NODES: Record<string, any> = {
 };
 
 export default function WarMap({ subs }: { subs: any[] }) {
-  const mapRef = useRef<HTMLDivElement>(null); const containerRef = useRef<HTMLDivElement>(null);
-  const [scale, setScale] = useState(1); const [pan, setPan] = useState({ x: -2300, y: -2100 });
-  const isDragging = useRef(false); const dragStart = useRef({ x: 0, y: 0 });
+  const mapRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
+  const [pan, setPan] = useState({ x: -2300, y: -2100 });
+  const isDragging = useRef(false);
+  const dragStart = useRef({ x: 0, y: 0 });
 
   const mapNodes = Object.values(T_NODES);
 
   const mapState = useMemo(() => {
-    const state: Record<string, any> = {}; const now = Date.now() / 1000;
+    const state: Record<string, any> = {};
+    const now = Date.now() / 1000;
     mapNodes.forEach(n => { state[n.id] = { ac: 0, fail: 0, maxR: 0, lastAC: 0 }; });
     subs.forEach(s => {
       if (!s.problem || !s.problem.tags) return;
-      const isAC = s.verdict === 'OK'; const r = s.problem.rating || 800;
+      const isAC = s.verdict === 'OK';
+      const r = s.problem.rating || 800;
       mapNodes.forEach(n => {
         if (s.problem.tags.includes(n.tag)) {
-          if (isAC) { state[n.id].ac++; if (r > state[n.id].maxR) state[n.id].maxR = r; if (s.creationTimeSeconds > state[n.id].lastAC) state[n.id].lastAC = s.creationTimeSeconds; } 
-          else if (s.verdict !== 'COMPILATION_ERROR') state[n.id].fail++;
+          if (isAC) {
+            state[n.id].ac++;
+            if (r > state[n.id].maxR) state[n.id].maxR = r;
+            if (s.creationTimeSeconds > state[n.id].lastAC) state[n.id].lastAC = s.creationTimeSeconds;
+          } else if (s.verdict !== 'COMPILATION_ERROR') {
+            state[n.id].fail++;
+          }
         }
       });
     });
     mapNodes.forEach(n => {
-      const isRoot = n.parent === null; const parentOccupied = n.parent && state[n.parent].ac > 0;
-      let hasOccupiedChild = false; mapNodes.forEach(child => { if (child.parent === n.id && state[child.id].ac > 0) hasOccupiedChild = true; });
+      const isRoot = n.parent === null;
+      const parentOccupied = n.parent && state[n.parent].ac > 0;
+      let hasOccupiedChild = false;
+      mapNodes.forEach(child => { if (child.parent === n.id && state[child.id].ac > 0) hasOccupiedChild = true; });
       state[n.id].isRevealed = isRoot || parentOccupied || hasOccupiedChild || state[n.id].ac > 0;
     });
     return state;
   }, [subs]);
 
-  const onMouseDown = (e: ReactMouseEvent) => { if ((e.target as Element).closest('.no-drag')) return; isDragging.current = true; dragStart.current = { x: e.clientX - pan.x, y: e.clientY - pan.y }; };
-  const onMouseMove = (e: ReactMouseEvent) => { if (!isDragging.current) return; setPan({ x: e.clientX - dragStart.current.x, y: e.clientY - dragStart.current.y }); };
+  const onMouseDown = (e: ReactMouseEvent) => {
+    if ((e.target as Element).closest('.no-drag')) return;
+    isDragging.current = true;
+    dragStart.current = { x: e.clientX - pan.x, y: e.clientY - pan.y };
+  };
+  const onMouseMove = (e: ReactMouseEvent) => {
+    if (!isDragging.current) return;
+    setPan({ x: e.clientX - dragStart.current.x, y: e.clientY - dragStart.current.y });
+  };
   const onMouseUp = () => { isDragging.current = false; };
   const onWheel = (e: React.WheelEvent) => {
     if (!containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left; const mouseY = e.clientY - rect.top;
-    const worldX = (mouseX - pan.x) / scale; const worldY = (mouseY - pan.y) / scale;
-    const zoomDelta = e.deltaY > 0 ? -0.1 : 0.1; const newScale = Math.min(Math.max(0.2, scale + zoomDelta), 3.0);
-    setScale(newScale); setPan({ x: mouseX - (worldX * newScale), y: mouseY - (worldY * newScale) });
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+    const worldX = (mouseX - pan.x) / scale;
+    const worldY = (mouseY - pan.y) / scale;
+    const zoomDelta = e.deltaY > 0 ? -0.1 : 0.1;
+    const newScale = Math.min(Math.max(0.2, scale + zoomDelta), 3.0);
+    setScale(newScale);
+    setPan({ x: mouseX - (worldX * newScale), y: mouseY - (worldY * newScale) });
   };
 
   return (
-    <div ref={containerRef} className="relative w-full h-[800px] bg-black border border-[#30363d] rounded-xl overflow-hidden cursor-grab active:cursor-grabbing shadow-[inset_0_0_120px_rgba(0,0,0,1)] select-none" onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp} onWheel={onWheel}>
-      <div className="absolute inset-0 pointer-events-none z-40 bg-[radial-gradient(circle_at_center,transparent_30%,rgba(0,0,0,0.85)_100%)]" />
-      <div className="absolute top-4 right-4 z-50 flex flex-col gap-2 no-drag">
-        <button onClick={() => setScale(s => Math.min(s + 0.2, 3.0))} className="w-10 h-10 bg-[#0d1117]/90 border border-[#30363d] text-white rounded hover:bg-[#e3b341] hover:text-black transition-colors shadow-lg text-xl">+</button>
-        <button onClick={() => setScale(s => Math.max(s - 0.2, 0.2))} className="w-10 h-10 bg-[#0d1117]/90 border border-[#30363d] text-white rounded hover:bg-[#e3b341] hover:text-black transition-colors shadow-lg text-xl">-</button>
-        <button onClick={() => { setScale(1); setPan({x:-2300, y:-2100}); }} className="w-10 h-10 bg-[#0d1117]/90 border border-[#30363d] text-white rounded hover:bg-[#e3b341] hover:text-black transition-colors shadow-lg text-xl">⌂</button>
+    <div
+      ref={containerRef}
+      className="relative w-full h-[800px] bg-[#000000] border border-white/[0.04] overflow-hidden cursor-grab active:cursor-grabbing select-none"
+      onMouseDown={onMouseDown}
+      onMouseMove={onMouseMove}
+      onMouseUp={onMouseUp}
+      onMouseLeave={onMouseUp}
+      onWheel={onWheel}
+    >
+      {/* Vignette overlay */}
+      <div className="absolute inset-0 pointer-events-none z-40 bg-[radial-gradient(circle_at_center,transparent_40%,rgba(0,0,0,0.75)_100%)]" />
+
+      {/* Zoom controls */}
+      <div className="absolute top-4 right-4 z-50 flex flex-col gap-1.5 no-drag">
+        <button
+          onClick={() => setScale(s => Math.min(s + 0.2, 3.0))}
+          className="w-9 h-9 bg-[#020202] border border-white/[0.07] text-white/40 font-mono text-base hover:border-[#c5a059]/40 hover:text-[#c5a059]/70 transition-all duration-200 cursor-pointer"
+        >+</button>
+        <button
+          onClick={() => setScale(s => Math.max(s - 0.2, 0.2))}
+          className="w-9 h-9 bg-[#020202] border border-white/[0.07] text-white/40 font-mono text-base hover:border-[#c5a059]/40 hover:text-[#c5a059]/70 transition-all duration-200 cursor-pointer"
+        >&#8722;</button>
+        <button
+          onClick={() => { setScale(1); setPan({ x: -2300, y: -2100 }); }}
+          className="w-9 h-9 bg-[#020202] border border-white/[0.07] text-white/40 font-mono text-base hover:border-[#c5a059]/40 hover:text-[#c5a059]/70 transition-all duration-200 cursor-pointer"
+        >&#8962;</button>
       </div>
 
-      <div className="absolute bottom-4 left-4 z-50 bg-[#0d1117]/90 border border-[#30363d] p-4 rounded-xl shadow-2xl font-mono text-[10px] text-[#8b949e] no-drag backdrop-blur-md">
-        <strong className="text-[#e3b341] block mb-2 text-xs">Architecture (Max Rating)</strong>
-        <div className="flex items-center gap-2 mb-1.5"><div className="w-3 h-3 rounded-[2px] border border-[#8b949e] bg-gradient-to-b from-[#161b22] to-[#21262d]" /> 800 - 1100 (Outpost)</div>
-        <div className="flex items-center gap-2 mb-1.5"><div className="w-3 h-3 rounded-[2px] border border-[#56d364] bg-gradient-to-b from-[#161b22] to-[#56d364]/20" /> 1200 - 1300 (Village)</div>
-        <div className="flex items-center gap-2 mb-1.5"><div className="w-3 h-3 rounded-[2px] border border-[#58a6ff] bg-gradient-to-b from-[#161b22] to-[#58a6ff]/20" /> 1400 - 1800 (Keep)</div>
-        <div className="flex items-center gap-2 mb-1.5"><div className="w-3 h-3 rounded-[2px] border border-[#d2a8ff] bg-gradient-to-b from-[#161b22] to-[#d2a8ff]/20" /> 1900 - 2100 (Spire)</div>
-        <div className="flex items-center gap-2 mb-3"><div className="w-3 h-3 rounded-[2px] border border-[#e3b341] bg-gradient-to-b from-[#161b22] to-[#e3b341]/20 shadow-[0_0_8px_rgba(227,179,65,0.4)]" /> 2200+ (Citadel)</div>
-        <div className="border-t border-[#30363d] my-2" />
-        <strong className="text-[#e3b341] block mb-2 text-xs">Garrison & Status</strong>
-        <div className="flex items-center gap-2 mb-1.5"><div className="w-3 h-3 rounded-[2px] border border-[#e3b341] shadow-[inset_0_0_8px_rgba(227,179,65,0.6)]" /> Conquered (25+ ACs)</div>
-        <div className="flex items-center gap-2 mb-1.5"><div className="w-3 h-3 rounded-[2px] border border-dashed border-[#484f58] bg-[#0d1117] opacity-60" /> Scouted (Fog of War)</div>
-        <div className="flex items-center gap-2 mb-1.5"><div className="w-3 h-3 rounded-[2px] border border-[#8b0000]" style={{background: 'repeating-linear-gradient(45deg, #161b22, #161b22 2px, #2a0a0a 2px, #2a0a0a 4px)'}} /> Ruins (&gt;30D no AC)</div>
-        <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-[2px] border border-[#db6d28] shadow-[0_0_8px_rgba(219,109,40,0.6)]" /> Rebellion (Fails &gt; 2x AC)</div>
+      {/* Legend */}
+      <div className="absolute bottom-4 left-4 z-50 bg-[#020202] border border-white/[0.05] p-5 font-mono text-[9px] text-white/25 no-drag w-[220px]">
+        <p className="font-mono text-[8px] tracking-[3px] uppercase text-[#c5a059]/50 mb-4">Architecture (Max Rating)</p>
+        <div className="space-y-2.5 mb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-5 h-px bg-white/20 shrink-0" />
+            <span>800 – 1100 (Outpost)</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="w-5 h-px bg-white/35 shrink-0" />
+            <span>1200 – 1300 (Village)</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="w-5 h-px bg-white/50 shrink-0" />
+            <span>1400 – 1800 (Keep)</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="w-5 h-px bg-white/65 shrink-0" />
+            <span>1900 – 2100 (Spire)</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="w-5 h-px bg-[#c5a059]/70 shrink-0" />
+            <span>2200+ (Citadel)</span>
+          </div>
+        </div>
+        <div className="w-full h-px bg-white/[0.05] my-3" />
+        <p className="font-mono text-[8px] tracking-[3px] uppercase text-[#c5a059]/50 mb-4">Garrison &amp; Status</p>
+        <div className="space-y-2.5">
+          <div className="flex items-center gap-3">
+            <div className="w-5 h-px bg-[#c5a059] shrink-0" />
+            <span>Conquered (25+ ACs)</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="w-5 border-t border-dashed border-white/15 shrink-0" />
+            <span>Scouted (Fog of War)</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="w-5 h-px bg-[#f85149]/50 shrink-0" />
+            <span>Ruins (&gt;30D no AC)</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="w-5 h-px bg-[#f85149] shrink-0" />
+            <span>Rebellion (Fails &gt;2&#215; AC)</span>
+          </div>
+        </div>
       </div>
 
-      <div ref={mapRef} className="absolute origin-top-left" style={{ width: 6000, height: 5000, transform: `matrix(${scale}, 0, 0, ${scale}, ${pan.x}, ${pan.y})`, willChange: 'transform', backgroundImage: 'linear-gradient(rgba(48, 54, 61, 0.15) 1px, transparent 1px), linear-gradient(90deg, rgba(48, 54, 61, 0.15) 1px, transparent 1px)', backgroundSize: '100px 100px' }}>
-        <div className="absolute text-center font-mono font-bold uppercase tracking-[20px] text-white/5 pointer-events-none z-0" style={{top: 2400, left: 2800}}><span className="text-6xl tracking-[20px]">Implementation & Logic</span></div>
-        <div className="absolute text-center font-mono font-bold uppercase tracking-[20px] text-white/5 pointer-events-none z-0" style={{top: 1400, left: 4200}}><span className="text-6xl tracking-[20px]">Math & Combinatorics</span></div>
-        <div className="absolute text-center font-mono font-bold uppercase tracking-[20px] text-white/5 pointer-events-none z-0" style={{top: 3600, left: 2400}}><span className="text-6xl tracking-[20px]">Graphs & Trees</span></div>
-        <div className="absolute text-center font-mono font-bold uppercase tracking-[20px] text-white/5 pointer-events-none z-0" style={{top: 1400, left: 1600}}><span className="text-6xl tracking-[20px]">Data Vaults</span></div>
-        
+      {/* Map canvas */}
+      <div
+        ref={mapRef}
+        className="absolute origin-top-left"
+        style={{
+          width: 6000,
+          height: 5000,
+          transform: `matrix(${scale}, 0, 0, ${scale}, ${pan.x}, ${pan.y})`,
+          willChange: 'transform',
+          backgroundImage: 'linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px)',
+          backgroundSize: '100px 100px'
+        }}
+      >
+        {/* Region watermarks — serif */}
+        <div className="absolute font-serif pointer-events-none z-0 text-white/[0.015] whitespace-nowrap" style={{ top: 2400, left: 2400, fontSize: '4rem', letterSpacing: '0.25em' }}>
+          Implementation &amp; Logic
+        </div>
+        <div className="absolute font-serif pointer-events-none z-0 text-white/[0.015] whitespace-nowrap" style={{ top: 1400, left: 3800, fontSize: '4rem', letterSpacing: '0.25em' }}>
+          Math &amp; Combinatorics
+        </div>
+        <div className="absolute font-serif pointer-events-none z-0 text-white/[0.015] whitespace-nowrap" style={{ top: 3500, left: 2000, fontSize: '4rem', letterSpacing: '0.25em' }}>
+          Graphs &amp; Trees
+        </div>
+        <div className="absolute font-serif pointer-events-none z-0 text-white/[0.015] whitespace-nowrap" style={{ top: 1400, left: 1200, fontSize: '4rem', letterSpacing: '0.25em' }}>
+          Data Vaults
+        </div>
+
+        {/* SVG paths */}
         <svg className="absolute inset-0 w-full h-full pointer-events-none z-10 overflow-visible">
           {mapNodes.map(n => {
             if (!n.parent || !T_NODES[n.parent]) return null;
             const p = T_NODES[n.parent];
             const sx = p.x + 95, sy = p.y + 35, ex = n.x + 95, ey = n.y + 35;
-            const pStats = mapState[p.id]; const nStats = mapState[n.id];
+            const pStats = mapState[p.id];
+            const nStats = mapState[n.id];
             const isPathActive = (pStats.ac > 0 && nStats.ac > 0);
             const pathHidden = (!pStats.isRevealed || !nStats.isRevealed);
-            const isDecaying = (nStats.ac > 0 && (Date.now()/1000 - nStats.lastAC)/86400 > 30);
+            const isDecaying = (nStats.ac > 0 && (Date.now() / 1000 - nStats.lastAC) / 86400 > 30);
             if (pathHidden) return null;
-            return <path key={`path-${n.id}`} d={`M ${sx} ${sy} Q ${(sx+ex)/2} ${(sy+ey)/2 - 100} ${ex} ${ey}`} stroke={isPathActive ? (isDecaying ? 'rgba(248,81,73,0.4)' : '#58a6ff') : 'rgba(48,54,61,0.3)'} strokeWidth={isPathActive ? 3 : 2} strokeDasharray={isPathActive ? (isDecaying ? "4 4" : "") : "6 6"} fill="none" />;
+            return (
+              <path
+                key={`path-${n.id}`}
+                d={`M ${sx} ${sy} Q ${(sx + ex) / 2} ${(sy + ey) / 2 - 100} ${ex} ${ey}`}
+                stroke={isPathActive ? (isDecaying ? 'rgba(248,81,73,0.35)' : 'rgba(197,160,89,0.4)') : 'rgba(255,255,255,0.04)'}
+                strokeWidth={1}
+                strokeDasharray={isPathActive ? (isDecaying ? '4 4' : '') : '5 5'}
+                fill="none"
+              />
+            );
           })}
         </svg>
 
+        {/* Nodes */}
         {mapNodes.map(n => {
           const m = mapState[n.id];
           if (!m.isRevealed) return null;
+
           const isScouted = m.ac === 0;
-          const isDecaying = (m.ac > 0 && (Date.now()/1000 - m.lastAC)/86400 > 30);
+          const isDecaying = (m.ac > 0 && (Date.now() / 1000 - m.lastAC) / 86400 > 30);
           const isRebellion = (m.ac > 0 && m.fail / m.ac > 2.0);
+          const isConquered = m.ac >= 25;
 
-          let archStyle = "border-[#30363d] bg-[#161b22]";
-          if (m.ac > 0) {
-            if (m.maxR < 1200) archStyle = "border-[#8b949e] bg-gradient-to-b from-[#161b22] to-[#21262d]";
-            else if (m.maxR < 1400) archStyle = "border-[#56d364] bg-gradient-to-b from-[#161b22] to-[#56d364]/15";
-            else if (m.maxR < 1900) archStyle = "border-[#58a6ff] bg-gradient-to-b from-[#161b22] to-[#58a6ff]/15";
-            else if (m.maxR < 2200) archStyle = "border-[#d2a8ff] bg-gradient-to-b from-[#161b22] to-[#d2a8ff]/15";
-            else archStyle = "border-[#e3b341] bg-gradient-to-b from-[#161b22] to-[#e3b341]/20 shadow-[0_0_15px_rgba(227,179,65,0.3)]";
+          let borderClass = 'border-white/[0.08]';
+          let bgClass = 'bg-[#020202]';
+          let labelColor = 'text-white/50';
+
+          if (isScouted) {
+            borderClass = 'border-dashed border-white/[0.07]';
+            bgClass = 'bg-[#020202]';
+            labelColor = 'text-white/15';
+          } else if (isDecaying) {
+            borderClass = 'border-[#f85149]/40';
+            bgClass = 'bg-[rgba(248,81,73,0.02)]';
+            labelColor = 'text-[#f85149]/50 line-through';
+          } else if (isRebellion) {
+            borderClass = 'border-[#f85149]/60';
+            bgClass = 'bg-[rgba(248,81,73,0.02)]';
+            labelColor = 'text-white/55';
+          } else if (isConquered) {
+            borderClass = 'border-[#c5a059]/70';
+            bgClass = 'bg-[#020202]';
+            labelColor = 'text-[#c5a059]/80';
+          } else if (m.ac > 0) {
+            if (m.maxR < 1200) {
+              borderClass = 'border-white/[0.12]';
+            } else if (m.maxR < 1400) {
+              borderClass = 'border-white/20';
+            } else if (m.maxR < 1900) {
+              borderClass = 'border-white/30';
+            } else if (m.maxR < 2200) {
+              borderClass = 'border-white/45';
+            } else {
+              borderClass = 'border-[#c5a059]/60';
+              labelColor = 'text-[#c5a059]/70';
+            }
+            bgClass = 'bg-[#020202]';
+            if (labelColor === 'text-white/50') labelColor = 'text-white/60';
           }
-          let garrisonGlow = "";
-          if (m.ac >= 25) garrisonGlow = "shadow-[inset_0_0_30px_rgba(227,179,65,0.3)] border-[#e3b341]";
-          else if (m.ac >= 5) garrisonGlow = "shadow-[inset_0_0_20px_rgba(88,166,255,0.2)]";
-
-          if (isScouted) { archStyle = "border-dashed border-[#484f58] bg-[#0d1117] opacity-40 grayscale hover:opacity-80"; garrisonGlow = ""; }
-          if (isRebellion) { archStyle += " border-[#db6d28] shadow-[0_0_20px_rgba(219,109,40,0.6)]"; }
-          if (isDecaying) { archStyle += " border-[#8b0000]"; }
 
           return (
-            <div key={n.id} className={`absolute w-[190px] p-3.5 border-2 rounded-lg text-center z-20 flex flex-col gap-1.5 transition-all shadow-[0_4px_15px_rgba(0,0,0,0.8)] hover:scale-110 hover:z-50 ${archStyle} ${garrisonGlow}`} style={{ left: n.x, top: n.y, backgroundImage: isDecaying ? 'repeating-linear-gradient(45deg, #161b22, #161b22 10px, #2a0a0a 10px, #2a0a0a 20px)' : '' }}>
-              {isDecaying && <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#8b0000] text-white text-[10px] font-bold px-2 py-0.5 rounded">RUINS (30D+)</div>}
-              {isRebellion && !isDecaying && <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#db6d28] text-black text-[10px] font-bold px-2 py-0.5 rounded">[!] REBELLION</div>}
-              <div className={`font-bold text-sm leading-tight ${isDecaying ? 'text-[#ff7b72] line-through' : 'text-white'}`}>{n.label}</div>
-              <div className="font-mono text-[10px] text-[#8b949e] flex justify-between border-t border-[#30363d] mt-1 pt-1.5">
-                {m.ac > 0 ? <><span className="text-[#e3b341] font-bold">AC: {m.ac}</span><span>Max: {m.maxR}</span></> : <><span>???</span><span>???</span></>}
+            <div
+              key={n.id}
+              className={`absolute w-[190px] p-3.5 border text-center z-20 flex flex-col gap-1.5 transition-all duration-200 hover:z-50 hover:bg-white/[0.03] ${borderClass} ${bgClass} ${isScouted ? 'opacity-40' : 'opacity-100'}`}
+              style={{ left: n.x, top: n.y }}
+            >
+              {/* Status badge */}
+              {isDecaying && (
+                <div className="absolute -top-[11px] left-1/2 -translate-x-1/2 bg-[#000000] border border-[#f85149]/40 text-[#f85149]/60 font-mono text-[8px] tracking-[2px] uppercase px-2 py-px whitespace-nowrap">
+                  Ruins 30D+
+                </div>
+              )}
+              {isRebellion && !isDecaying && (
+                <div className="absolute -top-[11px] left-1/2 -translate-x-1/2 bg-[#000000] border border-[#f85149]/30 text-[#f85149]/50 font-mono text-[8px] tracking-[2px] uppercase px-2 py-px whitespace-nowrap">
+                  Rebellion
+                </div>
+              )}
+
+              <div className={`font-mono text-[11px] leading-tight ${labelColor}`}>
+                {n.label}
+              </div>
+
+              <div className="font-mono text-[9px] text-white/20 flex justify-between border-t border-white/[0.05] mt-1 pt-1.5">
+                {m.ac > 0
+                  ? <><span className="text-[#c5a059]/60">AC: {m.ac}</span><span className="text-white/25">Max: {m.maxR}</span></>
+                  : <><span>???</span><span>???</span></>
+                }
               </div>
             </div>
           );
