@@ -10,7 +10,7 @@ import Nemesis from "@/components/Nemesis";
 import Forge from "@/components/Forge";
 import { Line, Bar, Radar } from 'react-chartjs-2';
 
-// --- STRICT TYPESCRIPT INTERFACES ---
+// ─── STRICT TYPESCRIPT INTERFACES ─────────────────────────────────────────────
 interface CFSubmission { verdict: string; creationTimeSeconds: number; timeConsumedMillis: number; memoryConsumedBytes: number; author: { participantType: string }; problem: { contestId: number; index: string; name: string; rating?: number; tags?: string[] }; }
 interface CFInfo { handle: string; rating?: number; maxRating?: number; rank?: string; titlePhoto: string; contribution?: number; }
 interface CFRating { ratingUpdateTimeSeconds: number; oldRating: number; newRating: number; }
@@ -19,7 +19,10 @@ interface SquadMemberData { info: CFInfo; metrics: ProcessedMetrics; history: CF
 
 const CF_SCORE_MAP: Record<number, number> = { 800:15, 900:20, 1000:30, 1100:45, 1200:65, 1300:90, 1400:130, 1500:180, 1600:250, 1700:350, 1800:500, 1900:720, 2000:1050, 2100:1530, 2200:2250, 2300:3300, 2400:4800 };
 const SQUAD_COLORS = ['#58a6ff', '#d2a8ff', '#56d364', '#f85149'];
+const TABS = ["COMMAND", "WAR MAP", "ARMORY", "SQUAD OPS", "NEMESIS", "FORGE", "GRIND", "TITAN"];
+const TAB_COLORS: Record<string, string> = { COMMAND: "#f0a500", "WAR MAP": "#56d364", ARMORY: "#e879f9", "SQUAD OPS": "#58a6ff", NEMESIS: "#f85149", FORGE: "#db6d28", GRIND: "#f85149", TITAN: "#f85149" };
 
+// ─── CORE ENGINE LOGIC ────────────────────────────────────────────────────────
 function processMetrics(subs: CFSubmission[]): ProcessedMetrics {
   let attempts = new Set<string>(); let solved = new Set<string>(); let firstTryOk = 0; let score = 0;
   let verdictsDist: Record<string, number> = {}; let tagsDist: Record<string, number> = {}; let ratingsDist: Record<string, number> = {};
@@ -114,76 +117,299 @@ const evaluateMapMetrics = (subs: CFSubmission[]) => {
   return metrics;
 };
 
+// ─── UI ATOMS ─────────────────────────────────────────────────────────────────
+function GlowPulse({ color = "#f0a500" }) {
+  return <span className="inline-block w-2 h-2 rounded-full animate-[pulse_1.5s_ease-in-out_infinite]" style={{ background: color, boxShadow: `0 0 6px ${color}, 0 0 12px ${color}` }} />;
+}
+
+function TopLine({ color }: { color: string }) {
+  return <div className="absolute top-0 left-0 right-0 h-px" style={{ background: `linear-gradient(90deg, transparent, ${color}, transparent)` }} />;
+}
+
+function StatusLabel({ label, color, icon }: { label: string, color: string, icon?: string }) {
+  return (
+    <div className="flex items-center gap-1.5 font-mono text-[0.6rem] uppercase tracking-widest" style={{ color }}>
+      <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: color }} />
+      {icon && <span>{icon}</span>}
+      {label}
+    </div>
+  );
+}
+
+function StatCard({ label, value, sub, color = "#f0a500", icon }: any) {
+  return (
+    <div className="relative overflow-hidden rounded-2xl p-5 transition-transform hover:-translate-y-1" style={{ background: "linear-gradient(135deg, rgba(255,255,255,0.03) 0%, rgba(0,0,0,0.2) 100%)", border: `1px solid ${color}33`, boxShadow: `0 0 24px ${color}15, inset 0 1px 0 rgba(255,255,255,0.05)` }}>
+      <TopLine color={color} />
+      <div className="text-2xl mb-1">{icon}</div>
+      <div className="font-mono text-3xl font-black leading-none" style={{ color, letterSpacing: "-0.5px" }}>{value}</div>
+      <div className="font-mono text-[0.62rem] uppercase tracking-[2px] mt-1.5" style={{ color: "#666" }}>{label}</div>
+      {sub && <div className="font-mono text-[0.72rem] mt-0.5" style={{ color: "#888" }}>{sub}</div>}
+    </div>
+  );
+}
+
+// ─── TAB COMPONENTS ─────────────────────────────────────────────────────────
+function CommandTab({ metrics, info, filter, config, squadData }: any) {
+  let timeAvgData: Record<string, number> = {}; let memAvgData: Record<string, number> = {};
+  if (metrics) Object.keys(metrics.tagResourceStress).forEach(t => { timeAvgData[t] = metrics.tagResourceStress[t].timeAvg; memAvgData[t] = metrics.tagResourceStress[t].memAvg; });
+  let sortedWeaknesses = metrics ? Object.keys(metrics.weaknessRatios).sort((a,b) => metrics.weaknessRatios[b] - metrics.weaknessRatios[a]) : [];
+
+  return (
+    <div className="flex flex-col gap-6 animate-in fade-in duration-400">
+      <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))" }}>
+        <StatCard label={`${filter==='ALL'?'Lifetime':'Context'} XP`} value={metrics.score.toLocaleString()} color="#f0a500" icon="⚡" />
+        <StatCard label="Unique AC" value={metrics.unique.toLocaleString()} color="#58a6ff" icon="🎯" />
+        <StatCard label="First-Try Acc" value={`${metrics.acc}%`} color="#d2a8ff" icon="🔬" />
+        <StatCard label="Upsolve Rate" value={`${metrics.upsolveRate}%`} color="#db6d28" icon="🔁" />
+      </div>
+
+      <div className="rounded-2xl p-6" style={{ background: "rgba(227,179,65,0.05)", border: "1px solid #30363d", borderLeft: "4px solid #e3b341", boxShadow: "0 4px 20px rgba(0,0,0,0.2)" }}>
+        <div className="font-mono text-[0.65rem] text-[#e3b341] uppercase tracking-[3px] mb-3">👁️ THE ORACLE [TACTICAL DIRECTIVES]</div>
+        <div className="font-mono text-[0.95rem] leading-[1.6]">
+          {sortedWeaknesses.length > 0 ? (
+            <>
+              <div className="mb-2"><span className="text-[#f85149] font-bold">[!] CRITICAL VULNERABILITY:</span> Failure rate in <strong className="text-white">{sortedWeaknesses[0]}</strong> is highly inefficient. Upsolve {Math.floor((info.rating || 1200)/100)*100} - {Math.floor((info.rating || 1200)/100)*100 + 200} rated problems.</div>
+              {sortedWeaknesses.length > 1 && <div><span className="text-[#e3b341] font-bold">[*] SECONDARY TARGET:</span> <strong className="text-white">{sortedWeaknesses[1]}</strong>. Run drills in this sector.</div>}
+            </>
+          ) : "Awaiting analysis..."}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="rounded-2xl p-5" style={{ background: "#050505", border: "1px solid #1a1a1a" }}>
+          <div className="font-mono text-[0.65rem] text-[#58a6ff] uppercase tracking-[2px] mb-4">📡 RATING TRAJECTORY (MOMENTUM)</div>
+          <div className="h-[300px] relative"><RatingLineChart history={squadData[config.main].history} /></div>
+        </div>
+        <div className="rounded-2xl p-5" style={{ background: "#050505", border: "1px solid #1a1a1a" }}>
+          <div className="font-mono text-[0.65rem] text-[#56d364] uppercase tracking-[2px] mb-4">🔥 ACTIVITY HEATMAP</div>
+          <div className="h-[300px] flex items-center justify-center overflow-x-auto"><ActivityHeatmap subs={metrics.rawSubsList} /></div>
+        </div>
+      </div>
+
+      <div className="rounded-2xl p-5" style={{ background: "#050505", border: "1px solid #1a1a1a" }}>
+        <div className="font-mono text-[0.65rem] text-[#f85149] uppercase tracking-[2px] mb-4">🩸 ALGORITHMIC WEAKNESS MATRIX (FAILS / AC RATIO)</div>
+        <div className="h-[400px] relative"><TacticalBarChart data={metrics.weaknessRatios} color="#f85149" horizontal={true} /></div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="rounded-2xl p-5" style={{ background: "#050505", border: "1px solid #1a1a1a" }}>
+          <div className="font-mono text-[0.65rem] text-[#e879f9] uppercase tracking-[2px] mb-4">⏳ TIME EXECUTION STRESS (AVG MS)</div>
+          <div className="h-[300px] relative"><StressBarChart data={timeAvgData} type="time" /></div>
+        </div>
+        <div className="rounded-2xl p-5" style={{ background: "#050505", border: "1px solid #1a1a1a" }}>
+          <div className="font-mono text-[0.65rem] text-[#d2a8ff] uppercase tracking-[2px] mb-4">💾 MEMORY FOOTPRINT STRESS (AVG MB)</div>
+          <div className="h-[300px] relative"><StressBarChart data={memAvgData} type="memory" /></div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="rounded-2xl p-5" style={{ background: "#050505", border: "1px solid #1a1a1a" }}>
+          <div className="font-mono text-[0.65rem] text-[#f0a500] uppercase tracking-[2px] mb-4">⚡ RESOURCE DISTRIBUTION</div>
+          <div className="h-[300px] relative"><ResourceScatterChart subs={metrics.rawSubsList} /></div>
+        </div>
+        <div className="rounded-2xl p-5" style={{ background: "#050505", border: "1px solid #1a1a1a" }}>
+          <div className="font-mono text-[0.65rem] text-[#58a6ff] uppercase tracking-[2px] mb-4">⏰ CHRONOTYPE ANALYSIS</div>
+          <div className="h-[300px] relative"><ChronotypeChart subs={metrics.rawSubsList} /></div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="rounded-2xl p-5" style={{ background: "#050505", border: "1px solid #1a1a1a" }}>
+          <div className="font-mono text-[0.65rem] text-[#56d364] uppercase tracking-[2px] mb-4">🕸 ALGORITHMIC MASTERY</div>
+          <div className="h-[300px] relative"><TagsRadarChart data={metrics.tagsDist} handle={info.handle} /></div>
+        </div>
+        <div className="rounded-2xl p-5" style={{ background: "#050505", border: "1px solid #1a1a1a" }}>
+          <div className="font-mono text-[0.65rem] text-[#db6d28] uppercase tracking-[2px] mb-4">⏱ TIME-TO-SOLVE (DEBUG SPEED)</div>
+          <div className="h-[300px] relative"><TimeToSolveChart data={metrics.timeToSolveDist} /></div>
+        </div>
+        <div className="rounded-2xl p-5" style={{ background: "#050505", border: "1px solid #1a1a1a" }}>
+          <div className="font-mono text-[0.65rem] text-[#58a6ff] uppercase tracking-[2px] mb-4">📊 PROBLEM RATING DISTRIBUTION</div>
+          <div className="h-[300px] relative"><TacticalBarChart data={metrics.ratingsDist} color="#58a6ff" /></div>
+        </div>
+        <div className="rounded-2xl p-5" style={{ background: "#050505", border: "1px solid #1a1a1a" }}>
+          <div className="font-mono text-[0.65rem] text-[#8b949e] uppercase tracking-[2px] mb-4">🚫 SUBMISSION VERDICTS</div>
+          <div className="h-[300px] relative"><VerdictChart data={metrics.verdictsDist} /></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SquadOpsTab({ squadMatrix, config, squadCharts, bounties }: any) {
+  const allPlayers = [config.main, ...config.squad].filter(h => squadMatrix[h]).sort((a,b) => (squadMatrix[b].info.rating || 0) - (squadMatrix[a].info.rating || 0));
+  
+  return (
+    <div className="flex flex-col gap-6 animate-in fade-in duration-400">
+      <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))" }}>
+        {allPlayers.map((handle, i) => {
+          const p = squadMatrix[handle];
+          const color = handle === config.main ? '#f0a500' : SQUAD_COLORS[i % SQUAD_COLORS.length];
+          return (
+            <div key={handle} className="relative overflow-hidden rounded-2xl p-6" style={{ background: `radial-gradient(ellipse at top left, ${color}08 0%, #050505 70%)`, border: `1px solid ${color}33`, boxShadow: `0 0 24px ${color}0a` }}>
+              <TopLine color={color} />
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl" style={{ background: `${color}22`, border: `1px solid ${color}44` }}>
+                  {i === 0 ? "👑" : i === 1 ? "⚔️" : "🛡️"}
+                </div>
+                <div>
+                  <div className="font-mono font-bold text-base" style={{ color: color }}>{handle} {handle === config.main && <span className="text-[10px] text-[#444] tracking-widest">[YOU]</span>}</div>
+                  <div className="font-mono text-[0.6rem] uppercase tracking-wider" style={{ color: "#555" }}>{p.info.rank || 'Unrated'}</div>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {[["Rating", p.info.rating || 0, color],["Unique AC", p.metrics.unique, "#ddd"],["Accuracy", p.metrics.acc + "%", "#ddd"]].map(([l, v, c]) => (
+                  <div key={l as string} className="text-center">
+                    <div className="font-mono text-base font-black" style={{ color: c as string }}>{v}</div>
+                    <div className="font-mono text-[0.55rem] uppercase tracking-wider mt-0.5" style={{ color: "#444" }}>{l}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      <div className="rounded-2xl p-6" style={{ background: "#050505", border: "1px solid #1a1a1a", borderLeft: "4px solid #f85149" }}>
+        <div className="font-mono text-[0.65rem] uppercase tracking-[3px] mb-4 text-[#f85149]">🪦 THE GRAVEYARD [ACTIVE BOUNTIES]</div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {bounties.map((b: any) => (
+            <div key={b.pid} className={`bg-[rgba(0,0,0,0.3)] border border-[#1a1a1a] rounded-[8px] p-[15px] flex flex-col gap-[10px] border-l-[3px] ${b.isOwn ? 'border-l-[#f85149]' : 'border-l-[#e3b341]'}`}>
+              <div className="flex justify-between items-start"><span className="text-[#58a6ff] font-bold text-[1rem] leading-[1.2] pr-[10px]">{b.name}</span><span className="text-[#e3b341] font-mono text-[0.7rem] font-bold bg-[rgba(227,179,65,0.1)] px-[6px] py-[2px] rounded-[4px]">{b.pts} PTS</span></div>
+              <p className="text-[0.75rem] text-[#8b949e] m-0 font-mono">Failed {b.fails}x by <span className="text-[#f85149] font-bold">{b.victim}</span></p>
+              <a href={`https://codeforces.com/contest/${b.prob.contestId}/problem/${b.prob.index}`} target="_blank" className={`mt-auto text-center font-mono text-[0.7rem] font-bold p-[8px] border rounded-[6px] transition-colors no-underline ${b.btnClass}`}>{b.status}</a>
+            </div>
+          ))}
+          {bounties.length === 0 && <div className="col-span-4 text-[#8b949e] font-mono italic">No active bounties. The squad is clean.</div>}
+        </div>
+      </div>
+
+      <div className="rounded-2xl p-6" style={{ background: "#050505", border: "1px solid #1a1a1a" }}>
+        <div className="font-mono text-[0.65rem] uppercase tracking-[3px] mb-4" style={{ color: "#888" }}>⚔️ THE CRUCIBLE — 1v1 COMBINATORIAL DUELS</div>
+        <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))" }}>
+          {allPlayers.map((a, i) => allPlayers.slice(i+1).map(b => {
+            const pa = squadMatrix[a]; const pb = squadMatrix[b];
+            const ca = a === config.main ? '#f0a500' : '#58a6ff'; const cb = b === config.main ? '#f0a500' : '#58a6ff';
+            return (
+              <div key={`${a}-${b}`} className="rounded-xl p-5" style={{ background: "#0a0a0a", border: "1px solid #1a1a1a" }}>
+                <div className="flex justify-between mb-3 font-mono">
+                  <span className="font-bold" style={{ color: ca }}>{a}</span><span className="text-[0.7rem]" style={{ color: "#333" }}>VS</span><span className="font-bold" style={{ color: cb }}>{b}</span>
+                </div>
+                {[["Rating", pa.info.rating||0, pb.info.rating||0],["Unique AC", pa.metrics.unique, pb.metrics.unique],["Accuracy", pa.metrics.acc, pb.metrics.acc]].map(([l, v1, v2]) => (
+                  <div key={l as string} className="flex justify-between font-mono text-[0.75rem] mb-1.5">
+                    <span style={{ color: (v1 as number) >= (v2 as number) ? "#56d364" : "#f85149", fontWeight: (v1 as number) >= (v2 as number) ? 700 : 400 }}>{v1}</span>
+                    <span className="uppercase text-[0.6rem]" style={{ color: "#444" }}>{l}</span>
+                    <span style={{ color: (v2 as number) >= (v1 as number) ? "#56d364" : "#f85149", fontWeight: (v2 as number) >= (v1 as number) ? 700 : 400 }}>{v2}</span>
+                  </div>
+                ))}
+              </div>
+            );
+          }))}
+        </div>
+      </div>
+
+      {squadCharts && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="rounded-2xl p-5" style={{ background: "#050505", border: "1px solid #1a1a1a" }}><div className="font-mono text-[0.65rem] text-[#58a6ff] uppercase tracking-[2px] mb-4">RATING WARFARE</div><div className="h-[300px]"><Line data={squadCharts.lineData} options={{ responsive: true, maintainAspectRatio: false, scales: { x: { display: false }, y: { grid: { color: '#1a1a1a' }, ticks: {font: {family: 'monospace'}}} }, plugins: { legend: { labels: { color: '#e0e6ed', font: { family: 'monospace' } } } } }} /></div></div>
+          <div className="rounded-2xl p-5" style={{ background: "#050505", border: "1px solid #1a1a1a" }}><div className="font-mono text-[0.65rem] text-[#f0a500] uppercase tracking-[2px] mb-4">TACTICAL SPRINTS</div><div className="h-[300px]"><Bar data={squadCharts.sprintData} options={{ responsive: true, maintainAspectRatio: false, scales: { x: { grid: { display: false }, ticks: {font: {family: 'monospace'}} }, y: { grid: { color: '#1a1a1a' } } }, plugins: { legend: { labels: { color: '#e0e6ed', font: { family: 'monospace' } } } } }} /></div></div>
+          <div className="rounded-2xl p-5 md:col-span-2" style={{ background: "#050505", border: "1px solid #1a1a1a" }}><div className="font-mono text-[0.65rem] text-[#e879f9] uppercase tracking-[2px] mb-4">THE TRIAD (COMBINED RADAR)</div><div className="h-[400px]"><Radar data={squadCharts.radarData} options={{ responsive: true, maintainAspectRatio: false, scales: { r: { angleLines: { color: '#1a1a1a' }, grid: { color: '#1a1a1a' }, ticks: { display: false }, pointLabels: { color: '#8b949e', font: {family: 'monospace'} } } }, plugins: { legend: { position: 'top', labels: { color: '#e0e6ed', font: { family: 'monospace' } } } } }} /></div></div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TitanTab({ squadData, config }: any) {
+  if (!squadData[config.titan]) return <div className="text-center py-20 text-[#8b949e] font-mono animate-in fade-in">NO TITAN CONFIGURED. Access settings to lock target.</div>;
+  const tData = squadData[config.titan].info;
+  const myRating = squadData[config.main].info.rating || 0;
+  const tRating = tData.rating || 0;
+  const gap = tRating - myRating;
+
+  return (
+    <div className="flex flex-col gap-6 animate-in fade-in duration-400">
+      <div className="relative overflow-hidden rounded-[20px] p-8" style={{ background: "radial-gradient(ellipse at top, #1a0000 0%, #050505 70%)", border: "1px solid #f8514944", boxShadow: "0 0 40px #f8514915" }}>
+        <TopLine color="#f85149" />
+        <div className="absolute bottom-0 right-0 text-[8rem] opacity-[0.03] leading-none">💀</div>
+        <div className="flex items-center gap-8">
+          <img src={tData.titlePhoto} alt="Titan" className="w-20 h-20 rounded-2xl border-2 object-cover" style={{ borderColor: "#f8514966" }} />
+          <div>
+            <div className="font-mono text-[1.8rem] font-black tracking-tight text-[#f85149]">{tData.handle}</div>
+            <div className="font-mono text-[0.6rem] uppercase tracking-[3px]" style={{ color: "#666" }}>DESIGNATED TITAN — ASSASSINATION TARGET</div>
+            <div className="font-mono text-[1.4rem] font-bold text-[#f0a500] mt-1">
+              {tRating} <span className="text-[0.7rem]" style={{ color: "#666" }}>CURRENT RATING</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="rounded-xl p-6" style={{ background: "#050505", borderLeft: "4px solid #f85149", border: "1px solid #f8514922" }}>
+        <div className="font-mono text-[0.65rem] text-[#f85149] uppercase tracking-[3px] mb-4">📋 ASSASSINATION PROTOCOL</div>
+        <div className="font-mono text-base leading-relaxed" style={{ color: "#e0e6ed" }}>
+          {gap <= 0 ? (
+            <>Target neutralized. You surpassed <span className="text-[#f0a500] font-bold">{config.titan}</span> by {Math.abs(gap)} points. Find a new Titan.</>
+          ) : (
+            <>
+              Titan <span className="text-[#f0a500] font-bold">{config.titan}</span> is <span className="text-[#f85149] font-black text-xl">{gap}</span> points ahead.<br />
+              Target protocol: Sustain First-Try ACs on <span className="text-[#f0a500] font-bold">{Math.floor((tRating || 1500)/100)*100}+</span> rated problems.<br />
+              Estimated intercept: <span className="text-[#56d364]">~{Math.ceil(gap/15)} contest cycles</span> at current velocity.
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── ROOT COMPONENT ───────────────────────────────────────────────────────────
 export default function Home() {
   const [handle, setHandle] = useState("");
   const [squadData, setSquadData] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(false);
   const [loadingMsg, setLoadingMsg] = useState("");
-  const [activeTab, setActiveTab] = useState("TELEMETRY");
+  const [activeTab, setActiveTab] = useState("COMMAND");
   const [nemesisTarget, setNemesisTarget] = useState("");
   const [contextFilter, setContextFilter] = useState("ALL");
   const [timeFilter, setTimeFilter] = useState("ALL");
   const [showSettings, setShowSettings] = useState(false);
   const [config, setConfig] = useState({ main: "", squad: [] as string[], titan: "" });
+  const [tick, setTick] = useState(0);
+
+  useEffect(() => { const iv = setInterval(() => setTick(t => t + 1), 1000); return () => clearInterval(iv); }, []);
 
   useEffect(() => {
     const saved = localStorage.getItem('cf_config_v6');
     if (saved) { 
       const parsed = JSON.parse(saved); 
-      setConfig(parsed); 
-      setHandle(parsed.main || "");
+      setConfig(parsed); setHandle(parsed.main || "");
       if (parsed.squad && parsed.squad.length > 0) setNemesisTarget(parsed.squad[0]);
       if (parsed.main) fetchGlobalTelemetry(parsed.main, parsed.squad, parsed.titan); 
-    }
-    else setShowSettings(true);
+    } else setShowSettings(true);
   }, []);
 
   const fetchGlobalTelemetry = async (mainH: string, squadH: string[], titanH: string) => {
     if (!mainH) return;
-    setLoading(true);
-    setLoadingMsg(`ESTABLISHING SECURE UPLINK...`);
-
+    setLoading(true); setLoadingMsg(`ESTABLISHING SECURE UPLINK...`);
     const newSquadData: Record<string, any> = {};
     const allHandles = [mainH, ...squadH, titanH].filter(Boolean);
 
     const fetchCF = async (url: string, retries = 3) => {
       for (let i = 0; i < retries; i++) {
-        try {
-          await new Promise(res => setTimeout(res, 1500)); 
-          const res = await fetch(url);
-          const data = await res.json();
-          if (data.status === 'OK') return data.result;
-          if (data.comment && data.comment.includes("not found")) return null; 
-        } catch (e) {
-          console.warn(`Fetch glitch for ${url}, retrying...`);
-        }
+        try { await new Promise(res => setTimeout(res, 1500)); const res = await fetch(url); const data = await res.json(); if (data.status === 'OK') return data.result; if (data.comment && data.comment.includes("not found")) return null; } 
+        catch (e) { console.warn(`Fetch glitch for ${url}, retrying...`); }
       }
       throw new Error("API Timeout");
     };
 
     try {
       const infoResult = await fetchCF(`https://codeforces.com/api/user.info?handles=${allHandles.join(';')}`);
-      if (infoResult) {
-        allHandles.forEach(h => {
-          const info = infoResult.find((u: any) => u.handle.toLowerCase() === h.toLowerCase());
-          if (info) newSquadData[h] = { handle: h, info: info, rawSubs: [], history: [] };
-        });
-      }
-
+      if (infoResult) allHandles.forEach(h => { const info = infoResult.find((u: any) => u.handle.toLowerCase() === h.toLowerCase()); if (info) newSquadData[h] = { handle: h, info: info, rawSubs: [], history: [] }; });
       for (const h of allHandles) {
         if (!newSquadData[h]) continue; 
         setLoadingMsg(`SYNCING OPERATIVE: ${h.toUpperCase()}...`);
-        const subs = await fetchCF(`https://codeforces.com/api/user.status?handle=${h}`);
-        if (subs) newSquadData[h].rawSubs = subs;
-        const history = await fetchCF(`https://codeforces.com/api/user.rating?handle=${h}`);
-        if (history) newSquadData[h].history = history;
+        const subs = await fetchCF(`https://codeforces.com/api/user.status?handle=${h}`); if (subs) newSquadData[h].rawSubs = subs;
+        const history = await fetchCF(`https://codeforces.com/api/user.rating?handle=${h}`); if (history) newSquadData[h].history = history;
       }
       setSquadData(newSquadData);
-    } catch (err) {
-      console.error(err);
-      alert("Engine Failure: Codeforces API is overwhelmed. Please wait 60 seconds and try again.");
-      setShowSettings(true);
-    }
+    } catch (err) { alert("Engine Failure: Codeforces API is overwhelmed. Please wait 60 seconds and try again."); setShowSettings(true); }
     setLoading(false);
   };
 
@@ -235,7 +461,6 @@ export default function Home() {
     const mapMetrics = evaluateMapMetrics(squadData[config.main].rawSubs);
     const now = Date.now() / 1000;
 
-    // --- 76 BADGES ENGINE ---
     const findWinner = (pathFn: (p: string) => number, min = 0, isMin = false) => { let best: string | null = null; let bestVal = isMin ? Infinity : -Infinity; allPlayers.forEach(p => { let v = pathFn(p); if (!isMin && v > bestVal && v >= min) { bestVal = v; best = p; } else if (isMin && v < bestVal && v <= min) { bestVal = v; best = p; } }); return best; };
     const ac = (p: string, d: number) => sMatrix[p].metrics.rawSubsList.filter((s:CFSubmission) => s.verdict==='OK' && (now - s.creationTimeSeconds)/86400 <= d);
     const subs = (p: string, d: number) => sMatrix[p].metrics.rawSubsList.filter((s:CFSubmission) => (now - s.creationTimeSeconds)/86400 <= d);
@@ -246,13 +471,10 @@ export default function Home() {
     const acc = (p: string, d: number) => { let a = subs(p, d); let oks = ac(p, d); return a.length > 0 ? oks.length / a.length : 0; };
 
     let badges: BadgeDef[] = [
-      // --- DAILY (5%) ~ 4 badges ---
       { id: 'd_hero', icon: '🔥', name: 'Daily Hero', desc: 'Highest Score (24h)', owner: findWinner(p => pts(p, 1), 0) },
       { id: 'd_berserker', icon: '🩸', name: 'Bloodlust', desc: 'Most ACs today', owner: findWinner(p => ac(p, 1).length, 2) },
       { id: 'd_titan', icon: '🗡️', name: 'Daily Slayer', desc: 'Max Rating AC (24h)', owner: findWinner(p => maxR(p, 1), 800) },
       { id: 'd_owl', icon: '🦉', name: 'Midnight Oil', desc: 'Most ACs 12AM-5AM (24h)', owner: findWinner(p => ac(p, 1).filter((s:any) => { let h=new Date(s.creationTimeSeconds*1000).getHours(); return h>=0 && h<=5; }).length, 1) },
-
-      // --- WEEKLY (35%) ~ 26 badges ---
       { id: 'w_vanguard', icon: '⚡', name: 'Vanguard', desc: 'Highest Score (7D)', owner: findWinner(p => pts(p, 7), 50) },
       { id: 'w_marathon', icon: '🏃', name: 'Weekly Marathon', desc: 'Active days (7D)', owner: findWinner(p => activeDays(p, 7), 4) },
       { id: 'w_architect', icon: '📐', name: 'Flawless', desc: 'Best Accuracy (7D, Min 5)', owner: findWinner(p => subs(p,7).length>=5 ? acc(p,7) : 0, 0) },
@@ -279,8 +501,6 @@ export default function Home() {
       { id: 'w_contest', icon: '🏆', name: 'Gladiator', desc: 'Most in-contest ACs (7D)', owner: findWinner(p => ac(p, 7).filter((s:any) => s.author?.participantType === 'CONTESTANT').length, 1) },
       { id: 'w_upsolve', icon: '🛠️', name: 'Mechanic', desc: 'Most upsolves (7D)', owner: findWinner(p => ac(p, 7).filter((s:any) => s.author?.participantType === 'PRACTICE').length, 5) },
       { id: 'w_slacker', icon: '💤', name: 'Slacker', desc: '[NEGATIVE] Zero ACs (7D)', owner: findWinner(p => ac(p, 7).length === 0 ? 1 : 0, 0), isNegative: true },
-      
-      // --- MONTHLY (25%) ~ 19 badges ---
       { id: 'm_overlord', icon: '👑', name: 'Overlord', desc: 'Highest Score (30D)', owner: findWinner(p => pts(p, 30), 100) },
       { id: 'm_marathon', icon: '🏃‍♂️', name: 'Monthly Marathon', desc: 'Active days (30D)', owner: findWinner(p => activeDays(p, 30), 10) },
       { id: 'm_architect', icon: '🏛️', name: 'Architect', desc: 'Best Accuracy (30D, Min 20)', owner: findWinner(p => subs(p,30).length>=20 ? acc(p,30) : 0, 0) },
@@ -300,8 +520,6 @@ export default function Home() {
       { id: 'm_wanted', icon: '🚨', name: 'Most Wanted', desc: '[NEGATIVE] Most active bounties', owner: findWinner(p => bMatrix[p].active.length, 2), isNegative: true },
       { id: 'm_tilter', icon: '🤡', name: 'Monthly Tilter', desc: '[NEGATIVE] Most WAs (30D)', owner: findWinner(p => subs(p, 30).filter((s:any) => s.verdict === 'WRONG_ANSWER').length, 15), isNegative: true },
       { id: 'm_volume', icon: '📈', name: 'Grind Master', desc: 'Most Total ACs (30D)', owner: findWinner(p => ac(p, 30).length, 20) },
-
-      // --- 6 MONTHS / YEARLY (25%) ~ 19 badges ---
       { id: 'h_emperor', icon: '👑', name: 'Emperor', desc: 'Highest Score (180D)', owner: findWinner(p => pts(p, 180), 500) },
       { id: 'h_marathon', icon: '🏃‍♀️', name: 'Ironman', desc: 'Active days (180D)', owner: findWinner(p => activeDays(p, 180), 30) },
       { id: 'h_architect', icon: '🏛️', name: 'Grand Architect', desc: 'Best Accuracy (180D, Min 50)', owner: findWinner(p => subs(p,180).length>=50 ? acc(p,180) : 0, 0) },
@@ -321,8 +539,6 @@ export default function Home() {
       { id: 'h_volume', icon: '📚', name: 'Library', desc: 'Most Total ACs (180D)', owner: findWinner(p => ac(p, 180).length, 50) },
       { id: 'h_tilter', icon: '🤡', name: 'Grand Tilter', desc: '[NEGATIVE] Most WAs (180D)', owner: findWinner(p => subs(p, 180).filter((s:any) => s.verdict === 'WRONG_ANSWER').length, 50), isNegative: true },
       { id: 'h_speed', icon: '🏎️', name: 'Speedster', desc: 'Most Sub-30m Solves (180D)', owner: findWinner(p => { let c=0; Object.entries(sMatrix[p].metrics.timeToSolveDist).forEach(([k,v])=> {if(k==='First Try (0m)'||k==='< 30m') c+=(v as number);}); return c; }, 10) },
-
-      // --- ALL-TIME / MAP BASED (10%) ~ 8 badges ---
       { id: 'a_recon', icon: '🥷', name: 'Recon Ghost', desc: 'Acquired at least 5 ACs +200 rating.', owner: reconMetrics.unique >= 5 ? config.main : null },
       { id: 'a_emperor', icon: '🏰', name: 'The Emperor', desc: 'Constructed 5+ Citadels on Map.', owner: mapMetrics.citadel >= 5 ? config.main : null },
       { id: 'a_warlord', icon: '⚔️', name: 'The Warlord', desc: 'Conquered 10+ territories on Map.', owner: mapMetrics.conquered >= 10 ? config.main : null },
@@ -335,8 +551,6 @@ export default function Home() {
 
     return { mainMetrics, squadMatrix: sMatrix, bounties: uniqueBounties.slice(0,30), computedBadges: badges, absoluteMySolves: absSolves };
   }, [squadData, config, contextFilter, timeFilter]);
-
-  const getRankColor = (rank?: string) => { if(!rank) return '#e0e6ed'; if(rank.includes('newbie')) return '#8b949e'; if(rank.includes('pupil')) return '#56d364'; if(rank.includes('specialist')) return '#58a6ff'; if(rank.includes('expert')) return '#d2a8ff'; if(rank.includes('candidate master')) return '#e3b341'; if(rank.includes('master')) return '#db6d28'; return '#f85149'; };
 
   const squadCharts = useMemo(() => {
     if (!squadMatrix[config.main]) return null;
@@ -351,11 +565,6 @@ export default function Home() {
     return { sprintData, radarData, lineData, players };
   }, [squadMatrix, config.main]);
 
-  let timeAvgData: Record<string, number> = {}; let memAvgData: Record<string, number> = {};
-  if (mainMetrics) Object.keys(mainMetrics.tagResourceStress).forEach(t => { timeAvgData[t] = mainMetrics.tagResourceStress[t].timeAvg; memAvgData[t] = mainMetrics.tagResourceStress[t].memAvg; });
-  let sortedWeaknesses = mainMetrics ? Object.keys(mainMetrics.weaknessRatios).sort((a,b) => mainMetrics.weaknessRatios[b] - mainMetrics.weaknessRatios[a]) : [];
-
-  // THE GUILLOTINE LOGIC
   const guillotineStatus = useMemo(() => {
     if (!mainMetrics || mainMetrics.rawSubsList.length === 0) return { hoursInactive: 0, bleed: 0, isDecay: false, isWarning: false };
     const okSubs = mainMetrics.rawSubsList.filter(s => s.verdict === 'OK');
@@ -367,246 +576,126 @@ export default function Home() {
     return { hoursInactive: Math.floor(hoursInactive), bleed, isDecay, isWarning };
   }, [mainMetrics]);
 
+  const timeStr = new Date().toTimeString().slice(0, 8);
+
   return (
-    <main className="min-h-screen bg-[#111214] text-[#e0e6ed] font-['Inter',sans-serif] overflow-x-hidden pb-20 selection:bg-[#58a6ff]">
+    <div className="min-h-screen bg-[#030305] text-[#e0e6ed] selection:bg-[#f0a500] font-sans">
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)} onSave={(newCfg) => { setConfig(newCfg); setHandle(newCfg.main); setShowSettings(false); fetchGlobalTelemetry(newCfg.main, newCfg.squad, newCfg.titan); }} />}
-      
-      <div className="flex justify-between items-center px-8 py-6 bg-[#1e2024] border-b border-[#30363d] sticky top-0 z-50 shadow-[0_4px_20px_rgba(0,0,0,0.5)]">
-        <div>
-          <h1 className="text-[1.5rem] font-bold text-white tracking-tight m-0 leading-none">Codeforces Synthesis Engine</h1>
-          <p className="text-[#8b949e] mt-1 text-[0.85rem] font-mono m-0">Tracking: {handle || "N/A"} | Context: {contextFilter}</p>
-        </div>
-        <div className="flex items-center gap-[15px]">
-          <div className="flex bg-[#0d1117] rounded-[6px] border border-[#30363d] overflow-hidden">
-            {['ALL', 'CONTEST', 'PRACTICE', 'RECON'].map(ctx => <button key={ctx} onClick={() => setContextFilter(ctx)} className={`px-4 py-2 border-r border-[#30363d] last:border-0 font-semibold text-[0.85rem] transition-colors cursor-pointer ${contextFilter === ctx ? (ctx==='RECON'?'bg-[#58a6ff] text-black':'bg-[#e3b341] text-black') : 'bg-transparent text-[#8b949e] hover:bg-[rgba(255,255,255,0.05)]'}`}>{ctx}</button>)}
-          </div>
-          <button onClick={() => setShowSettings(true)} className="bg-[#2b2e33] border border-[#30363d] text-[#e0e6ed] px-[12px] py-[8px] rounded-[6px] cursor-pointer text-[1.2rem] transition-colors hover:bg-[#e3b341] hover:text-black">⚙️</button>
-        </div>
-      </div>
+      <style>{`
+        @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.5;transform:scale(0.85)} }
+        @keyframes flicker { 0%,100%{opacity:1} 92%{opacity:1} 93%{opacity:0.8} 94%{opacity:1} }
+        * { box-sizing: border-box; }
+        ::-webkit-scrollbar{width:4px;background:#050505} ::-webkit-scrollbar-thumb{background:#1a1a1a;border-radius:2px}
+      `}</style>
 
-      {loading && <div className="text-center my-16 font-mono text-[#e3b341] text-[1.2rem] animate-pulse">{loadingMsg}</div>}
+      <div className="fixed inset-0 pointer-events-none z-0" style={{ background: "repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px)" }} />
 
-      {!loading && mainMetrics && squadData[config.main] && (
-        <div className="w-full max-w-[1400px] mx-auto p-8 animate-in fade-in duration-500">
-          
-          <div className="flex justify-between items-center border-b border-[#30363d] bg-[rgba(30,32,36,0.8)] backdrop-blur-[10px] px-8 mb-8 -mx-8 overflow-x-auto">
-            <div className="flex gap-8 whitespace-nowrap">
-              {['TELEMETRY', 'MAP', 'SQUAD', 'NEMESIS', 'FORGE', 'GRIND', 'TITAN'].map(tab => {
-                const isActive = activeTab === tab;
-                return <div key={tab} onClick={() => setActiveTab(tab)} className={`py-4 font-mono text-[0.9rem] uppercase cursor-pointer border-b-[3px] transition-all ${isActive ? (tab === 'GRIND' ? 'text-[#f85149] border-[#f85149] drop-shadow-[0_0_10px_rgba(248,81,73,0.5)]' : tab === 'FORGE' ? 'text-[#db6d28] border-[#db6d28] drop-shadow-[0_0_10px_rgba(219,109,40,0.5)]' : 'text-[#e3b341] border-[#e3b341] font-bold drop-shadow-[0_0_10px_rgba(227,179,65,0.3)]') : 'text-[#8b949e] border-transparent hover:text-[#e0e6ed]'}`}>[ {tab === 'MAP' ? 'THE WAR MAP' : tab === 'SQUAD' ? 'SQUAD CLASH' : tab === 'TELEMETRY' ? 'MY TELEMETRY' : tab === 'GRIND' ? 'GRIND MODE' : tab === 'NEMESIS' ? 'TARGET LOCK' : tab === 'FORGE' ? 'THE FORGE' : 'TITAN TRACKER'} ]</div>
-              })}
-            </div>
-          </div>
-
-          {activeTab === "TELEMETRY" && (
-            <div className="animate-in fade-in duration-400">
-              
-              {/* THE GUILLOTINE WIDGET */}
-              {(guillotineStatus.isDecay || guillotineStatus.isWarning) && (
-                <div className={`mb-8 p-6 rounded-[12px] border flex justify-between items-center ${guillotineStatus.isDecay ? 'bg-[rgba(248,81,73,0.1)] border-[#f85149] animate-[pulse_2s_ease-in-out_infinite]' : 'bg-[rgba(227,179,65,0.1)] border-[#e3b341]'}`}>
-                  <div>
-                    <h2 className={`font-black uppercase tracking-widest m-0 ${guillotineStatus.isDecay ? 'text-[#f85149]' : 'text-[#e3b341]'}`}>{guillotineStatus.isDecay ? 'CRITICAL DECAY DETECTED' : 'RUST FORMING'}</h2>
-                    <p className="text-[#8b949e] font-mono text-sm mt-1 mb-0">Inactive for {guillotineStatus.hoursInactive} hours.</p>
-                  </div>
-                  {guillotineStatus.isDecay && <div className="text-right"><div className="text-3xl font-black text-[#f85149] font-mono">-{guillotineStatus.bleed} PTS</div><div className="text-[10px] text-[#f85149] uppercase tracking-widest">Simulated Elo Bleed</div></div>}
-                </div>
-              )}
-
-               <div className="bg-[#1e2024] border border-[#30363d] rounded-[20px] p-8 flex items-center gap-8 mb-8 shadow-[0_4px_20px_rgba(0,0,0,0.2)] flex-wrap relative">
-                <img src={squadData[config.main].info.titlePhoto} alt="Avatar" className="w-[100px] h-[100px] rounded-[12px] border-2 border-[#30363d] object-cover" />
-                <div className="flex-1 min-w-[250px]">
-                  <h2 className="text-[1.8rem] font-bold m-0 mb-1.5 flex items-center gap-2.5 flex-wrap">
-                    {squadData[config.main].info.handle}
-                    <span className="text-[0.85rem] uppercase px-2.5 py-1 bg-[rgba(0,0,0,0.3)] rounded-[20px] font-semibold tracking-[1px]" style={{color: getRankColor(squadData[config.main].info.rank)}}>{squadData[config.main].info.rank || "Unrated"}</span>
-                  </h2>
-                  <div className="flex gap-8 mt-[15px] flex-wrap">
-                    <div className="flex flex-col"><span className="font-mono text-[1.4rem] font-bold text-[#e3b341]">{squadData[config.main].info.rating || 0}</span><span className="text-[0.75rem] text-[#8b949e] uppercase font-semibold">Live Rating</span></div>
-                    <div className="flex flex-col"><span className="font-mono text-[1.4rem] font-bold text-[#58a6ff]">{squadData[config.main].info.maxRating || 0}</span><span className="text-[0.75rem] text-[#8b949e] uppercase font-semibold">Max Rating</span></div>
-                  </div>
-                  <Armory badges={computedBadges} mainHandle={config.main} variant="mini" />
-                </div>
+      <header className="sticky top-0 z-50 border-b border-[#1a1a2a] px-8" style={{ background: "rgba(3,3,5,0.95)", backdropFilter: "blur(16px)" }}>
+        <div className="max-w-[1400px] mx-auto">
+          <div className="flex items-center justify-between py-3">
+            <div className="flex items-center gap-4">
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center text-base" style={{ background: "linear-gradient(135deg,#f0a500,#f85149)", boxShadow: "0 0 16px #f0a50044" }}>⚡</div>
+              <div>
+                <div className="font-mono font-black text-base tracking-[3px] text-[#f0a500] uppercase animate-[flicker_4s_infinite]">CODEFORCES SYNTHESIS ENGINE</div>
+                <div className="font-mono text-[0.55rem] tracking-[2px] text-[#444]">TACTICAL COMPETITIVE INTELLIGENCE PLATFORM v4.2.1</div>
               </div>
+            </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-                {[ { label: 'Active Sprint Score', val: (timeFilter === '30' ? mainMetrics.monthlyScore : timeFilter === '7' ? mainMetrics.weeklyScore : mainMetrics.score).toLocaleString(), c: '#e3b341' }, { label: 'Unique Solved', val: mainMetrics.unique.toLocaleString(), c: '#58a6ff' }, { label: 'Absolute First-Try', val: `${mainMetrics.acc}%`, c: '#d2a8ff' }, { label: 'Upsolve Rate', val: `${mainMetrics.upsolveRate}%`, c: '#db6d28' } ].map(s => (
-                  <div key={s.label} className="bg-[rgba(0,0,0,0.2)] p-6 rounded-[12px] border border-[#30363d] border-t-[3px] transition-transform hover:-translate-y-1 hover:bg-[#1e2024] hover:shadow-[0_10px_40px_rgba(0,0,0,0.7)] flex flex-col justify-center items-start" style={{ borderTopColor: s.c }}>
-                    <div className="text-[2.5rem] font-light font-mono leading-none mb-2">{s.val}</div>
-                    <div className="text-[0.75rem] text-[#8b949e] uppercase tracking-[1px] font-semibold">{s.label}</div>
-                  </div>
+            <div className="flex items-center gap-6">
+              {/* Context Filters */}
+              <div className="flex bg-[#050505] rounded-[6px] border border-[#1a1a1a] overflow-hidden">
+                {['ALL', 'CONTEST', 'PRACTICE', 'RECON'].map(ctx => (
+                  <button key={ctx} onClick={() => setContextFilter(ctx)} className={`px-3 py-1 border-r border-[#1a1a1a] last:border-0 font-mono text-[0.65rem] transition-colors cursor-pointer ${contextFilter === ctx ? 'bg-[#f0a500] text-black font-bold' : 'bg-transparent text-[#888] hover:bg-white/5'}`}>{ctx}</button>
                 ))}
               </div>
-
-              <div className="bg-[rgba(227,179,65,0.05)] border border-[#30363d] border-l-4 border-l-[#e3b341] rounded-[12px] p-6 shadow-[0_4px_20px_rgba(0,0,0,0.2)] mb-6">
-                <h3 className="text-white text-[0.9rem] uppercase tracking-[1px] border-b border-[#30363d] pb-2.5 mb-1.5 m-0">The Oracle [Tactical Directives]</h3>
-                <div className="font-mono text-[0.95rem] leading-[1.6]">
-                  {sortedWeaknesses.length > 0 ? (
-                    <>
-                      <div className="mb-3"><span className="text-[#f85149] font-bold">[!] CRITICAL VULNERABILITY:</span> Failure rate in <strong className="text-white">{sortedWeaknesses[0]}</strong> is highly inefficient. Upsolve {Math.floor((squadData[config.main].info.rating || 1200)/100)*100} - {Math.floor((squadData[config.main].info.rating || 1200)/100)*100 + 200} rated problems.</div>
-                      {sortedWeaknesses.length > 1 && <div><span className="text-[#e3b341] font-bold">[*] SECONDARY TARGET:</span> <strong className="text-white">{sortedWeaknesses[1]}</strong>. Run drills in this sector.</div>}
-                    </>
-                  ) : "Awaiting analysis..."}
-                </div>
+              
+              {/* Time Filters */}
+              <div className="flex bg-[#050505] rounded-[6px] border border-[#1a1a1a] overflow-hidden mr-4">
+                {['ALL', '30', '7'].map(tf => (
+                  <button key={tf} onClick={() => setTimeFilter(tf)} className={`px-3 py-1 border-r border-[#1a1a1a] last:border-0 font-mono text-[0.65rem] transition-colors cursor-pointer ${timeFilter === tf ? 'bg-[#58a6ff] text-black font-bold' : 'bg-transparent text-[#888] hover:bg-white/5'}`}>{tf === 'ALL' ? 'ALL TIME' : tf + ' DAYS'}</button>
+                ))}
               </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-                <div className="bg-[#1e2024] border border-[#30363d] rounded-[12px] p-6 shadow-[0_4px_20px_rgba(0,0,0,0.2)]"><h3 className="text-white text-[0.9rem] uppercase tracking-[1px] border-b border-[#30363d] pb-2.5 mb-1.5 m-0">Rating Trajectory (Momentum)</h3><p className="text-[#8b949e] text-[0.75rem] font-mono m-0 mb-6">Historical point variations</p><div className="h-[300px] relative"><RatingLineChart history={squadData[config.main].history} /></div></div>
-                <div className="bg-[#1e2024] border border-[#30363d] rounded-[12px] p-6 shadow-[0_4px_20px_rgba(0,0,0,0.2)]"><h3 className="text-white text-[0.9rem] uppercase tracking-[1px] border-b border-[#30363d] pb-2.5 mb-1.5 m-0">Activity Heatmap (6 Months)</h3><p className="text-[#8b949e] text-[0.75rem] font-mono m-0 mb-6">Daily AC volume</p><div className="h-[300px] flex items-center justify-center overflow-x-auto"><ActivityHeatmap subs={mainMetrics.rawSubsList} /></div></div>
+              
+              <div className="text-right">
+                <div className="font-mono text-lg font-bold text-[#f0a500] tracking-wider">{handle || "OFFLINE"}</div>
+                {mainMetrics && <div className="font-mono text-[0.6rem] tracking-wider text-[#56d364]">{squadData[config.main]?.info.rank || "Unrated"} · {squadData[config.main]?.info.rating || 0}</div>}
               </div>
-
-              <div className="bg-[#1e2024] border border-[#30363d] rounded-[12px] p-6 shadow-[0_4px_20px_rgba(0,0,0,0.2)] mb-6"><h3 className="text-white text-[0.9rem] uppercase tracking-[1px] border-b border-[#30363d] pb-2.5 mb-1.5 m-0">Algorithmic Weakness Matrix (Fails / AC Ratio)</h3><p className="text-[#8b949e] text-[0.75rem] font-mono m-0 mb-6">Penalty tracking across the entire algorithm spectrum for the active timeframe.</p><div className="h-[500px] relative"><TacticalBarChart data={mainMetrics.weaknessRatios} color="#f85149" horizontal={true} /></div></div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-                <div className="bg-[#1e2024] border border-[#30363d] rounded-[12px] p-6 shadow-[0_4px_20px_rgba(0,0,0,0.2)]"><h3 className="text-white text-[0.9rem] uppercase tracking-[1px] border-b border-[#30363d] pb-2.5 mb-1.5 m-0">Time Execution Stress (Avg ms)</h3><p className="text-[#8b949e] text-[0.75rem] font-mono m-0 mb-6">Dynamic Limit Tracking</p><div className="h-[300px] relative"><StressBarChart data={timeAvgData} type="time" /></div></div>
-                <div className="bg-[#1e2024] border border-[#30363d] rounded-[12px] p-6 shadow-[0_4px_20px_rgba(0,0,0,0.2)]"><h3 className="text-white text-[0.9rem] uppercase tracking-[1px] border-b border-[#30363d] pb-2.5 mb-1.5 m-0">Memory Footprint Stress (Avg MB)</h3><p className="text-[#8b949e] text-[0.75rem] font-mono m-0 mb-6">Memory consumed per AC</p><div className="h-[300px] relative"><StressBarChart data={memAvgData} type="memory" /></div></div>
+              <img src={squadData[config.main]?.info.titlePhoto || "/api/placeholder/44/44"} alt="Avatar" className="w-11 h-11 rounded-xl object-cover" style={{ border: "1px solid #f0a50033" }} />
+              <div className="text-right font-mono hidden md:block">
+                <div className="text-[0.85rem] text-[#58a6ff] tracking-wider">{timeStr}</div>
+                <div className="text-[0.55rem] tracking-wider text-[#333]">UTC SYSTEM CLOCK</div>
               </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-                <div className="bg-[#1e2024] border border-[#30363d] rounded-[12px] p-6 shadow-[0_4px_20px_rgba(0,0,0,0.2)]">
-                  <h3 className="text-white text-[0.9rem] uppercase tracking-[1px] border-b border-[#30363d] pb-2.5 mb-1.5 m-0">Resource Distribution</h3>
-                  <p className="text-[#8b949e] text-[0.75rem] font-mono m-0 mb-6">Time (ms) vs Memory (MB)</p>
-                  <div className="h-[300px] relative"><ResourceScatterChart subs={mainMetrics.rawSubsList} /></div>
-                </div>
-                <div className="bg-[#1e2024] border border-[#30363d] rounded-[12px] p-6 shadow-[0_4px_20px_rgba(0,0,0,0.2)]">
-                  <h3 className="text-white text-[0.9rem] uppercase tracking-[1px] border-b border-[#30363d] pb-2.5 mb-1.5 m-0">Chronotype Analysis</h3>
-                  <p className="text-[#8b949e] text-[0.75rem] font-mono m-0 mb-6">Peak algorithmic execution hours</p>
-                  <div className="h-[300px] relative"><ChronotypeChart subs={mainMetrics.rawSubsList} /></div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-                <div className="bg-[#1e2024] border border-[#30363d] rounded-[12px] p-6 shadow-[0_4px_20px_rgba(0,0,0,0.2)]"><h3 className="text-white text-[0.9rem] uppercase tracking-[1px] border-b border-[#30363d] pb-2.5 mb-1.5 m-0">Time-To-Solve (Debug Speed)</h3><p className="text-[#8b949e] text-[0.75rem] font-mono m-0 mb-6">First Attempt vs Final AC Timestamp</p><div className="h-[300px] relative"><TimeToSolveChart data={mainMetrics.timeToSolveDist} /></div></div>
-                <div className="bg-[#1e2024] border border-[#30363d] rounded-[12px] p-6 shadow-[0_4px_20px_rgba(0,0,0,0.2)]"><h3 className="text-white text-[0.9rem] uppercase tracking-[1px] border-b border-[#30363d] pb-2.5 mb-1.5 m-0">Algorithmic Mastery (Top AC Tags)</h3><p className="text-[#8b949e] text-[0.75rem] font-mono m-0 mb-6">Volume of Successful Solves</p><div className="h-[300px] relative"><TagsRadarChart data={mainMetrics.tagsDist} handle={config.main} /></div></div>
-                <div className="bg-[#1e2024] border border-[#30363d] rounded-[12px] p-6 shadow-[0_4px_20px_rgba(0,0,0,0.2)]"><h3 className="text-white text-[0.9rem] uppercase tracking-[1px] border-b border-[#30363d] pb-2.5 mb-1.5 m-0">Problem Rating Distribution (AC)</h3><p className="text-[#8b949e] text-[0.75rem] font-mono m-0 mb-6">Distribution by Difficulty</p><div className="h-[300px] relative"><TacticalBarChart data={mainMetrics.ratingsDist} color="#58a6ff" /></div></div>
-                <div className="bg-[#1e2024] border border-[#30363d] rounded-[12px] p-6 shadow-[0_4px_20px_rgba(0,0,0,0.2)]"><h3 className="text-white text-[0.9rem] uppercase tracking-[1px] border-b border-[#30363d] pb-2.5 mb-1.5 m-0">Submission Verdicts</h3><p className="text-[#8b949e] text-[0.75rem] font-mono m-0 mb-6">Verdict Breakdown</p><div className="h-[300px] relative"><VerdictChart data={mainMetrics.verdictsDist} /></div></div>
-              </div>
+              <button onClick={() => setShowSettings(true)} className="bg-[#050505] border border-[#1a1a1a] text-[#888] px-3 py-2 rounded-lg cursor-pointer transition-colors hover:text-[#f0a500] hover:border-[#f0a500]">⚙️</button>
             </div>
-          )}
+          </div>
 
-          {activeTab === "MAP" && <div className="animate-in fade-in duration-400"><WarMap subs={mainMetrics.rawSubsList} /></div>}
-
-          {activeTab === "SQUAD" && squadCharts && (
-            <div className="space-y-8 animate-in fade-in duration-400">
-              <div className="bg-[#1e2024] border border-[#30363d] rounded-[12px] p-6 shadow-[0_4px_20px_rgba(0,0,0,0.2)]">
-                <h3 className="text-white text-[0.9rem] uppercase tracking-[1px] border-b border-[#30363d] pb-2.5 mb-1.5 m-0">The Vanguard [Global Leaderboard]</h3>
-                <p className="text-[#8b949e] text-[0.75rem] font-mono m-0 mb-4">Multi-metric evaluation across all registered squad personnel.</p>
-                <div className="overflow-x-auto"><table className="w-full text-left font-mono text-[1rem] border-collapse mt-4">
-                  <thead><tr className="text-[#8b949e] text-[0.75rem] uppercase tracking-[1px] font-semibold"><th className="pb-3 border-b border-[#30363d]">Operative</th><th className="pb-3 border-b border-[#30363d]">Rating</th><th className="pb-3 border-b border-[#30363d]">7-Day Sprint</th><th className="pb-3 border-b border-[#30363d]">30-Day Sprint</th><th className="pb-3 border-b border-[#30363d]">Lifetime AC</th><th className="pb-3 border-b border-[#30363d]">Global Acc</th></tr></thead>
-                  <tbody>{squadCharts.players.map(p => (
-                    <tr key={p} className="hover:bg-[rgba(255,255,255,0.02)] transition-colors"><td className="py-[12px] pr-[15px] border-b border-[#30363d] font-bold font-sans text-[#58a6ff]">{p === config.main ? <><span className="text-[#e3b341]">[YOU]</span> {p}</> : p}</td><td className="py-[12px] pr-[15px] border-b border-[#30363d]" style={{color: getRankColor(squadMatrix[p].info.rank)}}>{squadMatrix[p].info.rating || 0}</td><td className="py-[12px] pr-[15px] border-b border-[#30363d] text-white">{squadMatrix[p].metrics.weeklyScore}</td><td className="py-[12px] pr-[15px] border-b border-[#30363d] text-white">{squadMatrix[p].metrics.monthlyScore}</td><td className="py-[12px] pr-[15px] border-b border-[#30363d] text-white">{squadMatrix[p].metrics.unique}</td><td className="py-[12px] pr-[15px] border-b border-[#30363d] text-white">{squadMatrix[p].metrics.acc}%</td></tr>
-                  ))}</tbody>
-                </table></div>
-              </div>
-
-              <div>
-                <h3 className="text-[#f85149] font-mono text-[1rem] uppercase tracking-[1px] border-b-2 border-[#f85149] pb-[5px] mb-[1rem] mt-8">The Graveyard [Active Bounties]</h3>
-                <p className="text-[#8b949e] text-[0.75rem] font-mono m-0 mt-[-10px] mb-[15px]">Problems failed 3+ times by a squad member and abandoned. Snipe them to establish dominance.</p>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-[15px]">
-                  {bounties.map(b => (
-                    <div key={b.pid} className={`bg-[rgba(0,0,0,0.2)] border border-[#30363d] rounded-[6px] p-[15px] flex flex-col gap-[10px] transition-transform hover:-translate-y-[3px] hover:bg-[#2b2e33] hover:shadow-[0_10px_40px_rgba(0,0,0,0.7)] border-l-[3px] hover:border-l-[#e3b341] ${b.isOwn ? 'border-l-[#f85149]' : 'border-l-[#f85149]'}`}>
-                      <div className="flex justify-between items-start"><span className="text-[#58a6ff] font-bold text-[1rem] leading-[1.2] pr-[10px]">{b.name}</span><span className="text-[#e3b341] font-mono text-[0.8rem] font-bold bg-[rgba(227,179,65,0.1)] px-[6px] py-[2px] rounded-[4px] shrink-0">{b.pts} PTS</span></div>
-                      <p className="text-[0.8rem] text-[#8b949e] m-0">Failed {b.fails}x by <span className="text-[#f85149] font-bold">{b.victim}</span></p>
-                      <div className="flex flex-wrap gap-[5px]">{b.prob.tags?.slice(0, 3).map((t:string) => <span key={t} className="text-[0.7rem] bg-[#1e2024] border border-[#30363d] text-[#8b949e] px-[6px] py-[2px] rounded-[12px]">{t}</span>)}</div>
-                      <a href={`https://codeforces.com/contest/${b.prob.contestId}/problem/${b.prob.index}`} target="_blank" className={`mt-auto text-center font-mono text-[0.85rem] font-bold p-[8px] border rounded-[6px] transition-colors no-underline ${b.btnClass}`}>{b.status}</a>
-                    </div>
-                  ))}
-                  {bounties.length === 0 && <div className="col-span-4 text-[#8b949e] font-mono italic">No active bounties detected. The squad is clean.</div>}
-                </div>
-              </div>
-
-              <div>
-                <h3 className="text-[#8b949e] font-mono text-[1rem] uppercase tracking-[1px] border-b-2 border-[#30363d] pb-[5px] mb-[1rem] mt-8">The Armory [Dynamic Badges]</h3>
-                <p className="text-[#8b949e] text-[0.75rem] font-mono m-0 mt-[-10px] mb-[15px]">Volatile titles awarded based on active data windows, Map Conquests, and Graveyard snipes.</p>
-                <Armory badges={computedBadges} mainHandle={config.main} variant="full" />
-              </div>
-
-              <div>
-                <h3 className="text-[#8b949e] font-mono text-[1rem] uppercase tracking-[1px] border-b-2 border-[#30363d] pb-[5px] mb-[1rem] mt-8">The Crucible [1v1 Combinatorial Duels]</h3>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-[1.5rem]">
-                  {squadCharts.players.map((p1, i) => squadCharts.players.slice(i+1).map(p2 => {
-                    const m1 = squadMatrix[p1]; const m2 = squadMatrix[p2];
-                    return (
-                      <div key={`${p1}-${p2}`} className="bg-[rgba(0,0,0,0.2)] border border-[#30363d] rounded-[12px] p-[1.5rem]">
-                        <div className="flex justify-between items-center border-b border-[#30363d] pb-[10px] mb-[15px]"><span className={`font-bold ${p1 === config.main ? 'text-[#e3b341]' : 'text-[#58a6ff]'}`}>{p1}</span><span className="text-[#8b949e] text-[0.8rem] font-mono">VS</span><span className={`font-bold ${p2 === config.main ? 'text-[#e3b341]' : 'text-[#58a6ff]'}`}>{p2}</span></div>
-                        <div className="space-y-[8px] font-mono text-[0.9rem]">
-                          {['rating', 'unique', 'acc'].map(stat => {
-                            const v1 = stat==='rating'?m1.info.rating:stat==='unique'?m1.metrics.unique:m1.metrics.acc; const v2 = stat==='rating'?m2.info.rating:stat==='unique'?m2.metrics.unique:m2.metrics.acc;
-                            return (
-                              <div key={stat} className="flex justify-between">
-                                <span className={v1! >= v2! ? 'text-[#2ea043] font-bold' : 'text-[#f85149]'}>{v1}{stat==='acc'?'%':''}</span><span className="text-[#8b949e] uppercase">{stat === 'rating' ? 'Rating' : stat === 'unique' ? 'Unique AC' : 'First-Try'}</span><span className={v2! >= v1! ? 'text-[#2ea043] font-bold' : 'text-[#f85149]'}>{v2}{stat==='acc'?'%':''}</span>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    )
-                  }))}
-                </div>
-              </div>
-
-              <div>
-                <h3 className="text-[#8b949e] font-mono text-[1rem] uppercase tracking-[1px] border-b-2 border-[#30363d] pb-[5px] mb-[1rem] mt-8">Squad Telemetry Synthesis</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="bg-[#1e2024] border border-[#30363d] rounded-[12px] p-6 shadow-[0_4px_20px_rgba(0,0,0,0.2)]"><h3 className="text-white text-[0.9rem] uppercase tracking-[1px] border-b border-[#30363d] pb-2.5 mb-1.5 m-0">Rating Warfare (Historical Trajectory)</h3><div className="h-[300px]"><Line data={squadCharts.lineData} options={{ responsive: true, maintainAspectRatio: false, scales: { x: { display: false }, y: { grid: { color: '#30363d' }, ticks: {font: {family: 'monospace'}}} }, plugins: { legend: { labels: { color: '#e0e6ed', font: { family: 'monospace' } } } } }} /></div></div>
-                  <div className="bg-[#1e2024] border border-[#30363d] rounded-[12px] p-6 shadow-[0_4px_20px_rgba(0,0,0,0.2)]"><h3 className="text-white text-[0.9rem] uppercase tracking-[1px] border-b border-[#30363d] pb-2.5 mb-1.5 m-0">Tactical Sprints (Sprint Scores)</h3><div className="h-[300px]"><Bar data={squadCharts.sprintData} options={{ responsive: true, maintainAspectRatio: false, scales: { x: { grid: { display: false }, ticks: {font: {family: 'monospace'}} }, y: { grid: { color: '#30363d' } } }, plugins: { legend: { labels: { color: '#e0e6ed', font: { family: 'monospace' } } } } }} /></div></div>
-                  <div className="bg-[#1e2024] border border-[#30363d] rounded-[12px] p-6 shadow-[0_4px_20px_rgba(0,0,0,0.2)] md:col-span-2"><h3 className="text-white text-[0.9rem] uppercase tracking-[1px] border-b border-[#30363d] pb-2.5 mb-1.5 m-0">The Triad (Combined Tag Radar)</h3><div className="h-[400px]"><Radar data={squadCharts.radarData} options={{ responsive: true, maintainAspectRatio: false, scales: { r: { angleLines: { color: '#30363d' }, grid: { color: '#30363d' }, ticks: { display: false }, pointLabels: { color: '#8b949e', font: {family: 'monospace'} } } }, plugins: { legend: { position: 'top', labels: { color: '#e0e6ed', font: { family: 'monospace' } } } } }} /></div></div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === "NEMESIS" && (
-            <div className="animate-in fade-in duration-400">
-               <div className="mb-6 flex gap-4 items-center">
-                 <span className="text-[#8b949e] font-mono text-sm uppercase">Select Target:</span>
-                 {config.squad.map(h => (
-                   <button key={h} onClick={() => setNemesisTarget(h)} className={`px-4 py-2 rounded border font-mono uppercase text-sm transition-colors cursor-pointer ${nemesisTarget === h ? 'bg-[#58a6ff]/20 text-[#58a6ff] border-[#58a6ff]' : 'bg-[#1e2024] text-[#8b949e] border-[#30363d] hover:bg-white/5'}`}>{h}</button>
-                 ))}
-               </div>
-               {nemesisTarget && squadData[nemesisTarget] ? (
-                 <Nemesis mySubs={squadData[config.main].rawSubs} targetSubs={squadData[nemesisTarget].rawSubs} targetHandle={nemesisTarget} myRating={squadData[config.main].info.rating || 1200} />
-               ) : (
-                 <div className="text-center py-20 text-[#8b949e] font-mono">Select a valid squad target to initiate Nemesis protocol.</div>
-               )}
-            </div>
-          )}
-
-          {activeTab === "FORGE" && <Forge rawSubsList={mainMetrics.rawSubsList} />}
-          
-          {activeTab === "GRIND" && <GrindMode handle={config.main} />}
-
-          {activeTab === "TITAN" && (
-            <div className="animate-in fade-in duration-400">
-              {squadData[config.titan] ? (
-                <>
-                  <div className="bg-[#1e2024] border border-[#f85149] rounded-[20px] p-8 flex items-center gap-8 shadow-lg mb-6 relative overflow-hidden">
-                    <img src={squadData[config.titan].info.titlePhoto} alt="Avatar" className="w-[100px] h-[100px] rounded-[12px] border-2 border-[#f85149] object-cover" />
-                    <div className="flex-1">
-                      <h2 className="text-[1.8rem] font-bold m-0 mb-1.5 flex items-center gap-2.5 flex-wrap text-[#f85149]">{squadData[config.titan].info.handle} <span className="text-[0.85rem] uppercase px-2.5 py-1 bg-[rgba(0,0,0,0.3)] rounded-[20px] font-semibold tracking-[1px] text-[#8b949e]">{squadData[config.titan].info.rank || "Unrated"}</span></h2>
-                      <div className="flex gap-8 mt-[15px] flex-wrap">
-                        <div className="flex flex-col"><span className="font-mono text-[1.4rem] font-bold text-[#e0e6ed]">{squadData[config.titan].info.rating || 0}</span><span className="text-[0.75rem] text-[#8b949e] uppercase font-semibold">Rating</span></div>
-                        <div className="flex flex-col"><span className="font-mono text-[1.4rem] font-bold text-[#e0e6ed]">{squadData[config.titan].info.maxRating || 0}</span><span className="text-[0.75rem] text-[#8b949e] uppercase font-semibold">Max Rating</span></div>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="bg-[rgba(248,81,73,0.05)] border-l-4 border-l-[#f85149] border border-[#30363d] rounded-[12px] p-6 shadow-[0_4px_20px_rgba(0,0,0,0.2)]">
-                    <h3 className="text-white text-[0.9rem] uppercase tracking-[1px] border-b border-[#30363d] pb-2.5 mb-1.5 m-0">Assassination Protocol</h3>
-                    <div className="font-mono text-[1.1rem] leading-[1.5] text-[#e0e6ed] mt-4">
-                      {((squadData[config.titan].info.rating || 0) - (squadData[config.main].info.rating || 0)) <= 0 
-                        ? <>You surpassed <span className="text-[#e3b341] font-bold">{config.titan}</span>. Find a new Titan.</>
-                        : <>Titan <span className="text-[#e3b341] font-bold">{config.titan}</span> is {(squadData[config.titan].info.rating || 0) - (squadData[config.main].info.rating || 0)} points ahead.<br/><br/>Target Protocol: Sustain First-Try ACs on <strong className="text-[#e3b341]">{Math.floor((squadData[config.titan].info.rating || 1500)/100)*100}</strong> rated problems.</>
-                      }
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <div className="text-center py-[4rem] bg-[#1e2024] rounded-[12px] border border-[#30363d]">
-                  <p className="text-[#8b949e] font-mono text-[1.2rem] m-0">NO TITAN CONFIGURED.</p>
-                </div>
-              )}
-            </div>
-          )}
+          <div className="flex gap-0.5 overflow-x-auto pb-0">
+            {TABS.map(tab => {
+              const isActive = activeTab === tab; const tabColor = TAB_COLORS[tab] || "#888";
+              return (
+                <button key={tab} onClick={() => setActiveTab(tab)} className="relative font-mono text-[0.62rem] font-bold tracking-[2px] uppercase px-4 py-2.5 cursor-pointer transition-all duration-150 rounded-t-md border-0 whitespace-nowrap"
+                  style={{ background: isActive ? `${tabColor}12` : "transparent", color: isActive ? tabColor : "#444", borderBottom: `2px solid ${isActive ? tabColor : "transparent"}`, borderTop: `1px solid ${isActive ? tabColor + "44" : "transparent"}`, borderLeft: `1px solid ${isActive ? tabColor + "22" : "transparent"}`, borderRight: `1px solid ${isActive ? tabColor + "22" : "transparent"}`, boxShadow: isActive ? `0 0 12px ${tabColor}22, inset 0 1px 0 ${tabColor}22` : "none" }}>
+                  {isActive && <div className="absolute top-0 left-[20%] right-[20%] h-px" style={{ background: `linear-gradient(90deg, transparent, ${tabColor}, transparent)` }} />}
+                  {tab}
+                </button>
+              );
+            })}
+          </div>
         </div>
-      )}
-    </main>
+      </header>
+
+      <main className="max-w-[1400px] mx-auto px-8 pt-6 pb-16 relative z-10 min-h-[70vh]">
+        <div className="flex items-center gap-3 mb-6 font-mono text-[0.6rem] text-[#333] flex-wrap">
+          <GlowPulse color="#56d364" />
+          <span className="text-[#444]">MODULE:</span><span className="text-[#56d364] tracking-[2px]">{activeTab}</span><span className="text-[#1a1a1a]">|</span>
+          <span className="text-[#444]">OPERATOR:</span><span className="text-[#f0a500]">{handle || "N/A"}</span><span className="text-[#1a1a1a]">|</span>
+          <span className="text-[#444]">UPTIME:</span><span className="text-[#58a6ff]">{tick}s</span>
+          <div className="flex-1" />
+          <span className="text-[#1a1a1a]">SYS.INTEGRITY: </span><span className="text-[#56d364]">■■■■■■■■■■ 100%</span>
+        </div>
+
+        {loading && <div className="text-center my-20 font-mono text-[#f0a500] text-[1.2rem] animate-pulse">{loadingMsg}</div>}
+
+        {!loading && mainMetrics && squadData[config.main] && (
+          <>
+            {/* The Guillotine */}
+            {activeTab === "COMMAND" && (guillotineStatus.isDecay || guillotineStatus.isWarning) && (
+              <div className={`mb-8 p-6 rounded-2xl border flex justify-between items-center ${guillotineStatus.isDecay ? 'bg-[rgba(248,81,73,0.05)] border-[#f85149] animate-[pulse_2s_ease-in-out_infinite]' : 'bg-[rgba(227,179,65,0.05)] border-[#e3b341]'}`}>
+                <div>
+                  <h2 className={`font-black uppercase tracking-widest m-0 font-mono ${guillotineStatus.isDecay ? 'text-[#f85149]' : 'text-[#e3b341]'}`}>{guillotineStatus.isDecay ? 'CRITICAL DECAY DETECTED' : 'RUST FORMING'}</h2>
+                  <p className="text-[#888] font-mono text-xs mt-1 mb-0">Inactive for {guillotineStatus.hoursInactive} hours.</p>
+                </div>
+                {guillotineStatus.isDecay && <div className="text-right"><div className="text-3xl font-black text-[#f85149] font-mono">-{guillotineStatus.bleed} PTS</div><div className="text-[10px] text-[#f85149] uppercase tracking-widest font-mono">Simulated Elo Bleed</div></div>}
+              </div>
+            )}
+
+            {activeTab === "COMMAND" && <CommandTab metrics={mainMetrics} info={squadData[config.main].info} filter={contextFilter} config={config} squadData={squadData} />}
+            {activeTab === "WAR MAP" && <WarMap subs={mainMetrics.rawSubsList} />}
+            {activeTab === "ARMORY" && <div className="animate-in fade-in"><Armory badges={computedBadges} mainHandle={config.main} variant="full" /></div>}
+            {activeTab === "SQUAD OPS" && <SquadOpsTab squadMatrix={squadMatrix} config={config} squadCharts={squadCharts} bounties={bounties} />}
+            {activeTab === "NEMESIS" && (
+              <div className="animate-in fade-in">
+                <div className="mb-6 flex gap-4 items-center">
+                  <span className="text-[#888] font-mono text-xs uppercase">Select Target:</span>
+                  {config.squad.map(h => (
+                    <button key={h} onClick={() => setNemesisTarget(h)} className={`px-4 py-2 rounded-lg font-mono uppercase text-xs transition-colors cursor-pointer border ${nemesisTarget === h ? 'bg-[#f85149]/10 text-[#f85149] border-[#f85149]' : 'bg-[#050505] text-[#888] border-[#1a1a1a] hover:bg-white/5'}`}>{h}</button>
+                  ))}
+                </div>
+                {nemesisTarget && squadData[nemesisTarget] ? <Nemesis mySubs={squadData[config.main].rawSubs} targetSubs={squadData[nemesisTarget].rawSubs} targetHandle={nemesisTarget} myRating={squadData[config.main].info.rating || 1200} /> : <div className="text-center py-20 text-[#888] font-mono">Select a valid squad target to initiate Nemesis protocol.</div>}
+              </div>
+            )}
+            {activeTab === "FORGE" && <Forge rawSubsList={mainMetrics.rawSubsList} />}
+            {activeTab === "GRIND" && <GrindMode handle={config.main} />}
+            {activeTab === "TITAN" && <TitanTab squadData={squadData} config={config} />}
+          </>
+        )}
+      </main>
+
+      <div className="fixed bottom-0 left-0 right-0 h-7 flex items-center px-8 gap-8 z-50 hidden md:flex" style={{ background: "rgba(3,3,5,0.98)", borderTop: "1px solid #0f0f1a" }}>
+        {[["CF API","#56d364"],["SQUAD SYNC","#56d364"],["NEMESIS ENGINE","#f0a500"],["FORGE MODULE","#58a6ff"]].map(([l, col]) => <StatusLabel key={l} label={l as string} color={col as string} />)}
+        <div className="flex-1" />
+        <div className="font-mono text-[0.55rem] text-[#1a1a2a]">{"<<<"} CODEFORCES SYNTHESIS ENGINE · TACTICAL EDGE {">>>"}</div>
+      </div>
+    </div>
   );
 }

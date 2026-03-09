@@ -16,8 +16,12 @@ export const metadata: Metadata = {
   title: "Road to tourist | CF Synthesis Engine",
   description: "Military-grade command center and telemetry dashboard for Codeforces. Track, snipe, and forge your way to the top.",
   icons: {
-    icon: "/icon.jpg?v=deploy",
-    apple: "/icon.jpg?v=deploy",
+    icon: [
+      { url: "/icon.jpg?v=2", href: "/icon.jpg?v=2" }
+    ],
+    apple: [
+      { url: "/icon.jpg?v=2", href: "/icon.jpg?v=2" }
+    ]
   },
 };
 
