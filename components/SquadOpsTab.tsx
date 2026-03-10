@@ -38,7 +38,7 @@ function ChartCard({ title, color, children }: { title: string; color: string; c
 
 interface SquadOpsTabProps {
   squadMatrix: Record<string, SquadMemberData>;
-  config: { main: string; squad: string[]; titan: string };
+  config: { main: string; squad: string[]; titans: string[] };
   squadCharts: {
     lineData: any; sprintData: any; radarData: any; players: string[];
     comparisonCharts: Record<string, any>;
