@@ -103,7 +103,7 @@ interface CommandTabProps {
   metrics: ProcessedMetrics;
   info: CFInfo;
   filter: string;
-  config: { main: string; squad: string[]; titan: string };
+  config: { main: string; squad: string[]; titans: string[] };
   squadData: Record<string, any>;
 }
 
