@@ -496,7 +496,19 @@ export default function Home() {
                     <button key={h} onClick={() => setNemesisTarget(h)} className={`px-4 py-2 rounded-lg font-mono uppercase text-xs transition-colors cursor-pointer border ${nemesisTarget === h ? 'bg-[#f85149]/10 text-[#f85149] border-[#f85149]' : 'bg-[#050505] text-[#888] border-[#1a1a1a] hover:bg-white/5'}`}>{h}</button>
                   ))}
                 </div>
-                {nemesisTarget && squadData[nemesisTarget] ? <Nemesis mySubs={squadData[config.main].rawSubs} targetSubs={squadData[nemesisTarget].rawSubs} targetHandle={nemesisTarget} myRating={squadData[config.main].info.rating || 1200} /> : <div className="text-center py-20 text-[#888] font-mono">Select a valid squad target to initiate Nemesis protocol.</div>}
+                {nemesisTarget && squadData[nemesisTarget] ? (
+                  <Nemesis 
+                    mySubs={squadData[config.main].rawSubs} 
+                    targetSubs={squadData[nemesisTarget].rawSubs} 
+                    targetHandle={nemesisTarget} 
+                    myRating={squadData[config.main].info.rating || 1200}
+                    myHandle={config.main}
+                    myHistory={squadData[config.main].history}
+                    targetHistory={squadData[nemesisTarget].history}
+                    myInfo={squadData[config.main].info}
+                    targetInfo={squadData[nemesisTarget].info}
+                  />
+                ) : <div className="text-center py-20 text-[#888] font-mono">Select a valid squad target to initiate Nemesis protocol.</div>}
               </div>
             )}
 {activeTab === "GRIND" && <GrindMode handle={config.main} />}
