@@ -481,7 +481,7 @@ export default function GrindMode({ handle }: { handle: string }) {
                 )}
               </div>
             )}
-            {lastReport?.breakCount > 0 && (
+            {lastReport && lastReport.breakCount > 0 && (
               <div className="text-[#222] text-[9px] uppercase tracking-[2px]">{lastReport.breakCount} break{lastReport.breakCount>1?'s':''} taken</div>
             )}
             {/* Stars */}
