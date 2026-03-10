@@ -7,7 +7,7 @@ import SettingsModal from "@/components/SettingsModal";
 import Armory, { BadgeDef } from "@/components/Armory";
 import GrindMode from "@/components/GrindMode";
 import Nemesis from "@/components/Nemesis";
-import Forge from "@/components/Forge";
+
 import CommandTab from "@/components/CommandTab";
 import SquadOpsTab from "@/components/SquadOpsTab";
 import TitanTab from "@/components/TitanTab";
@@ -18,8 +18,8 @@ import { computeBadges } from "@/lib/badges";
 import type { CFSubmission, CFInfo, CFRating, ProcessedMetrics, SquadMemberData } from "@/lib/types";
 
 // ─── CONSTANTS & TYPES imported from @/lib/constants and @/lib/types ──────────
-const TABS = ["COMMAND", "WAR MAP", "ARMORY", "SQUAD OPS", "NEMESIS", "FORGE", "GRIND", "TITAN", "CONTESTS"];
-const TAB_COLORS: Record<string, string> = { COMMAND: "#f0a500", "WAR MAP": "#56d364", ARMORY: "#e879f9", "SQUAD OPS": "#58a6ff", NEMESIS: "#f85149", FORGE: "#db6d28", GRIND: "#f85149", TITAN: "#f85149", CONTESTS: "#e3b341" };
+const TABS = ["COMMAND", "WAR MAP", "ARMORY", "SQUAD OPS", "NEMESIS", "GRIND", "TITAN", "CONTESTS"];
+const TAB_COLORS: Record<string, string> = { COMMAND: "#f0a500", "WAR MAP": "#56d364", ARMORY: "#e879f9", "SQUAD OPS": "#58a6ff", NEMESIS: "#f85149", GRIND: "#f85149", TITAN: "#f85149", CONTESTS: "#e3b341" };
 
 // ─── CORE ENGINE LOGIC ────────────────────────────────────────────────────────
 function processMetrics(subs: CFSubmission[]): ProcessedMetrics {
@@ -156,13 +156,12 @@ function StatusLabel({ label, color, icon }: { label: string, color: string, ico
 
 function StatCard({ label, value, sub, color = "#f0a500", icon }: any) {
   return (
-    <div className="relative overflow-hidden rounded-xl p-4 transition-all duration-200 hover:-translate-y-0.5 hover:brightness-110"
-      style={{ background: `linear-gradient(135deg, ${color}06 0%, rgba(0,0,0,0.3) 100%)`, border: `1px solid ${color}28`, boxShadow: `0 2px 12px ${color}0e, inset 0 1px 0 rgba(255,255,255,0.03)` }}>
+    <div className="relative overflow-hidden rounded-2xl p-5 transition-transform hover:-translate-y-1" style={{ background: "linear-gradient(135deg, rgba(255,255,255,0.03) 0%, rgba(0,0,0,0.2) 100%)", border: `1px solid ${color}33`, boxShadow: `0 0 24px ${color}15, inset 0 1px 0 rgba(255,255,255,0.05)` }}>
       <TopLine color={color} />
-      <div className="text-xl mb-2 leading-none">{icon}</div>
-      <div className="font-mono text-2xl font-black leading-none tabular-nums" style={{ color, letterSpacing: "-0.5px" }}>{value}</div>
-      <div className="font-mono text-[0.58rem] uppercase tracking-[2px] mt-1.5 leading-none" style={{ color: "#454558" }}>{label}</div>
-      {sub && <div className="font-mono text-[0.68rem] mt-1" style={{ color: "#666" }}>{sub}</div>}
+      <div className="text-2xl mb-1">{icon}</div>
+      <div className="font-mono text-3xl font-black leading-none" style={{ color, letterSpacing: "-0.5px" }}>{value}</div>
+      <div className="font-mono text-[0.62rem] uppercase tracking-[2px] mt-1.5" style={{ color: "#666" }}>{label}</div>
+      {sub && <div className="font-mono text-[0.72rem] mt-0.5" style={{ color: "#888" }}>{sub}</div>}
     </div>
   );
 }
@@ -193,7 +192,7 @@ export default function Home() {
       const parsed = JSON.parse(saved); 
       setConfig(parsed); setHandle(parsed.main || "");
       if (parsed.squad && parsed.squad.length > 0) setNemesisTarget(parsed.squad[0]);
-      if (parsed.main) fetchGlobalTelemetry(parsed.main, parsed.squad || []);
+      if (parsed.main) fetchGlobalTelemetry(parsed.main, parsed.squad);
     } else setShowSettings(true);
   }, []);
 
@@ -379,81 +378,63 @@ export default function Home() {
   const timeStr = mounted ? new Date().toTimeString().slice(0, 8) : '--:--:--';
 
   return (
-    <div className="min-h-screen bg-[#030305] text-[#e0e6ed] font-sans">
+    <div className="min-h-screen bg-[#030305] text-[#e0e6ed] selection:bg-[#f0a500] font-sans">
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)} onSave={(newCfg) => { setConfig(newCfg); setHandle(newCfg.main); setShowSettings(false); fetchGlobalTelemetry(newCfg.main, newCfg.squad); }} />}
       <style>{`
-        @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.45;transform:scale(0.8)} }
-        @keyframes flicker { 0%,89%,91%,93%,100%{opacity:1} 90%,92%{opacity:0.7} }
-        @keyframes fade-up { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
-        .animate-fade-up { animation: fade-up 0.3s ease forwards; }
-        ::-webkit-scrollbar{width:4px;height:4px;background:transparent} ::-webkit-scrollbar-thumb{background:#1c1c2a;border-radius:3px}
+        @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.5;transform:scale(0.85)} }
+        @keyframes flicker { 0%,100%{opacity:1} 92%{opacity:1} 93%{opacity:0.8} 94%{opacity:1} }
+        * { box-sizing: border-box; }
+        ::-webkit-scrollbar{width:4px;background:#050505} ::-webkit-scrollbar-thumb{background:#1a1a1a;border-radius:2px}
       `}</style>
 
-      {/* Scanline texture */}
-      <div className="fixed inset-0 pointer-events-none z-0" style={{ background: "repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(0,0,0,0.02) 3px, rgba(0,0,0,0.02) 4px)" }} />
-      {/* Ambient top glow */}
-      <div className="fixed top-0 left-1/2 -translate-x-1/2 w-[800px] h-px pointer-events-none z-0" style={{ background: "linear-gradient(90deg, transparent, #f0a50015, transparent)" }} />
+      <div className="fixed inset-0 pointer-events-none z-0" style={{ background: "repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px)" }} />
 
-      <header className="sticky top-0 z-50" style={{ background: "rgba(3,3,5,0.97)", backdropFilter: "blur(20px)", borderBottom: "1px solid #12121e" }}>
-        <div className="max-w-[1400px] mx-auto px-6 lg:px-8">
-          {/* Top bar */}
-          <div className="flex items-center justify-between h-14 gap-4">
-            {/* Brand */}
-            <div className="flex items-center gap-3 flex-shrink-0">
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center text-sm flex-shrink-0" style={{ background: "linear-gradient(135deg, #f0a500 0%, #f85149 100%)", boxShadow: "0 0 16px rgba(240,165,0,0.25)" }}>⚡</div>
-              <div className="hidden sm:block leading-none">
-                <div className="font-mono font-black text-[0.78rem] tracking-[2px] text-[#f0a500] uppercase animate-[flicker_5s_infinite]">CF SYNTHESIS ENGINE</div>
-                <div className="font-mono text-[0.46rem] tracking-[2.5px] text-[#252535] uppercase mt-1">TACTICAL INTELLIGENCE PLATFORM</div>
+      <header className="sticky top-0 z-50 border-b border-[#1a1a2a] px-8" style={{ background: "rgba(3,3,5,0.95)", backdropFilter: "blur(16px)" }}>
+        <div className="max-w-[1400px] mx-auto">
+          <div className="flex items-center justify-between py-3">
+            <div className="flex items-center gap-4">
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center text-base" style={{ background: "linear-gradient(135deg,#f0a500,#f85149)", boxShadow: "0 0 16px #f0a50044" }}>⚡</div>
+              <div>
+                <div className="font-mono font-black text-base tracking-[3px] text-[#f0a500] uppercase animate-[flicker_4s_infinite]">CODEFORCES SYNTHESIS ENGINE</div>
+                <div className="font-mono text-[0.55rem] tracking-[2px] text-[#444]">TACTICAL COMPETITIVE INTELLIGENCE PLATFORM v4.2.1</div>
               </div>
             </div>
 
-            {/* Right controls */}
-            <div className="flex items-center gap-2.5">
-              {/* Context filter */}
-              <div className="flex rounded overflow-hidden text-[0.58rem]" style={{ border: "1px solid #1a1a28" }}>
+            <div className="flex items-center gap-6">
+              {/* Context Filters */}
+              <div className="flex bg-[#050505] rounded-[6px] border border-[#1a1a1a] overflow-hidden">
                 {['ALL', 'CONTEST'].map(ctx => (
-                  <button key={ctx} onClick={() => setContextFilter(ctx)} className="px-2.5 py-1.5 font-mono tracking-wider transition-all cursor-pointer border-r last:border-0" style={{ borderColor: "#1a1a28", background: contextFilter === ctx ? "#f0a500" : "transparent", color: contextFilter === ctx ? "#000" : "#454558", fontWeight: contextFilter === ctx ? 700 : 400 }}>{ctx}</button>
+                  <button key={ctx} onClick={() => setContextFilter(ctx)} className={`px-3 py-1 border-r border-[#1a1a1a] last:border-0 font-mono text-[0.65rem] transition-colors cursor-pointer ${contextFilter === ctx ? 'bg-[#f0a500] text-black font-bold' : 'bg-transparent text-[#888] hover:bg-white/5'}`}>{ctx}</button>
                 ))}
               </div>
-              {/* Time filter */}
-              <div className="flex rounded overflow-hidden text-[0.58rem]" style={{ border: "1px solid #1a1a28" }}>
+              
+              {/* Time Filters */}
+              <div className="flex bg-[#050505] rounded-[6px] border border-[#1a1a1a] overflow-hidden mr-4">
                 {['ALL', '30', '7'].map(tf => (
-                  <button key={tf} onClick={() => setTimeFilter(tf)} className="px-2.5 py-1.5 font-mono tracking-wider transition-all cursor-pointer border-r last:border-0" style={{ borderColor: "#1a1a28", background: timeFilter === tf ? "#58a6ff" : "transparent", color: timeFilter === tf ? "#000" : "#454558", fontWeight: timeFilter === tf ? 700 : 400 }}>{tf === 'ALL' ? 'ALL' : tf + 'D'}</button>
+                  <button key={tf} onClick={() => setTimeFilter(tf)} className={`px-3 py-1 border-r border-[#1a1a1a] last:border-0 font-mono text-[0.65rem] transition-colors cursor-pointer ${timeFilter === tf ? 'bg-[#58a6ff] text-black font-bold' : 'bg-transparent text-[#888] hover:bg-white/5'}`}>{tf === 'ALL' ? 'ALL TIME' : tf + ' DAYS'}</button>
                 ))}
               </div>
-
-              <div className="w-px h-5 hidden md:block" style={{ background: "#1a1a28" }} />
-
-              {/* User info */}
-              {squadData[config.main]?.info.titlePhoto && (
-                <img src={squadData[config.main].info.titlePhoto} alt="Avatar" className="w-8 h-8 rounded-lg object-cover flex-shrink-0 hidden sm:block" style={{ border: "1px solid rgba(240,165,0,0.2)" }} />
-              )}
-              <div className="hidden md:block text-right leading-none">
-                <div className="font-mono text-[0.8rem] font-bold text-[#f0a500]">{handle || "OFFLINE"}</div>
-                {mainMetrics && <div className="font-mono text-[0.5rem] tracking-wider text-[#56d364] mt-0.5">{squadData[config.main]?.info.rank || "Unrated"} · {squadData[config.main]?.info.rating || 0}</div>}
+              
+              <div className="text-right">
+                <div className="font-mono text-lg font-bold text-[#f0a500] tracking-wider">{handle || "OFFLINE"}</div>
+                {mainMetrics && <div className="font-mono text-[0.6rem] tracking-wider text-[#56d364]">{squadData[config.main]?.info.rank || "Unrated"} · {squadData[config.main]?.info.rating || 0}</div>}
               </div>
-
-              {/* Clock */}
-              <div className="hidden lg:block text-right leading-none">
-                <div className="font-mono text-[0.72rem] text-[#58a6ff] tabular-nums">{timeStr}</div>
-                <div className="font-mono text-[0.43rem] tracking-widest text-[#1e1e2e] uppercase mt-0.5">UTC Clock</div>
+              <img src={squadData[config.main]?.info.titlePhoto || "/api/placeholder/44/44"} alt="Avatar" className="w-11 h-11 rounded-xl object-cover" style={{ border: "1px solid #f0a50033" }} />
+              <div className="text-right font-mono hidden md:block">
+                <div className="text-[0.85rem] text-[#58a6ff] tracking-wider">{timeStr}</div>
+                <div className="text-[0.55rem] tracking-wider text-[#333]">UTC SYSTEM CLOCK</div>
               </div>
-
-              <button onClick={() => setShowSettings(true)} className="w-8 h-8 flex items-center justify-center rounded-lg cursor-pointer transition-all hover:scale-105 flex-shrink-0" style={{ background: "#080810", border: "1px solid #1a1a28", color: "#454558" }}
-                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = '#f0a50066'; (e.currentTarget as HTMLButtonElement).style.color = '#f0a500'; }}
-                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = '#1a1a28'; (e.currentTarget as HTMLButtonElement).style.color = '#454558'; }}>⚙️</button>
+              <button onClick={() => setShowSettings(true)} className="bg-[#050505] border border-[#1a1a1a] text-[#888] px-3 py-2 rounded-lg cursor-pointer transition-colors hover:text-[#f0a500] hover:border-[#f0a500]">⚙️</button>
             </div>
           </div>
 
-          {/* Tab bar */}
-          <div className="flex overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+          <div className="flex gap-0.5 overflow-x-auto pb-0">
             {TABS.map(tab => {
-              const isActive = activeTab === tab;
-              const tabColor = TAB_COLORS[tab] || "#888";
+              const isActive = activeTab === tab; const tabColor = TAB_COLORS[tab] || "#888";
               return (
-                <button key={tab} onClick={() => setActiveTab(tab)} className="relative font-mono text-[0.57rem] font-bold tracking-[1.5px] uppercase px-4 py-2.5 cursor-pointer transition-all duration-150 whitespace-nowrap flex-shrink-0"
-                  style={{ background: isActive ? `${tabColor}0e` : "transparent", color: isActive ? tabColor : "#303042", borderBottom: `2px solid ${isActive ? tabColor : "transparent"}`, borderTop: `1px solid ${isActive ? tabColor + "25" : "transparent"}` }}>
-                  {isActive && <div className="absolute top-0 left-[20%] right-[20%] h-px" style={{ background: `linear-gradient(90deg, transparent, ${tabColor}77, transparent)` }} />}
+                <button key={tab} onClick={() => setActiveTab(tab)} className="relative font-mono text-[0.62rem] font-bold tracking-[2px] uppercase px-4 py-2.5 cursor-pointer transition-all duration-150 rounded-t-md border-0 whitespace-nowrap"
+                  style={{ background: isActive ? `${tabColor}12` : "transparent", color: isActive ? tabColor : "#444", borderBottom: `2px solid ${isActive ? tabColor : "transparent"}`, borderTop: `1px solid ${isActive ? tabColor + "44" : "transparent"}`, borderLeft: `1px solid ${isActive ? tabColor + "22" : "transparent"}`, borderRight: `1px solid ${isActive ? tabColor + "22" : "transparent"}`, boxShadow: isActive ? `0 0 12px ${tabColor}22, inset 0 1px 0 ${tabColor}22` : "none" }}>
+                  {isActive && <div className="absolute top-0 left-[20%] right-[20%] h-px" style={{ background: `linear-gradient(90deg, transparent, ${tabColor}, transparent)` }} />}
                   {tab}
                 </button>
               );
@@ -462,59 +443,42 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="max-w-[1400px] mx-auto px-6 lg:px-8 pt-5 pb-20 relative z-10 min-h-[70vh]">
-        {/* Module breadcrumb */}
-        <div className="flex items-center gap-2.5 mb-5 font-mono text-[0.56rem] flex-wrap" style={{ color: "#2a2a3a" }}>
+      <main className="max-w-[1400px] mx-auto px-8 pt-6 pb-16 relative z-10 min-h-[70vh]">
+        <div className="flex items-center gap-3 mb-6 font-mono text-[0.6rem] text-[#333] flex-wrap">
           <GlowPulse color="#56d364" />
-          <span className="text-[#303042]">MODULE</span>
-          <span className="text-[#56d364] tracking-[1.5px] font-bold">{activeTab}</span>
-          <span className="text-[#1a1a2a]">·</span>
-          <span className="text-[#303042]">OP</span>
-          <span className="text-[#f0a500]">{handle || "N/A"}</span>
-          <span className="text-[#1a1a2a]">·</span>
-          <span className="text-[#303042]">UPTIME</span>
-          <span className="text-[#58a6ff] tabular-nums">{tick}s</span>
-          <div className="flex-1 hidden sm:block" />
-          <span className="text-[#1a1a2a] hidden sm:inline">SYS.INTEGRITY </span>
-          <span className="text-[#252535] hidden sm:inline">■■■■■■■■■■ 100%</span>
+          <span className="text-[#444]">MODULE:</span><span className="text-[#56d364] tracking-[2px]">{activeTab}</span><span className="text-[#1a1a1a]">|</span>
+          <span className="text-[#444]">OPERATOR:</span><span className="text-[#f0a500]">{handle || "N/A"}</span><span className="text-[#1a1a1a]">|</span>
+          <span className="text-[#444]">UPTIME:</span><span className="text-[#58a6ff]">{tick}s</span>
+          <div className="flex-1" />
+          <span className="text-[#1a1a1a]">SYS.INTEGRITY: </span><span className="text-[#56d364]">■■■■■■■■■■ 100%</span>
         </div>
 
-        {loading && (
-          <div className="flex flex-col items-center justify-center my-24 gap-4">
-            <div className="font-mono text-[#f0a500] text-sm animate-pulse tracking-[2px]">{loadingMsg}</div>
-            <div className="flex gap-1.5">
-              {[0,1,2,3,4].map(i => (
-                <div key={i} className="w-1 h-6 rounded-full bg-[#f0a500] animate-pulse" style={{ animationDelay: `${i * 0.12}s`, opacity: 0.4 + i * 0.12 }} />
-              ))}
-            </div>
-          </div>
-        )}
+        {loading && <div className="text-center my-20 font-mono text-[#f0a500] text-[1.2rem] animate-pulse">{loadingMsg}</div>}
 
         {!loading && mainMetrics && squadData[config.main] && (
           <>
             {/* The Guillotine */}
             {activeTab === "COMMAND" && (guillotineStatus.isBlue || guillotineStatus.isRed) && (
-              <div className={`mb-6 px-5 py-4 rounded-xl border flex justify-between items-center gap-4 ${guillotineStatus.isRed ? 'animate-[pulse_2.5s_ease-in-out_infinite]' : ''}`}
-                style={{ background: guillotineStatus.isRed ? 'rgba(248,81,73,0.04)' : 'rgba(88,166,255,0.04)', borderColor: guillotineStatus.isRed ? '#f8514944' : '#58a6ff33', borderLeft: `3px solid ${guillotineStatus.isRed ? '#f85149' : '#58a6ff'}` }}>
+              <div className={`mb-8 p-6 rounded-2xl border flex justify-between items-center ${guillotineStatus.isRed ? 'bg-[rgba(248,81,73,0.05)] border-[#f85149] animate-[pulse_2s_ease-in-out_infinite]' : 'bg-[rgba(88,166,255,0.05)] border-[#58a6ff]'}`}>
                 <div>
-                  <div className="font-mono font-black uppercase tracking-widest text-sm" style={{ color: guillotineStatus.isRed ? '#f85149' : '#58a6ff' }}>
-                    {guillotineStatus.isRed ? '⚠ CRITICAL DECAY' : '◉ RUST FORMING'}
-                  </div>
-                  <div className="font-mono text-[0.65rem] mt-1" style={{ color: guillotineStatus.isRed ? '#f8514988' : '#58a6ff88' }}>
-                    No submissions for <span className="font-bold">{guillotineStatus.hoursInactive}h</span>.
+                  <h2 className={`font-black uppercase tracking-widest m-0 font-mono text-lg ${guillotineStatus.isRed ? 'text-[#f85149]' : 'text-[#58a6ff]'}`}>
+                    {guillotineStatus.isRed ? '⚠ CRITICAL DECAY' : '🔵 RUST FORMING'}
+                  </h2>
+                  <p className="font-mono text-xs mt-1 mb-0" style={{ color: guillotineStatus.isRed ? '#f85149' : '#58a6ff' }}>
+                    No submissions for <strong>{guillotineStatus.hoursInactive}h</strong>.
                     {guillotineStatus.isRed && ` Bleed active for ${guillotineStatus.bleedHours}h.`}
-                  </div>
+                  </p>
                 </div>
                 {guillotineStatus.isRed && (
-                  <div className="text-right flex-shrink-0">
-                    <div className="text-2xl font-black text-[#f85149] font-mono tabular-nums">−{guillotineStatus.pointsLost} PTS</div>
-                    <div className="text-[9px] text-[#f8514966] uppercase tracking-widest font-mono mt-0.5">Simulated Elo Bleed</div>
+                  <div className="text-right">
+                    <div className="text-3xl font-black text-[#f85149] font-mono">-{guillotineStatus.pointsLost} PTS</div>
+                    <div className="text-[10px] text-[#f85149] uppercase tracking-widest font-mono mt-1">Simulated Elo Bleed</div>
                   </div>
                 )}
                 {guillotineStatus.isBlue && (
-                  <div className="text-right flex-shrink-0">
-                    <div className="text-2xl font-black text-[#58a6ff] font-mono tabular-nums">{guillotineStatus.hoursInactive}h</div>
-                    <div className="text-[9px] text-[#58a6ff66] uppercase tracking-widest font-mono mt-0.5">Hours Inactive</div>
+                  <div className="text-right font-mono text-[#58a6ff]">
+                    <div className="text-3xl font-black">{guillotineStatus.hoursInactive}h</div>
+                    <div className="text-[10px] uppercase tracking-widest mt-1">Hours Inactive</div>
                   </div>
                 )}
               </div>
@@ -526,24 +490,17 @@ export default function Home() {
             {activeTab === "SQUAD OPS" && <SquadOpsTab squadMatrix={squadMatrix} config={config} squadCharts={squadCharts} bounties={bounties} />}
             {activeTab === "NEMESIS" && (
               <div className="animate-in fade-in">
-                <div className="mb-5 flex gap-2 items-center flex-wrap">
-                  <span className="text-[#454558] font-mono text-[0.6rem] uppercase tracking-widest">Target:</span>
+                <div className="mb-6 flex gap-4 items-center">
+                  <span className="text-[#888] font-mono text-xs uppercase">Select Target:</span>
                   {config.squad.map(h => (
-                    <button key={h} onClick={() => setNemesisTarget(h)}
-                      className="px-3 py-1.5 rounded-lg font-mono uppercase text-[0.6rem] tracking-wider transition-all cursor-pointer border"
-                      style={{
-                        background: nemesisTarget === h ? 'rgba(248,81,73,0.08)' : '#070710',
-                        color: nemesisTarget === h ? '#f85149' : '#454558',
-                        borderColor: nemesisTarget === h ? '#f8514944' : '#1a1a28',
-                      }}>{h}</button>
+                    <button key={h} onClick={() => setNemesisTarget(h)} className={`px-4 py-2 rounded-lg font-mono uppercase text-xs transition-colors cursor-pointer border ${nemesisTarget === h ? 'bg-[#f85149]/10 text-[#f85149] border-[#f85149]' : 'bg-[#050505] text-[#888] border-[#1a1a1a] hover:bg-white/5'}`}>{h}</button>
                   ))}
                 </div>
-                {nemesisTarget && squadData[nemesisTarget] ? <Nemesis mySubs={squadData[config.main].rawSubs} targetSubs={squadData[nemesisTarget].rawSubs} targetHandle={nemesisTarget} myRating={squadData[config.main].info.rating || 1200} myHandle={config.main} myHistory={squadData[config.main].history || []} targetHistory={squadData[nemesisTarget].history || []} myInfo={squadData[config.main].info} targetInfo={squadData[nemesisTarget].info} /> : <div className="text-center py-20 text-[#2a2a3a] font-mono text-sm">Select a squad target to initiate Nemesis protocol.</div>}
+                {nemesisTarget && squadData[nemesisTarget] ? <Nemesis mySubs={squadData[config.main].rawSubs} targetSubs={squadData[nemesisTarget].rawSubs} targetHandle={nemesisTarget} myRating={squadData[config.main].info.rating || 1200} /> : <div className="text-center py-20 text-[#888] font-mono">Select a valid squad target to initiate Nemesis protocol.</div>}
               </div>
             )}
-            {activeTab === "FORGE" && <Forge rawSubsList={mainMetrics.rawSubsList} />}
-            {activeTab === "GRIND" && <GrindMode handle={config.main} />}
-            {activeTab === "TITAN" && <TitanTab squadData={squadData} config={config} />}
+{activeTab === "GRIND" && <GrindMode handle={config.main} />}
+            {activeTab === "TITAN" && <TitanTab myInfo={squadData[config.main]?.info} myRating={squadData[config.main]?.info?.rating || 0} myHandle={config.main} />}
             {activeTab === "CONTESTS" && mainMetrics && (
               <ContestTracker handle={config.main} rawSubs={squadData[config.main].rawSubs} />
             )}
@@ -551,10 +508,10 @@ export default function Home() {
         )}
       </main>
 
-      <div className="fixed bottom-0 left-0 right-0 h-7 hidden md:flex items-center px-8 gap-6 z-50" style={{ background: "rgba(3,3,5,0.98)", borderTop: "1px solid #0e0e18" }}>
-        {[["CF API","#56d364"],["SQUAD SYNC","#56d364"],["NEMESIS","#f0a500"],["FORGE","#58a6ff"]].map(([l, col]) => <StatusLabel key={l} label={l as string} color={col as string} />)}
+      <div className="fixed bottom-0 left-0 right-0 h-7 flex items-center px-8 gap-8 z-50 hidden md:flex" style={{ background: "rgba(3,3,5,0.98)", borderTop: "1px solid #0f0f1a" }}>
+        {[["CF API","#56d364"],["SQUAD SYNC","#56d364"],["NEMESIS ENGINE","#f0a500"],["FORGE MODULE","#58a6ff"]].map(([l, col]) => <StatusLabel key={l} label={l as string} color={col as string} />)}
         <div className="flex-1" />
-        <div className="font-mono text-[0.5rem] tracking-[2px] text-[#161622]">CODEFORCES SYNTHESIS ENGINE · TACTICAL EDGE</div>
+        <div className="font-mono text-[0.55rem] text-[#1a1a2a]">{"<<<"} CODEFORCES SYNTHESIS ENGINE · TACTICAL EDGE {">>>"}</div>
       </div>
     </div>
   );

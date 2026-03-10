@@ -1,88 +1,72 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from 'react';
 
-// ── Types ──────────────────────────────────────────────────────────────────────
 interface TitanEntry {
   handle: string;
-  info: any | null;         // CF user.info result
-  history: any[];           // CF user.rating result
+  info: any | null;
   loading: boolean;
   error: string | null;
 }
 
 interface TitanTabProps {
-  myHandle: string;
+  myInfo: any;
   myRating: number;
-  myHistory: any[];
+  myHandle: string;
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
 function TopLine({ color }: { color: string }) {
-  return (
-    <div className="absolute top-0 left-0 right-0 h-[1px]"
-      style={{ background: `linear-gradient(90deg, transparent, ${color}, transparent)` }} />
-  );
+  return <div className="absolute top-0 left-0 right-0 h-px" style={{ background: `linear-gradient(90deg, transparent, ${color}, transparent)` }} />;
 }
 
-function PulseDot({ color }: { color: string }) {
-  return <span className="inline-block w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: color }} />;
-}
-
-const CF_RANK_COLORS: Record<string, string> = {
-  newbie: '#888888', pupil: '#77ff77', specialist: '#77ddbb',
-  expert: '#aaaaff', 'candidate master': '#ff88ff', master: '#ffcc88',
-  'international master': '#ffbb55', grandmaster: '#ff7777',
-  'international grandmaster': '#ff3333', 'legendary grandmaster': '#aa0000',
-};
-
-function rankColor(rank?: string): string {
+function getRankColor(rank: string) {
   if (!rank) return '#888';
-  return CF_RANK_COLORS[rank.toLowerCase()] || '#888';
+  const r = rank.toLowerCase();
+  if (r.includes('legendary')) return '#f0a500';
+  if (r.includes('international grandmaster') || r.includes('international master')) return '#f85149';
+  if (r.includes('grandmaster')) return '#f85149';
+  if (r.includes('master')) return '#e879f9';
+  if (r.includes('candidate')) return '#d2a8ff';
+  if (r.includes('expert')) return '#58a6ff';
+  if (r.includes('specialist')) return '#56d364';
+  if (r.includes('pupil')) return '#56d36488';
+  return '#666';
 }
 
-function formatRatingDelta(gap: number) {
-  if (gap <= 0) return { text: `You're ahead by ${Math.abs(gap)}`, color: '#56d364' };
-  return { text: `${gap} points behind`, color: '#f85149' };
-}
-
-function estimateContests(gap: number) {
-  if (gap <= 0) return 'Target neutralized';
-  return `~${Math.ceil(gap / 20)} contests at current velocity`;
-}
-
-// ── Titan Card ─────────────────────────────────────────────────────────────────
-function TitanCard({
-  titan, myRating, onRemove,
-}: {
-  titan: TitanEntry; myRating: number; onRemove: () => void;
+function TitanCard({ titan, myRating, myHandle, onRemove }: {
+  titan: TitanEntry; myRating: number; myHandle: string; onRemove: () => void;
 }) {
-  const { info, loading, error, handle } = titan;
-
-  if (loading) {
+  if (titan.loading) {
     return (
-      <div className="relative overflow-hidden rounded-[4px] p-8 flex items-center justify-center min-h-[180px]"
+      <div className="relative overflow-hidden rounded-[4px] p-6 animate-pulse"
         style={{ background: '#050505', border: '1px solid #f8514922' }}>
         <TopLine color="#f85149" />
-        <div className="font-mono text-[11px] uppercase tracking-[3px] text-[#f85149] animate-pulse">
-          [ Locking onto {handle}... ]
+        <div className="flex items-center gap-4">
+          <div className="w-14 h-14 rounded-[4px] bg-[#111]" />
+          <div className="flex-1 space-y-2">
+            <div className="h-4 bg-[#111] rounded w-32" />
+            <div className="h-3 bg-[#0a0a0a] rounded w-20" />
+          </div>
+        </div>
+        <div className="font-mono text-[9px] uppercase tracking-[2px] text-[#222] mt-4 animate-pulse">
+          Fetching intel on {titan.handle}...
         </div>
       </div>
     );
   }
 
-  if (error || !info) {
+  if (titan.error || !titan.info) {
     return (
-      <div className="relative overflow-hidden rounded-[4px] p-6"
-        style={{ background: '#050505', border: '1px solid #f8514922' }}>
+      <div className="relative overflow-hidden rounded-[4px] p-5"
+        style={{ background: '#050505', border: '1px solid #f8514933' }}>
         <TopLine color="#f85149" />
         <div className="flex items-center justify-between">
           <div>
-            <div className="font-mono text-[13px] font-bold text-[#f85149]">{handle}</div>
-            <div className="font-mono text-[10px] text-[#555] mt-1">{error || 'Handle not found on Codeforces'}</div>
+            <div className="font-mono text-[#f85149] font-bold">{titan.handle}</div>
+            <div className="font-mono text-[10px] text-[#555] mt-1">{titan.error || 'Handle not found.'}</div>
           </div>
           <button onClick={onRemove}
-            className="font-mono text-[9px] uppercase tracking-wider text-[#333] hover:text-[#f85149] transition-colors px-3 py-1.5 border border-[#1a1a1a] hover:border-[#f85149] rounded-[3px]">
+            className="font-mono text-[9px] text-[#333] hover:text-[#f85149] transition-colors border border-[#1a1a1a] hover:border-[#f85149]/40 px-3 py-1.5 rounded-[3px] uppercase tracking-wider">
             Remove
           </button>
         </div>
@@ -90,319 +74,324 @@ function TitanCard({
     );
   }
 
+  const info = titan.info;
   const tRating = info.rating || 0;
   const gap = tRating - myRating;
-  const { text: deltaText, color: deltaColor } = formatRatingDelta(gap);
-  const rColor = rankColor(info.rank);
-
-  // Mini rating spark from history
-  const histPoints = titan.history.slice(-12).map((h: any) => h.newRating);
-  const sparkMin = Math.min(...histPoints, tRating);
-  const sparkMax = Math.max(...histPoints, tRating);
-  const sparkRange = sparkMax - sparkMin || 100;
+  const neutralized = gap <= 0;
+  const rankColor = getRankColor(info.rank || '');
+  const contestCycles = neutralized ? 0 : Math.ceil(gap / 15);
+  const bracketRating = Math.floor((info.rating || 1500) / 100) * 100;
+  const progressPct = myRating > 0 && tRating > 0 ? Math.min(99, (myRating / tRating) * 100) : 0;
 
   return (
     <div className="relative overflow-hidden rounded-[4px]"
-      style={{ background: '#050505', border: '1px solid #f8514922', boxShadow: '0 0 30px rgba(248,81,73,0.04)' }}>
-      <TopLine color="#f85149" />
+      style={{
+        background: neutralized
+          ? 'radial-gradient(ellipse at top left, #001a06 0%, #050505 60%)'
+          : 'radial-gradient(ellipse at top left, #150000 0%, #050505 60%)',
+        border: `1px solid ${neutralized ? '#56d36433' : '#f8514933'}`,
+        boxShadow: neutralized ? '0 0 24px rgba(86,211,100,0.04)' : '0 0 24px rgba(248,81,73,0.06)',
+      }}>
+      <TopLine color={neutralized ? '#56d364' : '#f85149'} />
 
-      {/* Skull watermark */}
-      <div className="absolute bottom-2 right-4 text-[5rem] opacity-[0.03] leading-none pointer-events-none select-none">💀</div>
-
-      {/* Header */}
+      {/* Card header */}
       <div className="p-6 flex items-start gap-5">
-        <div className="relative shrink-0">
-          <img src={info.titlePhoto} alt={handle}
-            className="w-16 h-16 rounded-[4px] object-cover"
-            style={{ border: `2px solid ${rColor}44` }}
-            onError={(e: any) => { e.target.style.display = 'none'; }} />
-          <div className="absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-[#050505]"
-            style={{ background: rColor }} />
-        </div>
+        {info.titlePhoto && (
+          <img src={info.titlePhoto} alt={info.handle}
+            className="w-16 h-16 rounded-[4px] object-cover shrink-0"
+            style={{ border: `2px solid ${rankColor}44` }}
+          />
+        )}
 
         <div className="flex-1 min-w-0">
-          <div className="flex items-start justify-between gap-2">
+          <div className="flex items-start justify-between gap-3">
             <div>
-              <div className="font-mono text-[1.1rem] font-black tracking-tight" style={{ color: rColor }}>
+              <div className="font-mono text-xl font-black tracking-tight leading-none" style={{ color: rankColor }}>
                 {info.handle}
               </div>
-              <div className="font-mono text-[9px] uppercase tracking-[2px] text-[#333] mt-0.5">
-                Assassination Target
+              <div className="font-mono text-[9px] uppercase tracking-[2px] text-[#444] mt-1">
+                {info.rank || 'unranked'}
+                {info.maxRating ? <span className="text-[#2a2a2a] ml-2">· peak {info.maxRating}</span> : null}
               </div>
             </div>
-            <button onClick={onRemove}
-              className="font-mono text-[9px] uppercase tracking-wider text-[#222] hover:text-[#f85149] transition-colors px-2 py-1 border border-[#111] hover:border-[#f85149]/40 rounded-[2px] shrink-0">
-              ✕ Remove
-            </button>
+
+            <div className="flex items-center gap-3 shrink-0">
+              {neutralized ? (
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-[9px] uppercase tracking-[1.5px] text-[#56d364] border border-[#56d364]/30 px-2 py-1 rounded-[3px]">
+                    ✓ Neutralized
+                  </span>
+                  <span className="font-mono text-[#56d364] font-bold text-sm">{tRating}</span>
+                </div>
+              ) : (
+                <div className="text-right">
+                  <div className="font-mono text-2xl font-black text-[#f85149]">{tRating}</div>
+                  <div className="font-mono text-[8px] text-[#333] uppercase tracking-wider">rating</div>
+                </div>
+              )}
+              <button onClick={onRemove}
+                className="font-mono text-[9px] text-[#222] hover:text-[#f85149] transition-colors border border-[#111] hover:border-[#f85149]/30 w-7 h-7 flex items-center justify-center rounded-[3px]">
+                ✕
+              </button>
+            </div>
           </div>
 
-          {/* Rating + rank */}
-          <div className="flex items-baseline gap-3 mt-2">
-            <span className="font-mono text-2xl font-black" style={{ color: '#f0a500' }}>{tRating}</span>
-            <span className="font-mono text-[10px] capitalize" style={{ color: rColor }}>{info.rank}</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Mini spark */}
-      {histPoints.length > 1 && (
-        <div className="px-6 pb-3">
-          <svg width="100%" height="32" viewBox={`0 0 ${histPoints.length * 20} 32`} preserveAspectRatio="none"
-            className="opacity-40">
-            <polyline
-              fill="none"
-              stroke="#f85149"
-              strokeWidth="1.5"
-              strokeLinejoin="round"
-              points={histPoints.map((v, i) =>
-                `${i * 20},${32 - ((v - sparkMin) / sparkRange) * 28}`
-              ).join(' ')}
-            />
-            {/* Current rating dot */}
-            <circle
-              cx={(histPoints.length - 1) * 20}
-              cy={32 - ((histPoints[histPoints.length - 1] - sparkMin) / sparkRange) * 28}
-              r="2.5"
-              fill="#f85149"
-            />
-          </svg>
-        </div>
-      )}
-
-      {/* Protocol panel */}
-      <div className="mx-5 mb-5 rounded-[3px] p-4"
-        style={{ background: '#0a0a0a', borderLeft: '3px solid #f8514966', border: '1px solid #f8514915' }}>
-        <div className="font-mono text-[8px] uppercase tracking-[2px] text-[#f85149] mb-3 flex items-center gap-2">
-          <PulseDot color="#f85149" /> Assassination Protocol
-        </div>
-
-        <div className="grid grid-cols-2 gap-3 mb-3">
-          <div>
-            <div className="font-mono text-[8px] uppercase text-[#333] mb-1">Rating Delta</div>
-            <div className="font-mono text-[15px] font-black" style={{ color: deltaColor }}>{deltaText}</div>
-          </div>
-          <div>
-            <div className="font-mono text-[8px] uppercase text-[#333] mb-1">Intercept ETA</div>
-            <div className="font-mono text-[11px] text-[#56d364]">{estimateContests(gap)}</div>
-          </div>
-        </div>
-
-        {gap > 0 && (
-          <>
-            {/* Progress bar toward titan */}
-            <div className="mb-2">
-              <div className="flex justify-between font-mono text-[8px] text-[#333] mb-1">
-                <span>Your rating</span>
-                <span>Titan</span>
+          {/* Progress bar toward titan */}
+          {!neutralized && myRating > 0 && (
+            <div className="mt-4">
+              <div className="flex justify-between font-mono text-[9px] text-[#333] mb-1.5">
+                <span style={{ color: '#e3b341' }}>{myHandle} — {myRating}</span>
+                <span className="text-[#f85149]">gap: {gap} pts</span>
               </div>
               <div className="h-[3px] bg-[#111] rounded-full overflow-hidden">
                 <div className="h-full rounded-full transition-all duration-700"
                   style={{
-                    width: `${Math.min(100, (myRating / Math.max(tRating, myRating)) * 100)}%`,
-                    background: 'linear-gradient(90deg, #56d364, #e3b341)',
-                    boxShadow: '0 0 6px #e3b34166',
+                    width: `${progressPct}%`,
+                    background: 'linear-gradient(90deg, #e3b341, #f85149)',
+                    boxShadow: '0 0 6px rgba(248,81,73,0.3)',
                   }} />
               </div>
-              <div className="flex justify-between font-mono text-[8px] mt-1">
-                <span style={{ color: '#56d364' }}>{myRating}</span>
-                <span style={{ color: '#f85149' }}>{tRating}</span>
+              <div className="flex justify-between font-mono text-[8px] text-[#222] mt-1">
+                <span>{progressPct.toFixed(0)}% of the way there</span>
+                <span>{tRating} target</span>
               </div>
             </div>
+          )}
 
-            <div className="font-mono text-[11px] leading-relaxed" style={{ color: '#666' }}>
-              Target {info.handle} is <span style={{ color: '#f85149', fontWeight: 900 }}>{gap} pts</span> ahead.
-              Sustain first-try ACs on <span style={{ color: '#f0a500' }}>
-                {Math.floor((tRating || 1500) / 100) * 100}+
-              </span> rated problems to close the gap.
+          {neutralized && (
+            <div className="mt-2 font-mono text-[11px] text-[#56d364]">
+              Surpassed by {Math.abs(gap)} points. Time to find a new target.
             </div>
-          </>
-        )}
-
-        {gap <= 0 && (
-          <div className="font-mono text-[11px]" style={{ color: '#56d364' }}>
-            ✓ Target neutralized. You surpassed {info.handle} by{' '}
-            <span style={{ fontWeight: 900 }}>{Math.abs(gap)} pts</span>. Lock a new Titan.
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
-      {/* Stats footer */}
-      <div className="px-5 pb-5 grid grid-cols-3 gap-3">
-        {[
-          { label: 'Max Rating', val: info.maxRating || '—', color: '#e3b341' },
-          { label: 'Max Rank', val: info.maxRank || '—', color: rankColor(info.maxRank) },
-          { label: 'Contribution', val: info.contribution != null ? (info.contribution >= 0 ? `+${info.contribution}` : info.contribution) : '—', color: info.contribution > 0 ? '#56d364' : '#f85149' },
-        ].map(({ label, val, color }) => (
-          <div key={label} className="bg-[#0a0a0a] rounded-[3px] p-2.5">
-            <div className="font-mono text-[8px] uppercase text-[#333] mb-1">{label}</div>
-            <div className="font-mono text-[13px] font-bold" style={{ color }}>{val}</div>
+      {/* Protocol section */}
+      {!neutralized && (
+        <div className="border-t border-[#f85149]/10 px-6 py-4">
+          <div className="font-mono text-[8px] uppercase tracking-[2px] text-[#f85149] mb-3 flex items-center gap-2">
+            <span className="inline-block w-1 h-1 rounded-full bg-[#f85149] animate-pulse" />
+            Assassination Protocol
           </div>
-        ))}
-      </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="bg-[#f8514906] border border-[#f85149]/10 rounded-[3px] px-3 py-2.5">
+              <div className="font-mono text-[8px] uppercase tracking-[1.5px] text-[#444] mb-1">Gap</div>
+              <div className="font-mono text-lg font-black text-[#f85149]">{gap} <span className="text-[10px] text-[#444]">pts</span></div>
+            </div>
+            <div className="bg-[#e3b34108] border border-[#e3b341]/10 rounded-[3px] px-3 py-2.5">
+              <div className="font-mono text-[8px] uppercase tracking-[1.5px] text-[#444] mb-1">Target Caliber</div>
+              <div className="font-mono text-lg font-black text-[#e3b341]">{bracketRating}+ <span className="text-[10px] text-[#444]">rated</span></div>
+            </div>
+            <div className="bg-[#56d36406] border border-[#56d364]/10 rounded-[3px] px-3 py-2.5">
+              <div className="font-mono text-[8px] uppercase tracking-[1.5px] text-[#444] mb-1">ETA</div>
+              <div className="font-mono text-lg font-black text-[#56d364]">~{contestCycles} <span className="text-[10px] text-[#444]">contests</span></div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Footer stats */}
+      {(info.contribution !== undefined || info.friendOfCount !== undefined) && (
+        <div className="border-t border-[#0f0f0f] px-6 py-3 flex gap-6">
+          {info.contribution !== undefined && (
+            <div>
+              <div className="font-mono text-[8px] uppercase tracking-[1.5px] text-[#2a2a2a]">Contribution</div>
+              <div className="font-mono text-[12px] font-bold" style={{ color: info.contribution >= 0 ? '#56d364' : '#f85149' }}>
+                {info.contribution >= 0 ? '+' : ''}{info.contribution}
+              </div>
+            </div>
+          )}
+          {info.friendOfCount !== undefined && (
+            <div>
+              <div className="font-mono text-[8px] uppercase tracking-[1.5px] text-[#2a2a2a]">Friend of</div>
+              <div className="font-mono text-[12px] font-bold text-[#555]">{info.friendOfCount.toLocaleString()}</div>
+            </div>
+          )}
+          {info.organization && (
+            <div>
+              <div className="font-mono text-[8px] uppercase tracking-[1.5px] text-[#2a2a2a]">Org</div>
+              <div className="font-mono text-[12px] text-[#555] truncate max-w-[160px]">{info.organization}</div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-// ── Main Component ─────────────────────────────────────────────────────────────
-export default function TitanTab({ myHandle, myRating, myHistory }: TitanTabProps) {
+// ── Main ───────────────────────────────────────────────────────────────────────
+export default function TitanTab({ myInfo, myRating, myHandle }: TitanTabProps) {
   const [titans, setTitans] = useState<TitanEntry[]>([]);
   const [inputHandle, setInputHandle] = useState('');
-  const [inputError, setInputError] = useState('');
-  const [hydrated, setHydrated] = useState(false);
+  const [addError, setAddError] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [loaded, setLoaded] = useState(false);
 
-  // ── Hydrate titan list from localStorage ──
   useEffect(() => {
     try {
-      const saved = localStorage.getItem('cf_titans_v1');
-      if (saved) {
-        const handles: string[] = JSON.parse(saved);
-        // Load with empty info, then fetch each
-        const initial: TitanEntry[] = handles.map(h => ({
-          handle: h, info: null, history: [], loading: true, error: null,
-        }));
+      const saved = JSON.parse(localStorage.getItem('cf_titans_v1') || '[]') as string[];
+      if (saved.length > 0) {
+        const initial: TitanEntry[] = saved.map(h => ({ handle: h, info: null, loading: true, error: null }));
         setTitans(initial);
-        initial.forEach(t => fetchTitan(t.handle));
+        saved.forEach(h => fetchTitan(h));
       }
     } catch { /**/ }
-    setHydrated(true);
+    setLoaded(true);
   }, []);
 
-  function saveTitanHandles(entries: TitanEntry[]) {
-    try {
-      localStorage.setItem('cf_titans_v1', JSON.stringify(entries.map(e => e.handle)));
-    } catch { /**/ }
+  function saveTitanHandles(list: TitanEntry[]) {
+    try { localStorage.setItem('cf_titans_v1', JSON.stringify(list.map(t => t.handle))); } catch { /**/ }
   }
 
-  const fetchTitan = useCallback(async (handle: string) => {
+  async function fetchTitan(handle: string) {
     try {
       const res = await fetch(`/api/cf?url=${encodeURIComponent(`https://codeforces.com/api/user.info?handles=${handle}`)}`);
       const data = await res.json();
-      if (data.status !== 'OK' || !data.result?.length) {
-        setTitans(prev => prev.map(t => t.handle === handle
-          ? { ...t, loading: false, error: 'Handle not found on Codeforces' }
-          : t));
-        return;
+      if (data.status === 'OK' && data.result?.length > 0) {
+        const info = data.result[0];
+        setTitans(prev => prev.map(t =>
+          t.handle.toLowerCase() === handle.toLowerCase()
+            ? { ...t, info, loading: false, error: null, handle: info.handle }
+            : t
+        ));
+      } else {
+        setTitans(prev => prev.map(t =>
+          t.handle.toLowerCase() === handle.toLowerCase()
+            ? { ...t, loading: false, error: 'Handle not found on Codeforces.' }
+            : t
+        ));
       }
-      const info = data.result[0];
-
-      // fetch history
-      let history: any[] = [];
-      try {
-        const rRes = await fetch(`/api/cf?url=${encodeURIComponent(`https://codeforces.com/api/user.rating?handle=${handle}`)}`);
-        const rData = await rRes.json();
-        if (rData.status === 'OK') history = rData.result;
-      } catch { /**/ }
-
-      setTitans(prev => prev.map(t => t.handle === handle
-        ? { ...t, info, history, loading: false, error: null }
-        : t));
     } catch {
-      setTitans(prev => prev.map(t => t.handle === handle
-        ? { ...t, loading: false, error: 'Network error — try again' }
-        : t));
+      setTitans(prev => prev.map(t =>
+        t.handle.toLowerCase() === handle.toLowerCase()
+          ? { ...t, loading: false, error: 'Failed to fetch — check your connection.' }
+          : t
+      ));
     }
-  }, []);
+  }
 
-  function addTitan() {
+  async function addTitan() {
     const h = inputHandle.trim();
-    if (!h) { setInputError('Enter a handle.'); return; }
+    if (!h) { setAddError('Enter a handle.'); return; }
     if (titans.some(t => t.handle.toLowerCase() === h.toLowerCase())) {
-      setInputError('Already tracking this handle.');
-      return;
+      setAddError('Already tracking this titan.'); return;
     }
-    setInputError('');
-    const newEntry: TitanEntry = { handle: h, info: null, history: [], loading: true, error: null };
-    const updated = [...titans, newEntry];
-    setTitans(updated);
-    saveTitanHandles(updated);
+    setAddError('');
+    setAdding(true);
     setInputHandle('');
-    fetchTitan(h);
+
+    const newEntry: TitanEntry = { handle: h, info: null, loading: true, error: null };
+    setTitans(prev => {
+      const next = [...prev, newEntry];
+      saveTitanHandles(next);
+      return next;
+    });
+
+    await fetchTitan(h);
+    setAdding(false);
   }
 
   function removeTitan(handle: string) {
-    const updated = titans.filter(t => t.handle !== handle);
-    setTitans(updated);
-    saveTitanHandles(updated);
+    setTitans(prev => {
+      const next = prev.filter(t => t.handle !== handle);
+      saveTitanHandles(next);
+      return next;
+    });
   }
 
-  if (!hydrated) return null;
+  const resolvedTitans = titans.filter(t => !t.loading && !t.error && t.info);
+  const neutralizedCount = resolvedTitans.filter(t => (t.info?.rating || 0) <= myRating).length;
+  const activeTargets = resolvedTitans.filter(t => (t.info?.rating || 0) > myRating);
+  const closestGap = activeTargets.length > 0
+    ? Math.min(...activeTargets.map(t => (t.info?.rating || 0) - myRating))
+    : null;
 
   return (
     <div className="animate-in fade-in duration-400 space-y-5">
 
-      {/* ── Add Titan panel ── */}
+      {/* Header */}
       <div className="relative overflow-hidden rounded-[4px] p-6"
-        style={{ background: '#050505', border: '1px solid #f8514933', boxShadow: '0 0 30px rgba(248,81,73,0.06)' }}>
+        style={{ background: 'radial-gradient(ellipse at top, #180000 0%, #050505 70%)', border: '1px solid #f8514930', boxShadow: '0 0 30px rgba(248,81,73,0.06)' }}>
         <TopLine color="#f85149" />
+        <div className="absolute bottom-0 right-8 text-[5rem] opacity-[0.025] leading-none select-none">💀</div>
 
-        <div className="flex items-start gap-4 flex-wrap">
-          <div className="flex-1 min-w-[200px]">
-            <div className="font-mono text-[9px] uppercase tracking-[2px] text-[#f85149] mb-2 flex items-center gap-2">
-              <PulseDot color="#f85149" />
-              Lock Assassination Target
-            </div>
-            <p className="font-mono text-[11px] text-[#333] leading-relaxed mb-4">
-              Add any number of Titan targets. Each will be tracked independently with their own rating trajectory and protocol.
+        <div className="flex flex-col md:flex-row md:items-start justify-between gap-5">
+          <div>
+            <h2 className="font-mono text-xl font-black uppercase tracking-widest text-[#f85149] m-0 mb-1">
+              Titan Board
+            </h2>
+            <p className="font-mono text-[10px] text-[#333] uppercase tracking-[1.5px]">
+              {resolvedTitans.length > 0
+                ? `${resolvedTitans.length} target${resolvedTitans.length > 1 ? 's' : ''} · ${neutralizedCount} neutralized`
+                : 'Designate your assassination targets'}
             </p>
+            {resolvedTitans.length > 0 && (
+              <div className="flex gap-5 mt-4 pt-4 border-t border-[#f85149]/10">
+                <div>
+                  <div className="font-mono text-[8px] text-[#333] uppercase tracking-[1.5px]">Locked</div>
+                  <div className="font-mono text-xl font-black text-[#f85149]">{resolvedTitans.length}</div>
+                </div>
+                {neutralizedCount > 0 && (
+                  <div>
+                    <div className="font-mono text-[8px] text-[#333] uppercase tracking-[1.5px]">Neutralized</div>
+                    <div className="font-mono text-xl font-black text-[#56d364]">{neutralizedCount}</div>
+                  </div>
+                )}
+                {closestGap !== null && (
+                  <div>
+                    <div className="font-mono text-[8px] text-[#333] uppercase tracking-[1.5px]">Closest gap</div>
+                    <div className="font-mono text-xl font-black text-[#e3b341]">{closestGap}</div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Add input */}
+          <div className="flex flex-col gap-1.5 w-full md:w-72 shrink-0">
+            <div className="font-mono text-[8px] uppercase tracking-[1.5px] text-[#333] mb-0.5">Add target</div>
             <div className="flex gap-2">
               <input
                 type="text"
                 value={inputHandle}
-                onChange={e => { setInputHandle(e.target.value); setInputError(''); }}
+                onChange={e => { setInputHandle(e.target.value); setAddError(''); }}
                 onKeyDown={e => { if (e.key === 'Enter') addTitan(); }}
-                placeholder="CF handle e.g. tourist"
-                className="flex-1 bg-[#0a0a0a] border border-[#1a1a1a] text-white rounded-[3px] px-3 py-2.5 text-[13px] font-mono outline-none transition-all placeholder:text-[#222]"
-                style={{ borderColor: inputError ? '#f85149' : undefined }}
-                onFocus={e => { e.target.style.borderColor = '#f85149'; e.target.style.boxShadow = '0 0 0 3px rgba(248,81,73,0.1)'; }}
-                onBlur={e => { e.target.style.borderColor = inputError ? '#f85149' : '#1a1a1a'; e.target.style.boxShadow = 'none'; }}
+                placeholder="CF handle…"
+                className="flex-1 min-w-0 bg-[#050505] border border-[#f85149]/20 text-white rounded-[3px] px-3 py-2.5 text-[12px] font-mono outline-none focus:border-[#f85149]/60 focus:shadow-[0_0_0_2px_rgba(248,81,73,0.1)] placeholder:text-[#222] transition-all"
               />
-              <button onClick={addTitan}
-                className="px-5 py-2.5 bg-[#f85149] text-black font-black uppercase tracking-widest text-[10px] rounded-[3px] hover:bg-[#ff6a64] transition-all shadow-[0_0_12px_rgba(248,81,73,0.25)] shrink-0">
-                Lock In
+              <button
+                onClick={addTitan}
+                disabled={adding}
+                className="shrink-0 px-4 py-2.5 bg-[#f85149] text-black font-black uppercase tracking-widest text-[10px] rounded-[3px] hover:bg-[#ff6a64] transition-all shadow-[0_0_10px_rgba(248,81,73,0.2)] disabled:opacity-40 disabled:cursor-not-allowed">
+                {adding ? '…' : '+ Lock'}
               </button>
             </div>
-            {inputError && (
-              <div className="font-mono text-[10px] text-[#f85149] mt-1.5">{inputError}</div>
-            )}
-          </div>
-
-          {/* Titan count badge */}
-          <div className="flex flex-col items-center justify-center px-6 py-4 rounded-[4px] shrink-0"
-            style={{ background: titans.length > 0 ? 'rgba(248,81,73,0.06)' : '#0a0a0a', border: '1px solid rgba(248,81,73,0.15)' }}>
-            <div className="font-mono text-3xl font-black text-[#f85149]">{titans.length}</div>
-            <div className="font-mono text-[8px] uppercase tracking-[2px] text-[#444] mt-0.5">
-              {titans.length === 1 ? 'Titan' : 'Titans'} locked
-            </div>
+            {addError && <div className="font-mono text-[9px] text-[#f85149]">{addError}</div>}
           </div>
         </div>
       </div>
 
-      {/* ── Empty state ── */}
-      {titans.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-20 gap-4">
-          <div className="text-[4rem] opacity-10">💀</div>
-          <div className="font-mono text-[11px] uppercase tracking-[3px] text-[#222]">
-            No targets locked
-          </div>
-          <div className="font-mono text-[10px] text-[#1a1a1a]">
-            Add a handle above to track your first Titan
-          </div>
+      {/* Empty state */}
+      {loaded && titans.length === 0 && (
+        <div className="rounded-[4px] p-14 text-center" style={{ background: '#050505', border: '1px dashed #1a1a1a' }}>
+          <div className="text-4xl mb-4">💀</div>
+          <div className="font-mono text-[10px] uppercase tracking-[3px] text-[#1a1a1a] mb-2">No targets designated</div>
+          <div className="font-mono text-[9px] text-[#111]">Type a Codeforces handle above and hit Lock.</div>
         </div>
       )}
 
-      {/* ── Titan cards grid ── */}
-      {titans.length > 0 && (
-        <div className={`grid gap-4 ${titans.length === 1 ? 'grid-cols-1 max-w-xl' : 'grid-cols-1 lg:grid-cols-2'}`}>
-          {titans.map(titan => (
-            <TitanCard
-              key={titan.handle}
-              titan={titan}
-              myRating={myRating}
-              onRemove={() => removeTitan(titan.handle)}
-            />
-          ))}
-        </div>
-      )}
+      {/* Titan cards */}
+      <div className="space-y-4">
+        {titans.map(titan => (
+          <TitanCard
+            key={titan.handle}
+            titan={titan}
+            myRating={myRating}
+            myHandle={myHandle}
+            onRemove={() => removeTitan(titan.handle)}
+          />
+        ))}
+      </div>
     </div>
   );
 }

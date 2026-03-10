@@ -88,13 +88,12 @@ function StatCard({ label, value, sub, color = "#f0a500", icon }: {
   label: string; value: string | number; sub?: string; color?: string; icon?: string;
 }) {
   return (
-    <div className="relative overflow-hidden rounded-xl p-4 transition-all duration-200 hover:-translate-y-0.5 hover:brightness-110"
-      style={{ background: `linear-gradient(135deg, ${color}06 0%, rgba(0,0,0,0.3) 100%)`, border: `1px solid ${color}28`, boxShadow: `0 2px 12px ${color}0e, inset 0 1px 0 rgba(255,255,255,0.03)` }}>
+    <div className="relative overflow-hidden rounded-2xl p-5 transition-transform hover:-translate-y-1" style={{ background: "linear-gradient(135deg, rgba(255,255,255,0.03) 0%, rgba(0,0,0,0.2) 100%)", border: `1px solid ${color}33`, boxShadow: `0 0 24px ${color}15, inset 0 1px 0 rgba(255,255,255,0.05)` }}>
       <TopLine color={color} />
-      <div className="text-xl mb-2 leading-none">{icon}</div>
-      <div className="font-mono text-2xl font-black leading-none tabular-nums" style={{ color, letterSpacing: "-0.5px" }}>{value}</div>
-      <div className="font-mono text-[0.58rem] uppercase tracking-[2px] mt-1.5 leading-none" style={{ color: "#454558" }}>{label}</div>
-      {sub && <div className="font-mono text-[0.68rem] mt-1" style={{ color: "#666" }}>{sub}</div>}
+      <div className="text-2xl mb-1">{icon}</div>
+      <div className="font-mono text-3xl font-black leading-none" style={{ color, letterSpacing: "-0.5px" }}>{value}</div>
+      <div className="font-mono text-[0.62rem] uppercase tracking-[2px] mt-1.5" style={{ color: "#666" }}>{label}</div>
+      {sub && <div className="font-mono text-[0.72rem] mt-0.5" style={{ color: "#888" }}>{sub}</div>}
     </div>
   );
 }
@@ -117,121 +116,80 @@ export default function CommandTab({ metrics, info, filter, config, squadData }:
   });
 
   return (
-    <div className="flex flex-col gap-5 animate-fade-up">
-      {/* KPI stat strip */}
-      <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))" }}>
+    <div className="flex flex-col gap-6 animate-in fade-in duration-400">
+      <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))" }}>
         <StatCard label={`${filter === 'ALL' ? 'Lifetime' : 'Context'} XP`} value={metrics.score.toLocaleString()} color="#f0a500" icon="⚡" />
         <StatCard label="Unique AC"     value={metrics.unique.toLocaleString()}   color="#58a6ff" icon="🎯" />
         <StatCard label="First-Try Acc" value={`${metrics.acc}%`}                color="#d2a8ff" icon="🔬" />
         <StatCard label="Upsolve Rate"  value={`${metrics.upsolveRate}%`}         color="#db6d28" icon="🔁" />
       </div>
 
-      {/* Rating vs Accepted% — full-width hero chart */}
-      <div className="rounded-xl overflow-hidden" style={{ background: "#06060b", border: "1px solid #14141e" }}>
-        <div className="px-5 pt-4 pb-1 flex items-center gap-2">
-          <div className="w-1 h-4 rounded-full bg-[#e3b341]" />
-          <span className="font-mono text-[0.6rem] text-[#e3b341] uppercase tracking-[2px] font-semibold">Rating vs Accepted % (per bucket)</span>
+      {/* Rating vs Accepted% */}
+      <div className="rounded-2xl p-5" style={{ background: "#050505", border: "1px solid #1a1a1a" }}>
+        <div className="font-mono text-[0.65rem] text-[#e3b341] uppercase tracking-[2px] mb-4">📈 RATING VS ACCEPTED % (PER RATING BUCKET)</div>
+        <RatingVsAcceptedChart subs={metrics.rawSubsList} />
+      </div>
+
+      {/* Rating + Heatmap */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="rounded-2xl p-5" style={{ background: "#050505", border: "1px solid #1a1a1a" }}>
+          <div className="font-mono text-[0.65rem] text-[#58a6ff] uppercase tracking-[2px] mb-4">📡 RATING TRAJECTORY (MOMENTUM)</div>
+          <div className="h-[300px] relative"><RatingLineChart history={squadData[config.main].history} /></div>
         </div>
-        <div className="px-5 pb-5 pt-3">
-          <RatingVsAcceptedChart subs={metrics.rawSubsList} />
+        <div className="rounded-2xl p-5" style={{ background: "#050505", border: "1px solid #1a1a1a" }}>
+          <div className="font-mono text-[0.65rem] text-[#56d364] uppercase tracking-[2px] mb-4">🔥 ACTIVITY HEATMAP</div>
+          <div className="h-[300px] flex items-center justify-center overflow-x-auto"><ActivityHeatmap subs={metrics.rawSubsList} /></div>
         </div>
       </div>
 
-      {/* Rating trajectory + Heatmap */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        <div className="rounded-xl overflow-hidden" style={{ background: "#06060b", border: "1px solid #14141e" }}>
-          <div className="px-5 pt-4 pb-1 flex items-center gap-2">
-            <div className="w-1 h-4 rounded-full bg-[#58a6ff]" />
-            <span className="font-mono text-[0.6rem] text-[#58a6ff] uppercase tracking-[2px] font-semibold">Rating Trajectory</span>
-          </div>
-          <div className="px-5 pb-5 pt-3">
-            <div className="h-[260px] relative"><RatingLineChart history={squadData[config.main].history} /></div>
-          </div>
+      {/* Weakness Matrix */}
+      <div className="rounded-2xl p-5" style={{ background: "#050505", border: "1px solid #1a1a1a" }}>
+        <div className="font-mono text-[0.65rem] text-[#f85149] uppercase tracking-[2px] mb-4">🩸 ALGORITHMIC WEAKNESS MATRIX (FAILS / AC RATIO)</div>
+        <div className="h-[400px] relative"><TacticalBarChart data={metrics.weaknessRatios} color="#f85149" horizontal={true} /></div>
+      </div>
+
+      {/* Time + Memory Stress */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="rounded-2xl p-5" style={{ background: "#050505", border: "1px solid #1a1a1a" }}>
+          <div className="font-mono text-[0.65rem] text-[#e879f9] uppercase tracking-[2px] mb-4">⏳ TIME EXECUTION STRESS (AVG MS)</div>
+          <div className="h-[300px] relative"><StressBarChart data={timeAvgData} type="time" /></div>
         </div>
-        <div className="rounded-xl overflow-hidden" style={{ background: "#06060b", border: "1px solid #14141e" }}>
-          <div className="px-5 pt-4 pb-1 flex items-center gap-2">
-            <div className="w-1 h-4 rounded-full bg-[#56d364]" />
-            <span className="font-mono text-[0.6rem] text-[#56d364] uppercase tracking-[2px] font-semibold">Activity Heatmap</span>
-          </div>
-          <div className="px-5 pb-5 pt-3">
-            <div className="h-[260px] flex items-center justify-center overflow-x-auto"><ActivityHeatmap subs={metrics.rawSubsList} /></div>
-          </div>
+        <div className="rounded-2xl p-5" style={{ background: "#050505", border: "1px solid #1a1a1a" }}>
+          <div className="font-mono text-[0.65rem] text-[#d2a8ff] uppercase tracking-[2px] mb-4">💾 MEMORY FOOTPRINT STRESS (AVG MB)</div>
+          <div className="h-[300px] relative"><StressBarChart data={memAvgData} type="memory" /></div>
         </div>
       </div>
 
-      {/* Weakness matrix */}
-      <div className="rounded-xl overflow-hidden" style={{ background: "#06060b", border: "1px solid #14141e" }}>
-        <div className="px-5 pt-4 pb-1 flex items-center gap-2">
-          <div className="w-1 h-4 rounded-full bg-[#f85149]" />
-          <span className="font-mono text-[0.6rem] text-[#f85149] uppercase tracking-[2px] font-semibold">Algorithmic Weakness Matrix (Fails / AC ratio)</span>
+      {/* Scatter + Chronotype */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="rounded-2xl p-5" style={{ background: "#050505", border: "1px solid #1a1a1a" }}>
+          <div className="font-mono text-[0.65rem] text-[#f0a500] uppercase tracking-[2px] mb-4">⚡ RESOURCE DISTRIBUTION</div>
+          <div className="h-[300px] relative"><ResourceScatterChart subs={metrics.rawSubsList} /></div>
         </div>
-        <div className="px-5 pb-5 pt-3">
-          <div className="h-[380px] relative"><TacticalBarChart data={metrics.weaknessRatios} color="#f85149" horizontal={true} /></div>
-        </div>
-      </div>
-
-      {/* Time + Memory stress */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        <div className="rounded-xl overflow-hidden" style={{ background: "#06060b", border: "1px solid #14141e" }}>
-          <div className="px-5 pt-4 pb-1 flex items-center gap-2">
-            <div className="w-1 h-4 rounded-full bg-[#e879f9]" />
-            <span className="font-mono text-[0.6rem] text-[#e879f9] uppercase tracking-[2px] font-semibold">Time Execution Stress (avg ms)</span>
-          </div>
-          <div className="px-5 pb-5 pt-3">
-            <div className="h-[260px] relative"><StressBarChart data={timeAvgData} type="time" /></div>
-          </div>
-        </div>
-        <div className="rounded-xl overflow-hidden" style={{ background: "#06060b", border: "1px solid #14141e" }}>
-          <div className="px-5 pt-4 pb-1 flex items-center gap-2">
-            <div className="w-1 h-4 rounded-full bg-[#d2a8ff]" />
-            <span className="font-mono text-[0.6rem] text-[#d2a8ff] uppercase tracking-[2px] font-semibold">Memory Footprint Stress (avg mb)</span>
-          </div>
-          <div className="px-5 pb-5 pt-3">
-            <div className="h-[260px] relative"><StressBarChart data={memAvgData} type="memory" /></div>
-          </div>
+        <div className="rounded-2xl p-5" style={{ background: "#050505", border: "1px solid #1a1a1a" }}>
+          <div className="font-mono text-[0.65rem] text-[#58a6ff] uppercase tracking-[2px] mb-4">⏰ CHRONOTYPE ANALYSIS</div>
+          <div className="h-[300px] relative"><ChronotypeChart subs={metrics.rawSubsList} /></div>
         </div>
       </div>
 
-      {/* Resource scatter + Chronotype */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        <div className="rounded-xl overflow-hidden" style={{ background: "#06060b", border: "1px solid #14141e" }}>
-          <div className="px-5 pt-4 pb-1 flex items-center gap-2">
-            <div className="w-1 h-4 rounded-full bg-[#f0a500]" />
-            <span className="font-mono text-[0.6rem] text-[#f0a500] uppercase tracking-[2px] font-semibold">Resource Distribution</span>
-          </div>
-          <div className="px-5 pb-5 pt-3">
-            <div className="h-[260px] relative"><ResourceScatterChart subs={metrics.rawSubsList} /></div>
-          </div>
+      {/* Tag Mastery + Time-to-Solve + Rating Dist + Verdicts */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="rounded-2xl p-5" style={{ background: "#050505", border: "1px solid #1a1a1a" }}>
+          <div className="font-mono text-[0.65rem] text-[#56d364] uppercase tracking-[2px] mb-4">🕸 ALGORITHMIC MASTERY</div>
+          <div className="h-[300px] relative"><TagsRadarChart data={metrics.tagsDist} handle={info.handle} /></div>
         </div>
-        <div className="rounded-xl overflow-hidden" style={{ background: "#06060b", border: "1px solid #14141e" }}>
-          <div className="px-5 pt-4 pb-1 flex items-center gap-2">
-            <div className="w-1 h-4 rounded-full bg-[#58a6ff]" />
-            <span className="font-mono text-[0.6rem] text-[#58a6ff] uppercase tracking-[2px] font-semibold">Chronotype Analysis</span>
-          </div>
-          <div className="px-5 pb-5 pt-3">
-            <div className="h-[260px] relative"><ChronotypeChart subs={metrics.rawSubsList} /></div>
-          </div>
+        <div className="rounded-2xl p-5" style={{ background: "#050505", border: "1px solid #1a1a1a" }}>
+          <div className="font-mono text-[0.65rem] text-[#db6d28] uppercase tracking-[2px] mb-4">⏱ TIME-TO-SOLVE (DEBUG SPEED)</div>
+          <div className="h-[300px] relative"><TimeToSolveChart data={metrics.timeToSolveDist} /></div>
         </div>
-      </div>
-
-      {/* 2×2 mastery grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        {[
-          { color: "#56d364", label: "Algorithmic Mastery", child: <TagsRadarChart data={metrics.tagsDist} handle={info.handle} /> },
-          { color: "#db6d28", label: "Time-to-Solve (Debug Speed)", child: <TimeToSolveChart data={metrics.timeToSolveDist} /> },
-          { color: "#58a6ff", label: "Problem Rating Distribution", child: <TacticalBarChart data={metrics.ratingsDist} color="#58a6ff" /> },
-          { color: "#8b949e", label: "Submission Verdicts", child: <VerdictChart data={metrics.verdictsDist} /> },
-        ].map(({ color, label, child }) => (
-          <div key={label} className="rounded-xl overflow-hidden" style={{ background: "#06060b", border: "1px solid #14141e" }}>
-            <div className="px-5 pt-4 pb-1 flex items-center gap-2">
-              <div className="w-1 h-4 rounded-full" style={{ background: color }} />
-              <span className="font-mono text-[0.6rem] uppercase tracking-[2px] font-semibold" style={{ color }}>{label}</span>
-            </div>
-            <div className="px-5 pb-5 pt-3">
-              <div className="h-[260px] relative">{child}</div>
-            </div>
-          </div>
-        ))}
+        <div className="rounded-2xl p-5" style={{ background: "#050505", border: "1px solid #1a1a1a" }}>
+          <div className="font-mono text-[0.65rem] text-[#58a6ff] uppercase tracking-[2px] mb-4">📊 PROBLEM RATING DISTRIBUTION</div>
+          <div className="h-[300px] relative"><TacticalBarChart data={metrics.ratingsDist} color="#58a6ff" /></div>
+        </div>
+        <div className="rounded-2xl p-5" style={{ background: "#050505", border: "1px solid #1a1a1a" }}>
+          <div className="font-mono text-[0.65rem] text-[#8b949e] uppercase tracking-[2px] mb-4">🚫 SUBMISSION VERDICTS</div>
+          <div className="h-[300px] relative"><VerdictChart data={metrics.verdictsDist} /></div>
+        </div>
       </div>
     </div>
   );

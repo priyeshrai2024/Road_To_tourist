@@ -41,8 +41,8 @@ function BadgeDistChart({ badges, players, mainHandle }: { badges: BadgeDef[]; p
   const COLORS = ['#e3b341','#58a6ff','#56d364','#f85149','#d2a8ff','#e879f9'];
 
   return (
-    <div className="rounded-xl p-4" style={{ background:'#06060b', border:'1px solid #12121e' }}>
-      <div className="font-mono text-[0.58rem] uppercase tracking-[2px] text-[#e3b341] mb-3 font-semibold">🏅 Badge Leaderboard</div>
+    <div className="rounded-xl p-4" style={{ background:'#050505', border:'1px solid #1a1a1a' }}>
+      <div className="font-mono text-[0.6rem] uppercase tracking-widest text-[#e3b341] mb-3">🏅 Badge Leaderboard</div>
       <div className="flex flex-col gap-2">
         {sorted.map(([p, count], i) => (
           <div key={p} className="flex items-center gap-3">
@@ -79,8 +79,8 @@ function SectionBreakdownChart({ badges, mainHandle }: { badges: BadgeDef[]; mai
   const values = labels.map(l => data[l] || 0);
 
   return (
-    <div className="rounded-xl p-4" style={{ background:'#06060b', border:'1px solid #12121e' }}>
-      <div className="font-mono text-[0.58rem] uppercase tracking-[2px] text-[#58a6ff] mb-3 font-semibold">📊 My Badges by Category</div>
+    <div className="rounded-xl p-4" style={{ background:'#050505', border:'1px solid #1a1a1a' }}>
+      <div className="font-mono text-[0.6rem] uppercase tracking-widest text-[#58a6ff] mb-3">📊 My Badges by Category</div>
       <div className="h-[120px]">
         <Bar data={{
           labels,
@@ -104,8 +104,8 @@ function NegativeVsPositiveChart({ badges, mainHandle }: { badges: BadgeDef[]; m
   const neg = mine.filter(b => b.isNegative).length;
 
   return (
-    <div className="rounded-xl p-4" style={{ background:'#06060b', border:'1px solid #12121e' }}>
-      <div className="font-mono text-[0.58rem] uppercase tracking-[2px] text-[#56d364] mb-3 font-semibold">⚖️ Honour vs Shame</div>
+    <div className="rounded-xl p-4" style={{ background:'#050505', border:'1px solid #1a1a1a' }}>
+      <div className="font-mono text-[0.6rem] uppercase tracking-widest text-[#56d364] mb-3">⚖️ Honour vs Shame</div>
       <div className="flex items-center gap-4">
         <div className="w-[90px] h-[90px] relative">
           <Doughnut data={{
@@ -151,15 +151,15 @@ function BadgeCard({ b, mainHandle, onClick }: { b: BadgeDef; mainHandle: string
   return (
     <div
       onClick={onClick}
-      className="flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-all hover:-translate-y-px hover:brightness-[1.15]"
-      style={{ borderColor, background: bg, opacity: unclaimed ? 0.22 : 1, filter: unclaimed ? 'grayscale(1)' : 'none' }}
+      className="flex items-center gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-all hover:-translate-y-0.5 hover:brightness-110"
+      style={{ borderColor, background: bg, opacity: unclaimed ? 0.3 : 1, filter: unclaimed ? 'grayscale(1)' : 'none' }}
     >
-      <div className="text-lg flex-shrink-0 w-6 text-center leading-none">{b.icon}</div>
+      <div className="text-xl flex-shrink-0 w-7 text-center">{b.icon}</div>
       <div className="flex flex-col min-w-0 flex-1">
-        <span className="font-bold text-[10.5px] leading-tight truncate" style={{ color: unclaimed ? '#333' : isMe ? sec.color : '#c0c8d4' }}>{b.name}</span>
-        <span className="font-mono text-[8.5px] truncate mt-0.5" style={{ color: '#333' }}>{b.owner || '—'}</span>
+        <span className="font-bold text-[11px] leading-tight truncate" style={{ color: unclaimed ? '#444' : isMe ? sec.color : '#e0e6ed' }}>{b.name}</span>
+        <span className="font-mono text-[9px] truncate" style={{ color: '#555' }}>{b.owner || '—'}</span>
       </div>
-      {b.isNegative && b.owner && <div className="text-[8px] text-[#f85149] font-mono flex-shrink-0 leading-none">⚠</div>}
+      {b.isNegative && b.owner && <div className="text-[8px] text-[#f85149] font-mono flex-shrink-0">⚠</div>}
     </div>
   );
 }
@@ -173,23 +173,23 @@ function SectionPanel({ section, badges, mainHandle, onBadge }: {
   const claimed = badges.filter(b => b.owner !== null).length;
 
   return (
-    <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${section.color}18` }}>
+    <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${section.color}22` }}>
       <button
         onClick={() => setOpen(o => !o)}
         className="w-full flex items-center gap-3 px-4 py-3 cursor-pointer transition-all hover:brightness-110"
-        style={{ background: `${section.color}08` }}
+        style={{ background: `${section.color}0a` }}
       >
-        <span className="text-base">{section.icon}</span>
-        <span className="font-mono font-bold text-[0.75rem] tracking-wide" style={{ color: section.color }}>{section.label}</span>
-        <span className="font-mono text-[0.55rem] text-[#2e2e3e] ml-1 uppercase tracking-wider">{badges.length} badges</span>
-        <div className="ml-auto flex items-center gap-3">
-          <span className="font-mono text-[0.6rem]" style={{ color: section.color }}>{mine} mine</span>
-          <span className="font-mono text-[0.55rem] text-[#2e2e3e]">{claimed} claimed</span>
-          <span className="text-[#252535] text-xs">{open ? '▲' : '▼'}</span>
+        <span className="text-lg">{section.icon}</span>
+        <span className="font-mono font-bold text-sm" style={{ color: section.color }}>{section.label}</span>
+        <span className="font-mono text-[10px] text-[#444] ml-1">{badges.length} badges</span>
+        <div className="ml-auto flex items-center gap-2">
+          <span className="font-mono text-[10px]" style={{ color: section.color }}>{mine} mine</span>
+          <span className="font-mono text-[10px] text-[#444]">/ {claimed} claimed</span>
+          <span className="text-[#444] text-sm ml-1">{open ? '▲' : '▼'}</span>
         </div>
       </button>
       {open && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2 p-3" style={{ background: '#030308' }}>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2 p-3" style={{ background:'#020202' }}>
           {badges.map(b => <BadgeCard key={b.id} b={b} mainHandle={mainHandle} onClick={() => onBadge(b)} />)}
         </div>
       )}
@@ -264,30 +264,30 @@ export default function Armory({ badges, mainHandle, variant = 'full', players }
       {modal && <BadgeModal b={modal} mainHandle={mainHandle} onClose={() => setModal(null)} />}
 
       {/* Header stats */}
-      <div className="grid grid-cols-3 gap-3 mb-5">
-        <div className="rounded-xl p-4 text-center" style={{ background: "#06060b", border: "1px solid #e3b34118" }}>
-          <div className="font-mono text-3xl font-black text-[#e3b341] tabular-nums">{myTotal}</div>
-          <div className="font-mono text-[0.55rem] uppercase tracking-[2px] text-[#353545] mt-1">My Badges</div>
+      <div className="grid grid-cols-3 gap-3 mb-6">
+        <div className="rounded-xl p-3 text-center" style={{ background:'#050505', border:'1px solid #e3b34122' }}>
+          <div className="font-mono text-2xl font-black text-[#e3b341]">{myTotal}</div>
+          <div className="font-mono text-[0.6rem] uppercase tracking-widest text-[#444] mt-0.5">My Badges</div>
         </div>
-        <div className="rounded-xl p-4 text-center" style={{ background: "#06060b", border: "1px solid #58a6ff18" }}>
-          <div className="font-mono text-3xl font-black text-[#58a6ff] tabular-nums">{totalClaimed}</div>
-          <div className="font-mono text-[0.55rem] uppercase tracking-[2px] text-[#353545] mt-1">Total Claimed</div>
+        <div className="rounded-xl p-3 text-center" style={{ background:'#050505', border:'1px solid #58a6ff22' }}>
+          <div className="font-mono text-2xl font-black text-[#58a6ff]">{totalClaimed}</div>
+          <div className="font-mono text-[0.6rem] uppercase tracking-widest text-[#444] mt-0.5">Total Claimed</div>
         </div>
-        <div className="rounded-xl p-4 text-center" style={{ background: "#06060b", border: "1px solid #56d36418" }}>
-          <div className="font-mono text-3xl font-black text-[#56d364] tabular-nums">{badges.length - totalClaimed}</div>
-          <div className="font-mono text-[0.55rem] uppercase tracking-[2px] text-[#353545] mt-1">Unclaimed</div>
+        <div className="rounded-xl p-3 text-center" style={{ background:'#050505', border:'1px solid #56d36422' }}>
+          <div className="font-mono text-2xl font-black text-[#56d364]">{badges.length - totalClaimed}</div>
+          <div className="font-mono text-[0.6rem] uppercase tracking-widest text-[#444] mt-0.5">Unclaimed</div>
         </div>
       </div>
 
       {/* Charts row */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 mb-5">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 mb-6">
         <BadgeDistChart badges={badges} players={allPlayers} mainHandle={mainHandle} />
         <SectionBreakdownChart badges={badges} mainHandle={mainHandle} />
         <NegativeVsPositiveChart badges={badges} mainHandle={mainHandle} />
       </div>
 
       {/* Sections */}
-      <div className="flex flex-col gap-2.5">
+      <div className="flex flex-col gap-3">
         {SECTIONS.map(sec => (
           <SectionPanel
             key={sec.key}

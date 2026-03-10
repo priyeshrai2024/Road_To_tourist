@@ -262,54 +262,47 @@ export default function WarMap({ subs }: { subs: any[] }) {
 
   return (
     <div ref={containerRef}
-      className="relative w-full h-[820px] overflow-hidden cursor-grab active:cursor-grabbing select-none"
-      style={{ background: '#020204', border: '1px solid #111118', borderRadius: '12px', boxShadow: 'inset 0 0 80px rgba(0,0,0,0.9)' }}
+      className="relative w-full h-[800px] bg-black border border-[#30363d] rounded-xl overflow-hidden cursor-grab active:cursor-grabbing shadow-[inset_0_0_120px_rgba(0,0,0,1)] select-none"
       onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp} onWheel={onWheel}
     >
       {/* Vignette */}
-      <div className="absolute inset-0 pointer-events-none z-40" style={{ background: 'radial-gradient(ellipse at center, transparent 25%, rgba(0,0,0,0.9) 100%)' }} />
+      <div className="absolute inset-0 pointer-events-none z-40 bg-[radial-gradient(circle_at_center,transparent_30%,rgba(0,0,0,0.85)_100%)]" />
 
       {/* Zoom controls */}
-      <div className="absolute top-3 right-3 z-50 flex flex-col gap-1.5 no-drag">
+      <div className="absolute top-4 right-4 z-50 flex flex-col gap-2 no-drag">
         {(['+', '−', '⌂'] as const).map((lbl) => (
           <button key={lbl} onClick={() => {
             if (lbl === '+') setScale(s => Math.min(s + 0.2, 3.0));
             else if (lbl === '−') setScale(s => Math.max(s - 0.2, 0.2));
             else { setScale(1); setPan({ x: -2300, y: -2100 }); }
-          }}
-          className="w-8 h-8 flex items-center justify-center font-mono font-bold text-sm transition-all no-drag rounded-lg"
-          style={{ background: 'rgba(9,9,15,0.92)', border: '1px solid #1a1a28', color: '#555', backdropFilter: 'blur(8px)' }}
-          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#e3b341'; (e.currentTarget as HTMLElement).style.color = '#000'; }}
-          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(9,9,15,0.92)'; (e.currentTarget as HTMLElement).style.color = '#555'; }}
-          >{lbl}</button>
+          }} className="w-10 h-10 bg-[#0d1117]/90 border border-[#30363d] text-white rounded hover:bg-[#e3b341] hover:text-black transition-colors shadow-lg text-xl no-drag">{lbl}</button>
         ))}
       </div>
 
       {/* Legend */}
-      <div className="absolute bottom-3 left-3 z-50 font-mono text-[9px] no-drag backdrop-blur-md w-[200px] rounded-xl"
-        style={{ background: 'rgba(6,6,10,0.95)', border: '1px solid #111118', padding: '12px' }}>
-        <div className="text-[#e3b341] font-bold text-[10px] mb-2 tracking-wider">⚔ Architecture</div>
+      <div className="absolute bottom-4 left-4 z-50 bg-[#0d1117]/95 border border-[#30363d] p-4 rounded-xl font-mono text-[10px] text-[#8b949e] no-drag backdrop-blur-md w-[210px]">
+        <div className="text-[#e3b341] font-bold text-xs mb-2">⚔ Architecture</div>
         {ARCH_TIERS.map(a => (
           <div key={a.name} className="flex items-center gap-2 mb-1.5">
-            <div className="w-2.5 h-2.5 rounded flex-shrink-0" style={{ border: `1px solid ${a.color}60`, background: a.bg }} />
+            <div className="w-3 h-3 rounded-sm flex-shrink-0" style={{ border: `1px solid ${a.color}`, background: a.bg }} />
             <span style={{ color: a.color }}>{a.name}</span>
-            <span className="text-[#282830] ml-auto text-[8px]">Lv{a.minLv}+ {a.minR}+</span>
+            <span className="text-[#333] ml-auto text-[9px]">Lv{a.minLv}+{a.minR}+</span>
           </div>
         ))}
-        <div className="border-t border-[#0d0d18] my-2" />
-        <div className="text-[#e3b341] font-bold text-[10px] mb-2 tracking-wider">🏴 Garrison</div>
+        <div className="border-t border-[#21262d] my-2" />
+        <div className="text-[#e3b341] font-bold text-xs mb-2">🏴 Garrison</div>
         {(['RUINS','REBELLION','CRUMBLING','FORTIFIED','HOLDING'] as Garrison[]).map(g => (
           <div key={g} className="flex items-center gap-2 mb-1">
-            <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: G_META[g].color }} />
+            <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: G_META[g].color }} />
             <span style={{ color: G_META[g].color }}>{G_META[g].label}</span>
           </div>
         ))}
-        <div className="border-t border-[#0d0d18] my-2" />
-        <div className="text-[#e3b341] font-bold text-[10px] mb-1.5 tracking-wider">📉 XP Decay</div>
+        <div className="border-t border-[#21262d] my-2" />
+        <div className="text-[#e3b341] font-bold text-xs mb-1.5">📉 XP Decay</div>
         {[['0–30d','100%','#56d364'],['30–90d','70%','#e3b341'],['90–180d','40%','#db6d28'],['180d+','15%','#f85149']].map(([d,p,c])=>(
-          <div key={d} className="flex justify-between mb-1"><span className="text-[#444]">{d}</span><span style={{color:c}}>{p}</span></div>
+          <div key={d} className="flex justify-between mb-1"><span>{d}</span><span style={{color:c}}>{p}</span></div>
         ))}
-        <div className="text-[#282830] text-[8px] mt-2">WA: −30% pts per unique unsolved fail</div>
+        <div className="text-[#333] text-[9px] mt-2">WA: −30% pts per unique unsolved fail</div>
       </div>
 
       {/* Canvas */}
@@ -317,7 +310,7 @@ export default function WarMap({ subs }: { subs: any[] }) {
         width:6000, height:5000,
         transform:`matrix(${scale},0,0,${scale},${pan.x},${pan.y})`,
         willChange:'transform',
-        backgroundImage:'linear-gradient(rgba(255,255,255,0.018) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.018) 1px,transparent 1px)',
+        backgroundImage:'linear-gradient(rgba(48,54,61,0.1) 1px,transparent 1px),linear-gradient(90deg,rgba(48,54,61,0.1) 1px,transparent 1px)',
         backgroundSize:'100px 100px',
       }}>
         {/* Zone labels */}
