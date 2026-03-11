@@ -9,6 +9,7 @@ interface SessionLog {
   id: string; date: string; startTs: number; endTs: number; workMins: number; 
   problemsSolved: number; pointsEarned: number; type: string; avgTimeSecs: number;
   details: ProbDetail[]; flowRating?: number; intent?: string; breakCount: number;
+  plannedMins?: number;
 }
 interface GrindTask { id: number; text: string; done: boolean; pinned: boolean; priority: 'high' | 'normal'; estMins?: number; }
 interface TmrPlan { id: number; text: string; }
@@ -310,8 +311,8 @@ export default function GrindMode({ handle }: { handle: string }) {
             style={{ background: 'rgba(0,0,0,0.2)', border: `1px solid ${theme.sh}`, color: theme.text }} />
         </div>
         <div className="flex gap-3 pt-2">
-          <button onClick={() => setPhase('IDLE')} className="flex-1 py-3 rounded transition-all uppercase tracking-wider text-xs font-bold" style={{ background: 'transparent', border: `1px solid ${theme.sh}`, color: theme.muted }}>Abort</button>
-          <button onClick={startFlow} className="flex-[2] font-black text-sm py-3 rounded transition-all uppercase tracking-widest" style={{ background: theme.accent, color: theme.bg, boxShadow: `0 4px 15px rgba(250,189,47,0.2)` }}>Engage Protocol</button>
+          <button onClick={() => setPhase('IDLE')} className="flex-1 py-3 rounded transition-all uppercase tracking-wider text-xs font-bold cursor-pointer" style={{ background: 'transparent', border: `1px solid ${theme.sh}`, color: theme.muted }}>Abort</button>
+          <button onClick={startFlow} className="flex-[2] font-black text-sm py-3 rounded transition-all uppercase tracking-widest cursor-pointer" style={{ background: theme.accent, color: theme.bg, boxShadow: `0 4px 15px rgba(250,189,47,0.2)` }}>Engage Protocol</button>
         </div>
       </div>
     </div>
@@ -362,7 +363,7 @@ export default function GrindMode({ handle }: { handle: string }) {
           ) : (
             <button onClick={resumeFlow} className="px-8 py-3 bg-transparent border-2 font-bold uppercase tracking-widest transition-all text-sm rounded cursor-pointer" style={{ borderColor: theme.accent, color: theme.accent }}>Resume Execution</button>
           )}
-          <button onClick={terminate} className="px-6 py-3 bg-transparent border text-xs font-bold uppercase tracking-wider transition-all rounded cursor-pointer" style={{ borderColor: theme.sh, color: theme.muted }}>Extract</button>
+          <button onClick={terminate} className="px-6 py-3 bg-transparent border text-xs font-bold uppercase tracking-wider transition-all rounded cursor-pointer hover:text-[#f85149] hover:border-[#f85149]" style={{ borderColor: theme.sh, color: theme.muted }}>Extract</button>
         </div>
       </div>
     );
@@ -470,7 +471,7 @@ export default function GrindMode({ handle }: { handle: string }) {
           </div>
           
           <div className="mt-6 text-right">
-            <button onClick={() => setShowTmrModal(true)} className="text-[11px] font-bold uppercase tracking-[1px] px-4 py-2 border rounded cursor-pointer transition-colors hover:bg-white/5" style={{ borderColor: theme.sh, color: theme.muted }}>📋 Plan Tomorrow</button>
+            <button onClick={() => setShowTmrModal(true)} className="text-[11px] font-bold uppercase tracking-[1px] px-4 py-2 border rounded cursor-pointer transition-colors hover:bg-white/5" style={{ borderColor: theme.sh, color: theme.muted, background: 'transparent' }}>📋 Plan Tomorrow</button>
           </div>
         </div>
       </div>
