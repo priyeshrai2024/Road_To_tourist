@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback } from "react";
+import { STORAGE_KEYS } from "@/lib/storage-keys";
 
 interface Problem {
   contestId: number;
@@ -65,7 +66,7 @@ const STATE_STYLES: Record<ProblemState | "NA", string> = {
 };
 
 const PROBLEM_COLS = ["A", "B", "C", "D", "E", "F", "G", "H"];
-const CACHE_KEY = "cf_contest_archive_v2";
+// ── CACHE_KEY now lives in lib/storage-keys.ts ──────────────────────────────
 
 export default function ContestTracker({
   handle,
@@ -145,10 +146,13 @@ export default function ContestTracker({
       setContests(rows);
       
       // Cache the highly compressed row data
-      try { localStorage.setItem(CACHE_KEY, JSON.stringify({ timestamp: Date.now(), rows })); } catch (e) {}
+      try { localStorage.setItem(STORAGE_KEYS.CONTEST_ARCHIVE, JSON.stringify({ timestamp: Date.now(), rows })); } catch (e) {}
 
     } catch (e: any) {
       if (!isBackground) setError(e.message || "Failed to sync archive");
+      // FIX #3: always reset both loading states on error so buttons don't stay frozen
+      setLoading(false);
+      setIsSyncing(false);
     } finally {
       setLoading(false);
       setIsSyncing(false);
@@ -157,7 +161,7 @@ export default function ContestTracker({
 
   // ─── OFFLINE-FIRST BOOT SEQUENCE ──────────────────────────────────────
   useEffect(() => {
-    const cached = localStorage.getItem(CACHE_KEY);
+    const cached = localStorage.getItem(STORAGE_KEYS.CONTEST_ARCHIVE);
     if (cached) {
       try {
         const parsed = JSON.parse(cached);
@@ -240,101 +244,71 @@ export default function ContestTracker({
               {div}
             </button>
           ))}
-          <div className="ml-auto font-mono text-[0.6rem] text-[#555] self-center flex items-center gap-3">
-            {error && <span className="text-[#f85149] animate-pulse">API Error</span>}
-            <span>{filtered.length} contests</span>
-          </div>
         </div>
       </div>
 
-      {/* Legend */}
-      <div className="flex gap-5 font-mono text-[0.65rem]">
-        {[
-          ["SOLVED", "#56d364", "bg-[#1a4d2e] border-[#2ea043]"],
-          ["ATTEMPTED", "#e3b341", "bg-[#3d2a00] border-[#e3b341]"],
-          ["UNSOLVED", "#8b949e", "bg-[#0d1117] border-[#21262d]"],
-          ["N/A", "#333", "bg-[#0a0a0a] border-[#161616]"],
-        ].map(([label, color, bg]) => (
-          <div key={label} className="flex items-center gap-1.5">
-            <div className={`w-3 h-3 rounded-sm border ${bg}`} />
-            <span style={{ color }}>{label}</span>
-          </div>
-        ))}
-      </div>
-
-      {/* Table */}
+      {/* Contest Table */}
       <div className="overflow-x-auto rounded-xl border border-[#1a1a1a]">
-        <table className="w-full font-mono text-xs border-collapse min-w-[1000px]">
+        <table className="w-full font-mono text-xs border-collapse">
           <thead>
-            <tr className="border-b border-[#1a1a1a] bg-[#050505]">
-              <th className="px-3 py-3 text-left text-[#444] font-normal w-12">#</th>
-              <th className="px-3 py-3 text-left text-[#444] font-normal w-48">Contest</th>
-              {PROBLEM_COLS.map(col => (
-                <th key={col} className="px-2 py-3 text-center text-[#444] font-normal">{col}</th>
+            <tr className="border-b border-[#1a1a1a]" style={{ background: "#080808" }}>
+              <th className="text-left py-3 px-4 text-[#555] font-normal uppercase tracking-widest w-16">ID</th>
+              <th className="text-left py-3 px-4 text-[#555] font-normal uppercase tracking-widest">Contest</th>
+              <th className="text-left py-3 px-4 text-[#555] font-normal uppercase tracking-widest w-24 hidden sm:table-cell">Duration</th>
+              {PROBLEM_COLS.map(c => (
+                <th key={c} className="text-center py-3 px-2 text-[#555] font-normal uppercase tracking-widest w-16">{c}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {paginated.map((row, i) => {
-              const div = getDivision(row.contest.name);
-              const divColor = DIV_COLOR[div] || "#555";
-              
-              const problemSlots: (Problem | null)[] = PROBLEM_COLS.map((col) =>
-                row.problems.find(p => p.index === col) || null
-              );
-
-              return (
-                <tr
-                  key={row.contest.id}
-                  className="border-b border-[#0f0f0f] hover:bg-[#0d0d0d] transition-colors"
-                >
-                  {/* Row number */}
-                  <td className="px-3 py-2 text-[#333]">{(page - 1) * PAGE_SIZE + i + 1}</td>
-
-                  {/* Contest name */}
-                  <td className="px-3 py-2">
-                    <a
-                      href={`https://codeforces.com/contest/${row.contest.id}`}
-                      target="_blank"
-                      className="hover:underline font-bold"
-                      style={{ color: divColor }}
-                    >
-                      CF {row.contest.id}
-                    </a>
-                    <div className="text-[#555] text-[0.6rem] mt-0.5 max-w-[190px] truncate">{row.contest.name}</div>
-                    <div className="text-[0.55rem] mt-0.5" style={{ color: divColor }}>{div}</div>
-                  </td>
-
-                  {/* Problem cells */}
-                  {problemSlots.map((prob, ci) => {
-                    if (!prob) return (
-                      <td key={ci} className="px-1 py-2">
-                        <div className={`rounded border px-2 py-1.5 text-center ${STATE_STYLES.NA}`}>
-                          <div className="text-[0.6rem]">—</div>
-                        </div>
-                      </td>
-                    );
-
-                    const pid = `${prob.contestId}-${prob.index}`;
-                    const state = getProblemState(pid, solvedSet, attemptedSet);
-                    const style = STATE_STYLES[state];
-
+            {paginated.map((row, i) => (
+              <tr
+                key={row.contest.id}
+                className="border-b border-[#0f0f0f] hover:bg-white/[0.02] transition-colors"
+                style={{ background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.005)" }}
+              >
+                <td className="py-2.5 px-4 text-[#333]">{row.contest.id}</td>
+                <td className="py-2.5 px-4">
+                  <a
+                    href={`https://codeforces.com/contest/${row.contest.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[#8b949e] hover:text-[#e3b341] transition-colors"
+                  >
+                    {row.contest.name}
+                  </a>
+                </td>
+                <td className="py-2.5 px-4 text-[#444] hidden sm:table-cell">
+                  {Math.floor(row.contest.durationSeconds / 3600)}h
+                </td>
+                {PROBLEM_COLS.map(col => {
+                  const prob = row.problems.find(p => p.index === col);
+                  if (!prob) {
                     return (
-                      <td key={ci} className="px-1 py-2">
-                        <a
-                          href={`https://codeforces.com/contest/${prob.contestId}/problem/${prob.index}`}
-                          target="_blank"
-                          className={`block rounded border px-2 py-1.5 transition-all hover:brightness-125 no-underline ${style}`}
-                        >
-                          <div className="text-[0.65rem] font-bold truncate max-w-[120px]">{prob.name}</div>
-                          <div className="text-[0.6rem] mt-0.5 opacity-70">{prob.rating ?? "N/A"}</div>
-                        </a>
+                      <td key={col} className="py-2 px-2">
+                        <div className={`w-12 h-8 rounded border text-center flex items-center justify-center text-[10px] ${STATE_STYLES["NA"]}`}>—</div>
                       </td>
                     );
-                  })}
-                </tr>
-              );
-            })}
+                  }
+                  const pid = `${prob.contestId}-${prob.index}`;
+                  const state = getProblemState(pid, solvedSet, attemptedSet);
+                  return (
+                    <td key={col} className="py-2 px-2">
+                      <a
+                        href={`https://codeforces.com/contest/${prob.contestId}/problem/${prob.index}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title={`${prob.name}${prob.rating ? ` (${prob.rating})` : ''}`}
+                      >
+                        <div className={`w-12 h-8 rounded border text-center flex items-center justify-center text-[10px] font-bold transition-all hover:scale-105 ${STATE_STYLES[state]}`}>
+                          {prob.rating ?? "N/A"}
+                        </div>
+                      </a>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>

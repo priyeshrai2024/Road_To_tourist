@@ -2,11 +2,12 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { CF_SCORE_MAP } from "@/lib/constants";
+import { STORAGE_KEYS } from "@/lib/storage-keys";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 interface ProbDetail { pid: string; name: string; timeTakenSecs: number; rating: number; }
 interface SessionLog {
-  id: string; date: string; startTs: number; endTs: number; workMins: number; 
+  id: string; date: string; startTs: number; endTs: number; workMins: number;
   problemsSolved: number; pointsEarned: number; type: string; avgTimeSecs: number;
   details: ProbDetail[]; flowRating?: number; intent?: string; breakCount: number;
   plannedMins?: number;
@@ -24,7 +25,7 @@ function fmt(s: number) {
 function fmtMins(s: number) { const h = Math.floor(s/3600), m = Math.floor((s%3600)/60); return h > 0 ? `${h}h ${m}m` : `${m}m`; }
 function getWeekMonday(d: Date) { const day=new Date(d), dow=day.getDay(), diff=dow===0?-6:1-dow; day.setDate(day.getDate()+diff); day.setHours(0,0,0,0); return day; }
 
-// ── Theme Colors (Gruvbox matching HTML) ────────────────────────────────────
+// ── Theme Colors (Gruvbox) ───────────────────────────────────────────────────
 const theme = {
   bg: '#1d2021', surface: '#282828', sh: '#3c3836', text: '#ebdbb2',
   muted: '#a89984', accent: '#fabd2f', stop: '#fb4934', ok: '#b8bb26'
@@ -62,7 +63,7 @@ export default function GrindMode({ handle }: { handle: string }) {
 
   const [intent, setIntent] = useState('');
   const [plannedMins, setPlannedMins] = useState('');
-  
+
   const [flowRating, setFlowRating] = useState(0);
   const [breakCount, setBreakCount] = useState(0);
 
@@ -70,7 +71,7 @@ export default function GrindMode({ handle }: { handle: string }) {
   const [newTask, setNewTask] = useState('');
   const [newPri, setNewPri] = useState<'normal'|'high'>('normal');
   const [newEst, setNewEst] = useState('');
-  
+
   const [tmrPlan, setTmrPlan] = useState<TmrPlan[]>([]);
   const [newTmr, setNewTmr] = useState('');
   const [showTmrModal, setShowTmrModal] = useState(false);
@@ -79,7 +80,7 @@ export default function GrindMode({ handle }: { handle: string }) {
   const [syncing, setSyncing] = useState(false);
   const [lastReport, setLastReport] = useState<SessionLog|null>(null);
   const [history, setHistory] = useState<SessionLog[]>([]);
-  
+
   const [targetHrs, setTargetHrs] = useState(15);
   const [showSettings, setShowSettings] = useState(false);
   const [rogueACs, setRogueACs] = useState<any[]>([]);
@@ -89,10 +90,10 @@ export default function GrindMode({ handle }: { handle: string }) {
 
   // ── Init ──────────────────────────────────────────────────────────────────
   useEffect(() => {
-    try { const h = localStorage.getItem('cf_grind_v4'); if (h) setHistory(JSON.parse(h)); } catch {}
-    try { const t = localStorage.getItem('cf_grind_tasks_v4'); if (t) setTasks(JSON.parse(t)); } catch {}
-    try { const tp = localStorage.getItem('cf_grind_tmr'); if (tp) setTmrPlan(JSON.parse(tp)); } catch {}
-    try { const tg = localStorage.getItem('cf_grind_target'); if (tg) setTargetHrs(parseInt(tg)); } catch {}
+    try { const h = localStorage.getItem(STORAGE_KEYS.GRIND_SESSIONS); if (h) setHistory(JSON.parse(h)); } catch {}
+    try { const t = localStorage.getItem(STORAGE_KEYS.GRIND_TASKS); if (t) setTasks(JSON.parse(t)); } catch {}
+    try { const tp = localStorage.getItem(STORAGE_KEYS.GRIND_TMR_PLAN); if (tp) setTmrPlan(JSON.parse(tp)); } catch {}
+    try { const tg = localStorage.getItem(STORAGE_KEYS.GRIND_TARGET_HRS); if (tg) setTargetHrs(parseInt(tg)); } catch {}
   }, []);
 
   // ── Rogue AC Detection ────────────────────────────────────────────────────
@@ -105,7 +106,6 @@ export default function GrindMode({ handle }: { handle: string }) {
         if (data.status === 'OK') {
           const now = Date.now() / 1000;
           const recent = data.result.filter((s:any) => s.verdict === 'OK' && s.author.participantType === 'PRACTICE' && (now - s.creationTimeSeconds) < 86400 * 2);
-          
           const missing = recent.filter((s:any) => {
             return !history.some(h => s.creationTimeSeconds >= h.startTs && s.creationTimeSeconds <= h.endTs);
           });
@@ -123,9 +123,9 @@ export default function GrindMode({ handle }: { handle: string }) {
     if (!document.getElementById('grind-ring-css')) document.head.appendChild(style);
   }, []);
 
-  const saveTasks = useCallback((t: GrindTask[]) => { setTasks(t); try { localStorage.setItem('cf_grind_tasks_v4', JSON.stringify(t)); } catch {} }, []);
-  const saveHistory = useCallback((h: SessionLog[]) => { setHistory(h); try { localStorage.setItem('cf_grind_v4', JSON.stringify(h)); } catch {} }, []);
-  const saveTmrPlan = useCallback((tp: TmrPlan[]) => { setTmrPlan(tp); try { localStorage.setItem('cf_grind_tmr', JSON.stringify(tp)); } catch {} }, []);
+  const saveTasks = useCallback((t: GrindTask[]) => { setTasks(t); try { localStorage.setItem(STORAGE_KEYS.GRIND_TASKS, JSON.stringify(t)); } catch {} }, []);
+  const saveHistory = useCallback((h: SessionLog[]) => { setHistory(h); try { localStorage.setItem(STORAGE_KEYS.GRIND_SESSIONS, JSON.stringify(h)); } catch {} }, []);
+  const saveTmrPlan = useCallback((tp: TmrPlan[]) => { setTmrPlan(tp); try { localStorage.setItem(STORAGE_KEYS.GRIND_TMR_PLAN, JSON.stringify(tp)); } catch {} }, []);
 
   // ── Timer ─────────────────────────────────────────────────────────────────
   const startTick = useCallback((field: 'work'|'rest') => {
@@ -218,11 +218,10 @@ export default function GrindMode({ handle }: { handle: string }) {
 
   const logRogueACs = () => {
     if (rogueACs.length === 0) return;
-    const pts = rogueACs.reduce((sum, s) => sum + (CF_SCORE_MAP[s.problem?.rating ? Math.floor(s.problem.rating/100)*100 : 800] || 10), 0);
+    const pts = rogueACs.reduce((sum, s) => sum + (CF_SCORE_MAP[s.problem?.rating ? Math.min(2400, Math.floor(s.problem.rating/100)*100) : 800] || 10), 0);
     const details = rogueACs.map(s => ({ pid: `${s.problem.contestId}-${s.problem.index}`, name: s.problem.name, timeTakenSecs: 0, rating: s.problem.rating || 800 }));
-    const assumedMins = rogueACs.length * 20; 
+    const assumedMins = rogueACs.length * 20;
     const ts = rogueACs[rogueACs.length-1].creationTimeSeconds;
-    
     const report: SessionLog = {
       id: Date.now().toString(), date: new Date(ts*1000).toISOString(), startTs: ts - (assumedMins*60), endTs: ts,
       workMins: assumedMins, problemsSolved: rogueACs.length, pointsEarned: pts, type: 'RETROACTIVE RECON',
@@ -237,7 +236,7 @@ export default function GrindMode({ handle }: { handle: string }) {
     let tMins = 0, tdyMins = 0;
     const dMap: Record<string, number> = {};
     const hSecs = new Array(24).fill(0);
-    
+
     const now = new Date();
     const todayStr = now.toLocaleDateString();
     const mon = getWeekMonday(now);
@@ -272,15 +271,11 @@ export default function GrindMode({ handle }: { handle: string }) {
       for(let i=0; i<7; i++) {
         const d = new Date(wMon); d.setDate(d.getDate() + i);
         const dStr = d.toLocaleDateString();
-        if (dMap[dStr] > 0) {
-          wTotal += dMap[dStr]; activeD++;
-          if (dMap[dStr] > maxD) maxD = dMap[dStr];
-        }
+        if (dMap[dStr] > 0) { wTotal += dMap[dStr]; activeD++; if (dMap[dStr] > maxD) maxD = dMap[dStr]; }
       }
       history.filter(h => {
         const d = new Date(h.date); return d >= wMon && d <= wSun;
       }).forEach(h => wAcs += h.problemsSolved);
-      
       reviews.push({ label: w === 0 ? 'This Week' : `${wMon.getDate()}/${wMon.getMonth()+1} - ${wSun.getDate()}/${wSun.getMonth()+1}`, total: wTotal, acs: wAcs, maxD, activeD });
     }
 
@@ -301,13 +296,13 @@ export default function GrindMode({ handle }: { handle: string }) {
         <div className="space-y-2">
           <div className="text-[11px] uppercase tracking-[2px] font-semibold" style={{ color: theme.muted }}>Session intent</div>
           <input value={intent} onChange={e => setIntent(e.target.value)} onKeyDown={e => { if (e.key==='Enter') startFlow(); if (e.key==='Escape') setPhase('IDLE'); }}
-            placeholder="e.g. Clear 3 Div2 D's..." className="w-full text-sm px-4 py-3 rounded outline-none transition-colors" 
+            placeholder="e.g. Clear 3 Div2 D's..." className="w-full text-sm px-4 py-3 rounded outline-none transition-colors"
             style={{ background: 'rgba(0,0,0,0.2)', border: `1px solid ${theme.sh}`, color: theme.text }} autoFocus />
         </div>
         <div className="space-y-2">
           <div className="text-[11px] uppercase tracking-[2px] font-semibold" style={{ color: theme.muted }}>Approx. duration (mins)</div>
           <input type="number" min="10" max="600" value={plannedMins} onChange={e => setPlannedMins(e.target.value)} placeholder="90"
-            className="w-full text-sm px-4 py-3 rounded outline-none transition-colors" 
+            className="w-full text-sm px-4 py-3 rounded outline-none transition-colors"
             style={{ background: 'rgba(0,0,0,0.2)', border: `1px solid ${theme.sh}`, color: theme.text }} />
         </div>
         <div className="flex gap-3 pt-2">
@@ -408,7 +403,7 @@ export default function GrindMode({ handle }: { handle: string }) {
   // ════════════════════════════════════════════════════════════════════════════
   return (
     <div className="animate-in fade-in duration-400 space-y-6 max-w-4xl mx-auto pb-20 font-sans" style={{ color: theme.text }}>
-      
+
       {/* ROGUE AC BANNER */}
       {rogueACs.length > 0 && (
         <div className="rounded-xl p-5 flex items-center justify-between" style={{ background: 'rgba(251,73,52,0.1)', border: `1px solid rgba(251,73,52,0.3)` }}>
@@ -423,13 +418,12 @@ export default function GrindMode({ handle }: { handle: string }) {
         </div>
       )}
 
-      {/* MAIN FOCUS CARD (Matches HTML structure perfectly) */}
+      {/* MAIN FOCUS CARD */}
       <div className="p-8 md:p-10 rounded-2xl relative shadow-2xl flex flex-col items-center text-center" style={{ background: theme.surface, border: `1px solid ${theme.sh}` }}>
         <button onClick={() => setShowSettings(true)} className="absolute top-5 right-5 text-xl transition-transform hover:rotate-45 cursor-pointer bg-transparent border-none" style={{ color: theme.muted }} title="Settings">⚙</button>
-        
+
         <h2 className="text-[12px] font-bold uppercase tracking-[3px] mb-6" style={{ color: theme.muted }}>Focus Session</h2>
 
-        {/* Tomorrow's Plan Banner */}
         {tmrPlan.length > 0 && (
           <div className="w-full max-w-sm mb-8 p-4 rounded-xl text-left cursor-pointer transition-colors border-l-4" style={{ background: 'rgba(0,0,0,0.2)', border: `1px solid ${theme.sh}`, borderLeftColor: theme.accent }} onClick={() => setShowTmrModal(true)}>
             <span className="font-bold text-[10px] uppercase tracking-[1.5px] block mb-2" style={{ color: theme.accent }}>📋 Today's Intentions</span>
@@ -469,7 +463,7 @@ export default function GrindMode({ handle }: { handle: string }) {
               </div>
             ))}
           </div>
-          
+
           <div className="mt-6 text-right">
             <button onClick={() => setShowTmrModal(true)} className="text-[11px] font-bold uppercase tracking-[1px] px-4 py-2 border rounded cursor-pointer transition-colors hover:bg-white/5" style={{ borderColor: theme.sh, color: theme.muted, background: 'transparent' }}>📋 Plan Tomorrow</button>
           </div>
@@ -485,7 +479,7 @@ export default function GrindMode({ handle }: { handle: string }) {
           { l: 'Daily Avg', v: `${history.length > 0 ? Math.round(totalMins / new Set(history.map(h=>h.date)).size) : 0}m` }
         ].map(s => (
           <div key={s.l} className="rounded-xl p-6 text-center transition-transform hover:-translate-y-1 border-t-4" style={{ background: 'rgba(0,0,0,0.15)', border: `1px solid ${theme.sh}`, borderTopColor: theme.sh }}>
-            <div className="text-3xl font-black font-mono mb-2" style={{ color: s.c || theme.text }}>{s.v}</div>
+            <div className="text-3xl font-black font-mono mb-2" style={{ color: (s as any).c || theme.text }}>{s.v}</div>
             <div className="font-bold text-[10px] uppercase tracking-[2px]" style={{ color: theme.muted }}>{s.l}</div>
           </div>
         ))}
@@ -508,13 +502,8 @@ export default function GrindMode({ handle }: { handle: string }) {
           <div className="text-[11px] font-bold uppercase tracking-[3px] mb-6" style={{ color: theme.muted }}>Peak Execution Hours</div>
           <div className="grid grid-cols-24 gap-1 h-14 items-end">
             {peakGrid.map((level, i) => (
-              <div key={i} className="w-full rounded-sm transition-all" 
-                title={`${i}:00`}
-                style={{ 
-                  height: level === 0 ? '4px' : `${level * 20}%`, 
-                  background: level === 0 ? '#111' : theme.accent,
-                  opacity: level === 0 ? 1 : 0.3 + (level * 0.14)
-                }} />
+              <div key={i} className="w-full rounded-sm transition-all" title={`${i}:00`}
+                style={{ height: level === 0 ? '4px' : `${level * 20}%`, background: level === 0 ? '#111' : theme.accent, opacity: level === 0 ? 1 : 0.3 + (level * 0.14) }} />
             ))}
           </div>
           <div className="grid grid-cols-24 gap-1 mt-2">
@@ -525,44 +514,44 @@ export default function GrindMode({ handle }: { handle: string }) {
         </div>
       </div>
 
-      {/* WEEKLY REVIEW */}
+      {/* WEEKLY REVIEWS */}
       <div className="rounded-xl p-8" style={{ background: 'rgba(0,0,0,0.15)', border: `1px solid ${theme.sh}` }}>
-        <div className="text-[11px] font-bold uppercase tracking-[3px] mb-6" style={{ color: theme.muted }}>Campaign Review</div>
-        <div className="flex gap-2 mb-6 border-b pb-4 overflow-x-auto" style={{ borderColor: theme.sh }}>
+        <div className="flex gap-2 mb-6">
           {weeklyReviews.map((w, i) => (
-            <button key={i} onClick={() => setWrActiveTab(i)} className="px-4 py-2 rounded text-[11px] font-bold uppercase tracking-wider transition-colors cursor-pointer border-none whitespace-nowrap" style={{ background: wrActiveTab === i ? theme.surface : 'transparent', color: wrActiveTab === i ? theme.accent : theme.muted }}>{w.label}</button>
+            <button key={i} onClick={() => setWrActiveTab(i)} className="text-[11px] font-bold uppercase tracking-[1px] px-3 py-2 rounded cursor-pointer transition-colors border-none" style={{ background: wrActiveTab === i ? theme.accent : 'transparent', color: wrActiveTab === i ? theme.bg : theme.muted }}>
+              {w.label}
+            </button>
           ))}
         </div>
-        {weeklyReviews[wrActiveTab] && (
-          <div className="grid grid-cols-3 gap-6 text-center">
-             <div>
-               <div className="text-3xl font-black font-mono mb-1" style={{ color: theme.text }}>{(weeklyReviews[wrActiveTab].total/60).toFixed(1)}h</div>
-               <div className="text-[10px] font-bold uppercase tracking-[2px]" style={{ color: theme.muted }}>Total Focus</div>
-             </div>
-             <div>
-               <div className="text-3xl font-black font-mono mb-1" style={{ color: theme.ok }}>{weeklyReviews[wrActiveTab].acs}</div>
-               <div className="text-[10px] font-bold uppercase tracking-[2px]" style={{ color: theme.muted }}>ACs Secured</div>
-             </div>
-             <div>
-               <div className="text-3xl font-black font-mono mb-1" style={{ color: theme.text }}>{(weeklyReviews[wrActiveTab].maxD/60).toFixed(1)}h</div>
-               <div className="text-[10px] font-bold uppercase tracking-[2px]" style={{ color: theme.muted }}>Peak Day</div>
-             </div>
-          </div>
-        )}
+        {weeklyReviews[wrActiveTab] && (() => {
+          const w = weeklyReviews[wrActiveTab];
+          return (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {[
+                { l: 'Focus Time', v: `${(w.total/60).toFixed(1)}h` },
+                { l: 'Problems AC', v: String(w.acs) },
+                { l: 'Active Days', v: `${w.activeD}/7` },
+                { l: 'Peak Day', v: `${(w.maxD/60).toFixed(1)}h` },
+              ].map(s => (
+                <div key={s.l} className="rounded-lg p-4 text-center" style={{ background: 'rgba(0,0,0,0.2)', border: `1px solid ${theme.sh}` }}>
+                  <div className="text-2xl font-black font-mono" style={{ color: theme.accent }}>{s.v}</div>
+                  <div className="text-[10px] uppercase tracking-[1px] mt-1" style={{ color: theme.muted }}>{s.l}</div>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
       </div>
 
-      {/* MODALS */}
-
-      {/* Tomorrow Plan Modal */}
+      {/* TOMORROW PLAN MODAL */}
       {showTmrModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[10000] flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-2xl shadow-2xl p-8 border" style={{ background: theme.surface, borderColor: theme.sh }}>
+          <div className="w-full max-w-md rounded-2xl p-8 shadow-2xl border" style={{ background: theme.surface, borderColor: theme.sh }}>
             <div className="flex justify-between items-center mb-6">
-              <h3 className="text-lg font-bold">📋 Tomorrow's Top 3</h3>
-              <button onClick={() => setShowTmrModal(false)} className="text-2xl cursor-pointer bg-transparent border-none" style={{ color: theme.muted }}>×</button>
+              <h3 className="text-lg font-bold" style={{ color: theme.text }}>📋 Tomorrow's Battle Plan</h3>
+              <button onClick={() => setShowTmrModal(false)} className="text-2xl cursor-pointer hover:text-red-400 transition-colors bg-transparent border-none" style={{ color: theme.muted }}>×</button>
             </div>
-            <p className="text-sm mb-6 leading-relaxed" style={{ color: theme.muted }}>Set up to 3 priorities for tomorrow. They'll appear as pinned intentions when you start your next session.</p>
-            
+            <p className="text-sm mb-6" style={{ color: theme.muted }}>They'll appear as pinned intentions when you start your next session.</p>
             <div className="space-y-3 mb-6">
               {tmrPlan.map((t, i) => (
                 <div key={t.id} className="flex items-center gap-3 p-3 rounded border" style={{ background: 'rgba(0,0,0,0.2)', borderColor: theme.sh }}>
@@ -572,7 +561,6 @@ export default function GrindMode({ handle }: { handle: string }) {
                 </div>
               ))}
             </div>
-
             {tmrPlan.length < 3 && (
               <div className="flex gap-2">
                 <input value={newTmr} onChange={e => setNewTmr(e.target.value)} onKeyDown={e => { if(e.key==='Enter' && newTmr.trim()) { saveTmrPlan([...tmrPlan, {id: Date.now(), text: newTmr.trim()}]); setNewTmr(''); } }} placeholder="Add a priority..." className="flex-1 px-4 py-3 rounded text-sm outline-none" style={{ background: 'rgba(0,0,0,0.2)', border: `1px solid ${theme.sh}`, color: theme.text }} autoFocus />
@@ -583,7 +571,7 @@ export default function GrindMode({ handle }: { handle: string }) {
         </div>
       )}
 
-      {/* Settings & Ledger Modal */}
+      {/* SETTINGS & LEDGER MODAL */}
       {showSettings && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[10000] flex items-center justify-center p-4">
           <div className="w-full max-w-4xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh] border" style={{ background: theme.surface, borderColor: theme.sh }}>
@@ -591,14 +579,13 @@ export default function GrindMode({ handle }: { handle: string }) {
               <h3 className="text-xl font-bold" style={{ color: theme.text }}>⚙ Configuration & Data</h3>
               <button onClick={() => setShowSettings(false)} className="text-3xl cursor-pointer hover:text-red-400 transition-colors bg-transparent border-none" style={{ color: theme.muted }}>×</button>
             </div>
-            
-            <div className="p-8 overflow-y-auto custom-scrollbar flex-1 space-y-10">
-              
+
+            <div className="p-8 overflow-y-auto flex-1 space-y-10">
               {/* Weekly Target Setting */}
               <div>
                 <h4 className="text-[11px] font-bold uppercase tracking-[2px] mb-4" style={{ color: theme.muted }}>Weekly Target</h4>
                 <div className="flex items-center gap-4">
-                  <input type="number" value={targetHrs} onChange={e => { setTargetHrs(Number(e.target.value)); localStorage.setItem('cf_grind_target', e.target.value); }} className="w-32 px-4 py-3 rounded text-sm outline-none font-mono" style={{ background: 'rgba(0,0,0,0.2)', border: `1px solid ${theme.sh}`, color: theme.text }} />
+                  <input type="number" value={targetHrs} onChange={e => { setTargetHrs(Number(e.target.value)); localStorage.setItem(STORAGE_KEYS.GRIND_TARGET_HRS, e.target.value); }} className="w-32 px-4 py-3 rounded text-sm outline-none font-mono" style={{ background: 'rgba(0,0,0,0.2)', border: `1px solid ${theme.sh}`, color: theme.text }} />
                   <span className="text-sm" style={{ color: theme.muted }}>Hours per week</span>
                 </div>
               </div>
@@ -618,28 +605,26 @@ export default function GrindMode({ handle }: { handle: string }) {
                       </tr>
                     </thead>
                     <tbody>
-                      {history.length === 0 ? <tr><td colSpan={5} className="p-8 text-center italic" style={{ color: theme.muted }}>No sessions recorded.</td></tr> : history.map(h => (
+                      {history.length === 0 ? (
+                        <tr><td colSpan={5} className="p-8 text-center italic" style={{ color: theme.muted }}>No sessions recorded.</td></tr>
+                      ) : history.map(h => (
                         <tr key={h.id} className="border-t transition-colors hover:bg-white/5" style={{ borderColor: theme.sh }}>
                           <td className="p-4 font-mono text-xs">{new Date(h.startTs * 1000).toLocaleString('en-GB', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'})}</td>
                           <td className="p-4 truncate max-w-[200px]">{h.intent || '—'}</td>
                           <td className="p-4 text-center">
                             <input type="number" value={h.workMins} onChange={e => {
                               const v = Number(e.target.value);
-                              setHistory(prev => { const next = prev.map(x => x.id === h.id ? {...x, workMins: v} : x); localStorage.setItem('cf_grind_v4', JSON.stringify(next)); return next; });
+                              setHistory(prev => { const next = prev.map(x => x.id === h.id ? {...x, workMins: v} : x); localStorage.setItem(STORAGE_KEYS.GRIND_SESSIONS, JSON.stringify(next)); return next; });
                             }} className="w-16 px-2 py-1 rounded outline-none font-mono text-center bg-black/40 border-none" style={{ color: theme.text }} />
                           </td>
                           <td className="p-4 text-center">
                             <input type="number" min="0" max="5" value={h.flowRating || 0} onChange={e => {
                               const v = Number(e.target.value);
-                              setHistory(prev => { const next = prev.map(x => x.id === h.id ? {...x, flowRating: v} : x); localStorage.setItem('cf_grind_v4', JSON.stringify(next)); return next; });
+                              setHistory(prev => { const next = prev.map(x => x.id === h.id ? {...x, flowRating: v} : x); localStorage.setItem(STORAGE_KEYS.GRIND_SESSIONS, JSON.stringify(next)); return next; });
                             }} className="w-12 px-2 py-1 rounded outline-none font-mono text-center bg-black/40 border-none" style={{ color: theme.text }} />
                           </td>
                           <td className="p-4 text-center">
-                            <button onClick={() => {
-                              if(confirm('Delete this session?')) {
-                                setHistory(prev => { const next = prev.filter(x => x.id !== h.id); localStorage.setItem('cf_grind_v4', JSON.stringify(next)); return next; });
-                              }
-                            }} className="px-3 py-1 rounded text-xs font-bold cursor-pointer transition-colors" style={{ background: 'rgba(251,73,52,0.1)', color: theme.stop, border: 'none' }}>Del</button>
+                            <button onClick={() => { const next = history.filter(x => x.id !== h.id); saveHistory(next); }} className="text-xs font-bold uppercase cursor-pointer bg-transparent border-none hover:text-red-400 transition-colors" style={{ color: theme.muted }}>Del</button>
                           </td>
                         </tr>
                       ))}
@@ -651,7 +636,6 @@ export default function GrindMode({ handle }: { handle: string }) {
           </div>
         </div>
       )}
-
     </div>
   );
 }

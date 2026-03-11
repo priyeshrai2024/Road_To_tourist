@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { STORAGE_KEYS } from "@/lib/storage-keys";
 
 export default function SettingsModal({ onClose, onSave }: { onClose: () => void, onSave: (cfg: any) => void }) {
   const [main, setMain] = useState("");
@@ -9,7 +10,7 @@ export default function SettingsModal({ onClose, onSave }: { onClose: () => void
 
   useEffect(() => {
     try {
-      const saved = localStorage.getItem('cf_config_v6');
+      const saved = localStorage.getItem(STORAGE_KEYS.CONFIG);
       if (saved) {
         const cfg = JSON.parse(saved);
         setMain(cfg.main || "");
@@ -24,7 +25,7 @@ export default function SettingsModal({ onClose, onSave }: { onClose: () => void
       squad: squad.split(/[;,]/).map(s => s.trim()).filter(Boolean).slice(0, 2),
       titan: "", // titans managed in Titan tab
     };
-    try { localStorage.setItem('cf_config_v6', JSON.stringify(cfg)); } catch { console.warn('[Settings] Could not persist config.'); }
+    try { localStorage.setItem(STORAGE_KEYS.CONFIG, JSON.stringify(cfg)); } catch { console.warn('[Settings] Could not persist config.'); }
     onSave(cfg);
   };
 

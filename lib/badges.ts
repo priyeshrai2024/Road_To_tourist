@@ -31,21 +31,47 @@ export function computeBadges(
   const acc  = (p: string, d: number) => { const a = subs(p, d); return a.length > 0 ? ac(p, d).length / a.length : 0; };
   const hour = (p: string, d: number, h1: number, h2: number) => ac(p, d).filter((s: any) => { const h = new Date(s.creationTimeSeconds * 1000).getHours(); return h >= h1 && h < h2; }).length;
   const distinctTags = (p: string, d: number) => { const t = new Set<string>(); ac(p, d).forEach((s: any) => s.problem.tags?.forEach((x: string) => t.add(x))); return t.size; };
+
+  // ── FIX #2: shared ISO date key — zero-padded YYYY-MM-DD ─────────────────
+  // Previously streak() used `${year}-${month}-${date}` (month 0-indexed, no padding)
+  // and longestStreak() used millisecond timestamps — two completely different formats.
+  // Both now use this single helper for consistency and correctness.
+  const toDateKey = (ts: number): string => {
+    const d = new Date(ts * 1000);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
   const streak = (p: string) => {
-    const days = new Set(allAc(p).map((s: CFSubmission) => { const d = new Date(s.creationTimeSeconds * 1000); return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`; }));
-    let cur = 0; const today = new Date();
+    const days = new Set(allAc(p).map((s: CFSubmission) => toDateKey(s.creationTimeSeconds)));
+    let cur = 0;
+    const today = new Date();
     for (let i = 0; i < 365; i++) {
-      const d = new Date(today); d.setDate(d.getDate() - i);
-      if (days.has(`${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`)) cur++; else break;
+      const d = new Date(today);
+      d.setDate(d.getDate() - i);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      if (days.has(key)) cur++; else break;
     }
     return cur;
   };
+
   const longestStreak = (p: string) => {
-    const days = [...new Set(allAc(p).map((s: CFSubmission) => { const d = new Date(s.creationTimeSeconds * 1000); d.setHours(0,0,0,0); return d.getTime(); }))].sort((a,b)=>a-b);
-    let best = 0, cur = 0, prev = -1;
-    days.forEach(d => { if (prev !== -1 && d - prev === 86400000) cur++; else cur = 1; if (cur > best) best = cur; prev = d; });
+    // Collect unique YYYY-MM-DD strings — ISO format sorts lexicographically correctly
+    const days = [...new Set(allAc(p).map((s: CFSubmission) => toDateKey(s.creationTimeSeconds)))].sort();
+    let best = 0, cur = 0;
+    for (let i = 0; i < days.length; i++) {
+      if (i === 0) {
+        cur = 1;
+      } else {
+        const prev = new Date(days[i - 1] + 'T00:00:00');
+        const curr = new Date(days[i]     + 'T00:00:00');
+        const diffDays = Math.round((curr.getTime() - prev.getTime()) / 86400000);
+        cur = diffDays === 1 ? cur + 1 : 1;
+      }
+      if (cur > best) best = cur;
+    }
     return best;
   };
+
   const ratingBucket = (p: string, d: number, minR: number, maxRv: number) => ac(p, d).filter((s: CFSubmission) => (s.problem.rating || 0) >= minR && (s.problem.rating || 0) <= maxRv).length;
   const wa7  = (p: string) => subs(p, 7).filter((s: any) => s.verdict === 'WRONG_ANSWER').length;
   const tle7 = (p: string) => subs(p, 7).filter((s: any) => s.verdict === 'TIME_LIMIT_EXCEEDED').length;
@@ -153,7 +179,6 @@ export function computeBadges(
     { id:'a_pyro',       icon:'🔥', name:'The Pyromancer',    desc:'[NEGATIVE] 3+ rebellions on the War Map',         owner: personal(mapMetrics.rebellion >= 3), isNegative: true },
     { id:'a_ruined',     icon:'🏚️', name:'Fallen Kingdom',    desc:'[NEGATIVE] 5+ ruins on the War Map',             owner: personal(mapMetrics.decaying >= 5), isNegative: true },
     { id:'a_recon',      icon:'🥷', name:'Recon Ghost',       desc:'5+ ACs on problems rated 200+ above your rating', owner: personal(reconMetrics.unique >= 5) },
-    // Personal achievement badges — awarded to mainHandle only
     { id:'a_century',    icon:'💯', name:'Centurion',         desc:'Solved 100+ unique problems all time',            owner: personal(uniqueSolved(mainHandle) >= 100) },
     { id:'a_hardboiled', icon:'🥚', name:'Hard Boiled',       desc:'Solved a problem rated 2000+',                   owner: personal(hardestProblem(mainHandle) >= 2000) },
     { id:'a_diversified',icon:'🌈', name:'Diversified',       desc:'Solved problems in 15+ distinct tags',            owner: personal(distinctTags(mainHandle, 36500) >= 15) },
@@ -184,22 +209,7 @@ export function computeBadges(
     // Punishment / chaos
     { id:'c_roulette',   icon:'🎰', name:'Russian Roulette',  desc:'[NEGATIVE] 3+ different verdicts in a single day', owner: fw(p => { let worst=0; subs(p,7).reduce((map:any,s:any)=>{ const day=new Date(s.creationTimeSeconds*1000).toDateString(); if(!map[day]) map[day]=new Set(); map[day].add(s.verdict); worst=Math.max(worst,map[day].size); return map; },{}); return worst>=3?worst:0; }, 3), isNegative: true },
     { id:'c_ghost',      icon:'👻', name:'Ghost Protocol',    desc:'[NEGATIVE] Not a single submission in 48h',       owner: fw(p => { const last=subs(p,36500); if(!last.length) return 1; return (now-last[last.length-1].creationTimeSeconds)/3600 >= 48 ? 1 : 0; }, 1), isNegative: true },
-    // Tag-based deep cuts
-    { id:'c_geomancer',  icon:'◬',  name:'Geomancer',         desc:'Most Geometry ACs this month',                   owner: fw(p => tags(p,30,'geometry'), 1) },
-    { id:'c_flowmaster', icon:'🌊', name:'Flow Master',       desc:'Solved a flow / matching problem this month',    owner: fw(p => tags(p,30,'flows') + tags(p,30,'graph matchings'), 1) },
-    { id:'c_bitwise',    icon:'⌨️', name:'Bit Wizard',        desc:'Most Bitmask/Bitmask DP ACs this week',          owner: fw(p => tags(p,7,'bitmasks'), 1) },
-    { id:'c_probabilist',icon:'🎲', name:'Probabilist',       desc:'Solved a probability problem this month',        owner: fw(p => tags(p,30,'probabilities'), 1) },
-    { id:'c_gamer',      icon:'🕹️', name:'Game Theorist',     desc:'Solved a game theory problem this month',        owner: fw(p => tags(p,30,'games'), 1) },
-    // XP-based
-    { id:'c_xphog',      icon:'💰', name:'XP Hog',            desc:'Most raw Synth Score earned all time',           owner: fw(p => pts(p,36500), 500) },
-    { id:'c_weeklyxp',   icon:'💸', name:'Weekly Earner',     desc:'Most Synth Score earned today',                  owner: fw(p => pts(p,1), 10) },
-    // Head to head interesting
-    { id:'c_deathmark',  icon:'☠️', name:'Death Mark',        desc:'Has the most unsolved bounties against them',    owner: fw(p => bMatrix[p].active.length, 1), isNegative: true },
-    { id:'c_executioner',icon:'🔪', name:'Executioner',       desc:'Solved the most bounties placed by others',      owner: fw(p => bMatrix[p].snipes, 1) },
-    // Regression / comeback
-    { id:'c_phoenix',    icon:'🦅', name:'Phoenix',           desc:'Solved 5+ problems after a 7+ day dry spell',   owner: fw(p => { const sorted=allAc(p).sort((a:any,b:any)=>a.creationTimeSeconds-b.creationTimeSeconds); for(let i=1;i<sorted.length;i++){ const gap=(sorted[i].creationTimeSeconds-sorted[i-1].creationTimeSeconds)/86400; if(gap>=7){ let after=0; for(let j=i;j<sorted.length&&(sorted[j].creationTimeSeconds-sorted[i].creationTimeSeconds)/86400<=7;j++) after++; if(after>=5) return after; } } return 0; }, 5) },
-    // Niche behavioral
-    { id:'c_sameproblem',icon:'🔄', name:'Obsessed',          desc:'[NEGATIVE] Submitted the same problem 5+ times without solving', owner: fw(p => { const attempts=new Map<string,number>(); subs(p,7).filter((s:any)=>s.verdict!=='OK').forEach((s:any)=>{ const pid=`${s.problem.contestId}-${s.problem.index}`; if(!new Set(ac(p,7).map((x:any)=>`${x.problem.contestId}-${x.problem.index}`)).has(pid)) attempts.set(pid,(attempts.get(pid)||0)+1); }); return Math.max(0,...attempts.values()); }, 5), isNegative: true },
+    { id:'c_obsessed',   icon:'😤', name:'Obsessed',          desc:'[NEGATIVE] Submitted the same problem 5+ times without solving', owner: fw(p => { const attempts=new Map<string,number>(); subs(p,7).filter((s:any)=>s.verdict!=='OK').forEach((s:any)=>{ const pid=`${s.problem.contestId}-${s.problem.index}`; if(!new Set(ac(p,7).map((x:any)=>`${x.problem.contestId}-${x.problem.index}`)).has(pid)) attempts.set(pid,(attempts.get(pid)||0)+1); }); return Math.max(0,...attempts.values()); }, 5), isNegative: true },
     { id:'c_latebloomer',icon:'🌸', name:'Late Bloomer',      desc:'Solved a 1800+ problem after 3+ failed attempts', owner: fw(p => { const fails=new Map<string,number>(); subs(p,36500).forEach((s:any)=>{ const pid=`${s.problem.contestId}-${s.problem.index}`; if(s.verdict!=='OK') fails.set(pid,(fails.get(pid)||0)+1); }); return ac(p,36500).filter((s:any)=>(s.problem.rating||0)>=1800&&(fails.get(`${s.problem.contestId}-${s.problem.index}`)||0)>=3).length; }, 1) },
     { id:'c_perfectweek',icon:'🌟', name:'Perfect Week',      desc:'7+ ACs with 100% accuracy this week',            owner: fw(p => ac(p,7).length>=7 && subs(p,7).every((s:any)=>s.verdict==='OK') ? ac(p,7).length : 0, 7) },
     { id:'c_comeback',   icon:'💪', name:'Comeback Kid',      desc:'Best score this week after zero last week',      owner: fw(p => ac(p,14).length>0 && ac(p,7).length>0 && pts(p,7)>0 && pts(p,14)-pts(p,7)<pts(p,7)*0.1 ? pts(p,7) : 0, 50) },
@@ -208,8 +218,10 @@ export function computeBadges(
     { id:'c_tortoise',   icon:'🐢', name:'The Tortoise',      desc:'Solved a problem that took more than 5 hours of attempts this week', owner: fw(p => { const first=new Map<string,number>(); subs(p,7).forEach((s:any)=>{ const pid=`${s.problem.contestId}-${s.problem.index}`; if(!first.has(pid)||s.creationTimeSeconds<(first.get(pid)||0)) first.set(pid,s.creationTimeSeconds); }); return ac(p,7).filter((s:any)=>{ const pid=`${s.problem.contestId}-${s.problem.index}`; return (s.creationTimeSeconds-(first.get(pid)||s.creationTimeSeconds))/3600 >= 5; }).length; }, 1) },
     { id:'c_insomniac',  icon:'😴', name:'Insomniac',         desc:'ACs in 3+ consecutive late-night hours (11PM–5AM)', owner: fw(p => { const hrs=new Set(ac(p,7).map((s:any)=>new Date(s.creationTimeSeconds*1000).getHours()).filter(h=>h>=23||h<5)); return hrs.size; }, 3) },
     { id:'c_bountykiller',icon:'💣',name:'Bounty Killer',     desc:"Solved a problem that was on someone else's active bounty list", owner: fw(p => bMatrix[p].snipes >= 3 ? bMatrix[p].snipes : 0, 3) },
-    { id:'c_solo',       icon:'🧍', name:'Lone Wolf',         desc:'Highest score while no squad members solved anything (7D)', owner: fw(p => { const others=allPlayers.filter(x=>x!==p); const othersAc=others.reduce((s,x)=>s+ac(x,7).length,0); return othersAc===0&&ac(p,7).length>0 ? pts(p,7) : 0; }, 1) },
-    { id:'c_ratingclimber',icon:'📈',name:'Rating Climber',   desc:'Biggest rating gain in last 3 contests',         owner: fw(p => { const h=sMatrix[p].history||[]; if(h.length<2) return 0; const recent=h.slice(-3); return recent[recent.length-1].newRating - recent[0].oldRating; }, 50) },
-    { id:'c_consistent', icon:'🔒', name:'Consistent',        desc:'Smallest rating variance across last 5 contests', owner: fwMin(p => { const h=sMatrix[p].history||[]; if(h.length<5) return Infinity; const last5=h.slice(-5).map((x:any)=>x.newRating); const avg=last5.reduce((a:number,b:number)=>a+b,0)/5; return last5.reduce((s:number,v:number)=>s+Math.abs(v-avg),0); }) },
+    { id:'c_snipedback', icon:'🔁', name:'Sniped Back',       desc:'Had a bounty sniped AND retaliated with a snipe', owner: fw(p => bMatrix[p].snipes >= 1 && bMatrix[p].active.length >= 1 ? bMatrix[p].snipes : 0, 1) },
+    { id:'c_grindset',   icon:'⚙️', name:'The Grindset',      desc:'Most total submissions (win or lose) this week',  owner: fw(p => subs(p,7).length, 20) },
+    { id:'c_longhaul',   icon:'🚛', name:'Long Haul',         desc:'Most ACs in problems over 2500 rating ever',      owner: fw(p => ac(p,36500).filter((s:any)=>(s.problem.rating||0)>=2500).length, 1) },
+    { id:'c_allnight',   icon:'🌃', name:'All-Nighter',       desc:'Submitted for 6+ consecutive hours overnight',    owner: fw(p => { const hrs=subs(p,7).map((s:any)=>Math.floor(s.creationTimeSeconds/3600)); const unique=new Set(hrs); let best=0; unique.forEach(h=>{ let run=0; for(let i=h;i<h+6;i++) if(unique.has(i)) run++; else break; best=Math.max(best,run); }); return best; }, 6) },
+    { id:'c_reliable',   icon:'🔒', name:'Reliable',          desc:'Active at least 5 of last 7 days',               owner: fw(p => activeDays(p,7) >= 5 ? activeDays(p,7) : 0, 5) },
   ];
 }
