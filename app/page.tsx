@@ -6,7 +6,6 @@ import SettingsModal from "@/components/SettingsModal";
 import Armory, { BadgeDef } from "@/components/Armory";
 import GrindMode from "@/components/GrindMode";
 import Nemesis from "@/components/Nemesis";
-
 import CommandTab from "@/components/CommandTab";
 import SquadOpsTab from "@/components/SquadOpsTab";
 import TitanTab from "@/components/TitanTab";
@@ -14,11 +13,20 @@ import ContestTracker from "@/components/ContestTracker";
 import { CF_SCORE_MAP, SQUAD_COLORS } from "@/lib/constants";
 import { computeBadges } from "@/lib/badges";
 import { STORAGE_KEYS } from "@/lib/storage-keys";
+import { getTheme, applyTheme, DEFAULT_THEME_ID } from "@/lib/themes";
 import type { CFSubmission, CFInfo, CFRating, ProcessedMetrics, SquadMemberData } from "@/lib/types";
 
-// ─── CONSTANTS ────────────────────────────────────────────────────────
-const TABS = ["COMMAND", "WAR MAP", "ARMORY", "SQUAD OPS", "NEMESIS", "GRIND", "TITAN", "CONTESTS"];
-const TAB_COLORS: Record<string, string> = { COMMAND: "#f0a500", "WAR MAP": "#56d364", ARMORY: "#e879f9", "SQUAD OPS": "#58a6ff", NEMESIS: "#f85149", GRIND: "#f85149", TITAN: "#f85149", CONTESTS: "#e3b341" };
+// ─── CONSTANTS ────────────────────────────────────────────────────────────────
+const TABS = [
+  { id: "COMMAND",   icon: "⚡" },
+  { id: "WAR MAP",   icon: "🗺️" },
+  { id: "ARMORY",    icon: "🏆" },
+  { id: "SQUAD OPS", icon: "👥" },
+  { id: "NEMESIS",   icon: "⚔️" },
+  { id: "GRIND",     icon: "🔥" },
+  { id: "TITAN",     icon: "🎯" },
+  { id: "CONTESTS",  icon: "📋" },
+];
 
 // ─── CORE ENGINE LOGIC ────────────────────────────────────────────────────────
 function processMetrics(subs: CFSubmission[]): ProcessedMetrics {
@@ -62,7 +70,6 @@ function processMetrics(subs: CFSubmission[]): ProcessedMetrics {
             let r = Math.floor(sub.problem.rating / 100) * 100; r = r < 800 ? 800 : (r > 3500 ? 3500 : r);
             ratingsDist[r] = (ratingsDist[r] || 0) + 1; pts = CF_SCORE_MAP[r > 2400 ? 2400 : r] || 0;
           } else ratingsDist['Unrated'] = (ratingsDist['Unrated'] || 0) + 1;
-
           score += pts; if (daysAgo <= 7) weeklyScore += pts; if (daysAgo <= 30) monthlyScore += pts;
           if (sub.problem.tags) sub.problem.tags.forEach((tag: string) => { tagsDist[tag] = (tagsDist[tag] || 0) + 1; tagSolves[tag] = (tagSolves[tag] || 0) + decayWeight; });
         }
@@ -134,21 +141,6 @@ const evaluateMapMetrics = (subs: CFSubmission[]) => {
   return metrics;
 };
 
-// ─── UI ATOMS ─────────────────────────────────────────────────────────────────
-function GlowPulse({ color = "#f0a500" }) {
-  return <span className="inline-block w-2 h-2 rounded-full animate-[pulse_1.5s_ease-in-out_infinite]" style={{ background: color, boxShadow: `0 0 6px ${color}, 0 0 12px ${color}` }} />;
-}
-
-function StatusLabel({ label, color, icon }: { label: string, color: string, icon?: string }) {
-  return (
-    <div className="flex items-center gap-1.5 font-mono text-[0.6rem] uppercase tracking-widest" style={{ color }}>
-      <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: color }} />
-      {icon && <span>{icon}</span>}
-      {label}
-    </div>
-  );
-}
-
 // ─── ROOT COMPONENT ───────────────────────────────────────────────────────────
 export default function Home() {
   const [handle, setHandle] = useState("");
@@ -169,22 +161,31 @@ export default function Home() {
   const [tick, setTick] = useState(0);
   const [mounted, setMounted] = useState(false);
 
+  // ─── THEME BOOT ──────────────────────────────────────────────────────────
+  useEffect(() => {
+    try {
+      const savedThemeId = localStorage.getItem(STORAGE_KEYS.THEME) || DEFAULT_THEME_ID;
+      applyTheme(getTheme(savedThemeId));
+    } catch {
+      applyTheme(getTheme(DEFAULT_THEME_ID));
+    }
+  }, []);
+
   useEffect(() => { setMounted(true); const iv = setInterval(() => setTick(t => t + 1), 1000); return () => clearInterval(iv); }, []);
 
-  // ─── OFFLINE-FIRST BOOT SEQUENCE ───────────────────────────────────────
+  // ─── OFFLINE-FIRST BOOT SEQUENCE ─────────────────────────────────────────
   useEffect(() => {
     const savedConfig = localStorage.getItem(STORAGE_KEYS.CONFIG);
     if (savedConfig) {
       const parsed = JSON.parse(savedConfig);
       setConfig(parsed); setHandle(parsed.main || "");
       if (parsed.squad && parsed.squad.length > 0) setNemesisTarget(parsed.squad[0]);
-
       const cachedSquad = localStorage.getItem(STORAGE_KEYS.SQUAD_CACHE);
       if (cachedSquad) {
         try {
           setSquadData(JSON.parse(cachedSquad));
           if (parsed.main) fetchGlobalTelemetry(parsed.main, parsed.squad, true);
-        } catch (e) {
+        } catch {
           if (parsed.main) fetchGlobalTelemetry(parsed.main, parsed.squad, false);
         }
       } else {
@@ -193,15 +194,11 @@ export default function Home() {
     } else setShowSettings(true);
   }, []);
 
-  // ─── API SYNCHRONIZATION ───────────────────────────────────────────────
+  // ─── API SYNCHRONIZATION ─────────────────────────────────────────────────
   const fetchGlobalTelemetry = async (mainH: string, squadH: string[], isBackground = false) => {
     if (!mainH) return;
-
-    if (!isBackground) {
-      setLoading(true); setLoadingMsg(`ESTABLISHING SECURE UPLINK...`);
-    } else {
-      setIsSyncing(true);
-    }
+    if (!isBackground) { setLoading(true); setLoadingMsg(`Connecting...`); }
+    else setIsSyncing(true);
 
     const newSquadData: Record<string, any> = {};
     const allHandles = [mainH, ...squadH].filter(Boolean);
@@ -213,9 +210,8 @@ export default function Home() {
           const data = await res.json();
           if (data.status === 'OK') return data.result;
           if (data.comment && data.comment.includes("not found")) return null;
-        } catch (e) {
+        } catch {
           await new Promise(res => setTimeout(res, 1500));
-          console.warn(`Fetch glitch for ${url}, retrying...`);
         }
       }
       throw new Error("API Timeout");
@@ -225,34 +221,25 @@ export default function Home() {
       const infoResult = await fetchCF(`https://codeforces.com/api/user.info?handles=${allHandles.join(';')}`);
       if (infoResult) allHandles.forEach(h => {
         const info = infoResult.find((u: any) => u.handle.toLowerCase() === h.toLowerCase());
-        if (info) newSquadData[h] = { handle: h, info: info, rawSubs: [], history: [] };
+        if (info) newSquadData[h] = { handle: h, info, rawSubs: [], history: [] };
       });
 
       for (const h of allHandles) {
         if (!newSquadData[h]) continue;
-        if (!isBackground) setLoadingMsg(`SYNCING OPERATIVE: ${h.toUpperCase()}...`);
-
+        if (!isBackground) setLoadingMsg(`Syncing ${h}...`);
         const subs = await fetchCF(`https://codeforces.com/api/user.status?handle=${h}`);
         if (subs) newSquadData[h].rawSubs = subs;
         await new Promise(r => setTimeout(r, 400));
-
         const history = await fetchCF(`https://codeforces.com/api/user.rating?handle=${h}`);
         if (history) newSquadData[h].history = history;
         await new Promise(r => setTimeout(r, 400));
       }
 
       setSquadData(newSquadData);
-      try { localStorage.setItem(STORAGE_KEYS.SQUAD_CACHE, JSON.stringify(newSquadData)); } catch(e) {}
-
-      if (isBackground) {
-        setUpdateToast(true);
-        setTimeout(() => setUpdateToast(false), 4000);
-      }
-    } catch (err) {
-      if (!isBackground) {
-        alert("Engine Failure: Codeforces API is overwhelmed. Please wait 60 seconds and try again.");
-        setShowSettings(true);
-      }
+      try { localStorage.setItem(STORAGE_KEYS.SQUAD_CACHE, JSON.stringify(newSquadData)); } catch {}
+      if (isBackground) { setUpdateToast(true); setTimeout(() => setUpdateToast(false), 4000); }
+    } catch {
+      if (!isBackground) { alert("Codeforces API is unavailable. Please wait and try again."); setShowSettings(true); }
     } finally {
       setLoading(false);
       setIsSyncing(false);
@@ -311,7 +298,11 @@ export default function Home() {
     globalBounties.sort((a, b) => b.pts - a.pts || b.fails - a.fails).forEach(b => {
       if (!uniqueBounties.find(ub => ub.pid === b.pid)) {
         const isOwn = b.victim === config.main; const isSniped = absSolves.has(b.pid) && !isOwn;
-        let btnClass = isOwn ? 'bg-[rgba(248,81,73,0.1)] border-[#f85149] text-[#f85149]' : (isSniped ? 'bg-[rgba(46,160,67,0.1)] border-[#2ea043] text-[#2ea043] pointer-events-none' : 'bg-[rgba(227,179,65,0.1)] border-[#e3b341] text-[#e3b341] hover:bg-[#e3b341] hover:text-black');
+        let btnClass = isOwn
+          ? 'bg-[rgba(248,81,73,0.1)] border-[#f85149] text-[#f85149]'
+          : (isSniped
+            ? 'bg-[rgba(46,160,67,0.1)] border-[#2ea043] text-[#2ea043] pointer-events-none'
+            : 'bg-[var(--accent-10)] border-[var(--accent)] text-[var(--accent)] hover:bg-[var(--accent)] hover:text-[var(--bg-base)]');
         let status = isOwn ? '🛠️ UPSOLVE REQUIRED' : (isSniped ? '🎯 ALREADY SNIPED' : '🔫 INITIATE SNIPE');
         uniqueBounties.push({ ...b, status, btnClass, isOwn, isSniped });
       }
@@ -321,54 +312,28 @@ export default function Home() {
     const mapMetrics = evaluateMapMetrics(squadData[config.main].rawSubs);
     const badges: BadgeDef[] = computeBadges(allPlayers, sMatrix, bMatrix, reconMetrics, mapMetrics, config.main, Date.now() / 1000);
 
-    return { mainMetrics, squadMatrix: sMatrix, bounties: uniqueBounties.slice(0,30), computedBadges: badges, absoluteMySolves: absSolves };
+    return { mainMetrics, squadMatrix: sMatrix, bounties: uniqueBounties.slice(0, 30), computedBadges: badges, absoluteMySolves: absSolves };
   }, [squadData, config, contextFilter, timeFilter]);
 
   const squadCharts = useMemo(() => {
     if (!squadMatrix[config.main]) return null;
-
-    const players = Object.keys(squadMatrix).sort((a,b) => (squadMatrix[b].info.rating||0) - (squadMatrix[a].info.rating||0));
-    const sprintData = { labels: players, datasets: [ { label: '7-Day Score', data: players.map(p => squadMatrix[p].metrics.weeklyScore), backgroundColor: '#f85149', borderRadius: 4 }, { label: '30-Day Score', data: players.map(p => squadMatrix[p].metrics.monthlyScore), backgroundColor: '#d2a8ff', borderRadius: 4 } ] };
+    const players = Object.keys(squadMatrix).sort((a, b) => (squadMatrix[b].info.rating || 0) - (squadMatrix[a].info.rating || 0));
+    const sprintData = { labels: players, datasets: [{ label: '7-Day Score', data: players.map(p => squadMatrix[p].metrics.weeklyScore), backgroundColor: '#f85149', borderRadius: 4 }, { label: '30-Day Score', data: players.map(p => squadMatrix[p].metrics.monthlyScore), backgroundColor: '#d2a8ff', borderRadius: 4 }] };
     let allTags: Record<string, number> = {}; players.forEach(p => Object.keys(squadMatrix[p].metrics.tagsDist).forEach(t => allTags[t] = (allTags[t] || 0) + squadMatrix[p].metrics.tagsDist[t]));
-    const topTags = Object.keys(allTags).sort((a,b) => allTags[b] - allTags[a]).slice(0, 15);
-    const radarData = { labels: topTags, datasets: players.map((p, i) => ({ label: p, data: topTags.map(t => squadMatrix[p].metrics.tagsDist[t] || 0), borderColor: p === config.main ? '#e3b341' : SQUAD_COLORS[i % SQUAD_COLORS.length], backgroundColor: p === config.main ? 'rgba(227, 179, 65, 0.2)' : 'transparent', borderDash: p === config.main ? [] : [5, 5], borderWidth: 2 })) };
-    let allTS = new Set<number>(); players.forEach(p => Object.values(squadMatrix[p].history).forEach((h:any) => allTS.add(h.ratingUpdateTimeSeconds)));
-    const sortedTS = Array.from(allTS).sort((a,b) => a-b);
-    const lineData = { labels: sortedTS.map(ts => { const d = new Date(ts*1000); return `${d.getMonth()+1}/${d.getFullYear().toString().substring(2)}`; }), datasets: players.map((p, i) => { let data: (number|null)[] = []; let lastR: number|null = null; let hMap: Record<number, number> = {}; squadMatrix[p].history.forEach((h:CFRating) => hMap[h.ratingUpdateTimeSeconds] = h.newRating); sortedTS.forEach(ts => { if(hMap[ts]) lastR = hMap[ts]; data.push(lastR); }); return { label: p, data, borderColor: p === config.main ? '#e3b341' : SQUAD_COLORS[i % SQUAD_COLORS.length], backgroundColor: 'transparent', borderWidth: 2, pointRadius: 1, tension: 0.2, spanGaps: true }; }) };
-
+    const topTags = Object.keys(allTags).sort((a, b) => allTags[b] - allTags[a]).slice(0, 15);
+    const radarData = { labels: topTags, datasets: players.map((p, i) => ({ label: p, data: topTags.map(t => squadMatrix[p].metrics.tagsDist[t] || 0), borderColor: p === config.main ? '#e3b341' : SQUAD_COLORS[i % SQUAD_COLORS.length], backgroundColor: p === config.main ? 'rgba(227,179,65,0.2)' : 'transparent', borderDash: p === config.main ? [] : [5, 5], borderWidth: 2 })) };
+    let allTS = new Set<number>(); players.forEach(p => Object.values(squadMatrix[p].history).forEach((h: any) => allTS.add(h.ratingUpdateTimeSeconds)));
+    const sortedTS = Array.from(allTS).sort((a, b) => a - b);
+    const lineData = { labels: sortedTS.map(ts => { const d = new Date(ts * 1000); return `${d.getMonth() + 1}/${d.getFullYear().toString().substring(2)}`; }), datasets: players.map((p, i) => { let data: (number | null)[] = []; let lastR: number | null = null; let hMap: Record<number, number> = {}; squadMatrix[p].history.forEach((h: CFRating) => hMap[h.ratingUpdateTimeSeconds] = h.newRating); sortedTS.forEach(ts => { if (hMap[ts]) lastR = hMap[ts]; data.push(lastR); }); return { label: p, data, borderColor: p === config.main ? '#e3b341' : SQUAD_COLORS[i % SQUAD_COLORS.length], backgroundColor: 'transparent', borderWidth: 2, pointRadius: 1, tension: 0.2, spanGaps: true }; }) };
     const CHART_COLORS = players.map((p, i) => p === config.main ? '#e3b341' : SQUAD_COLORS[i % SQUAD_COLORS.length]);
-    const acD   = (p: string, d: number) => squadMatrix[p].metrics.rawSubsList.filter((s:any) => s.verdict==='OK' && (Date.now()/1000-s.creationTimeSeconds)/86400<=d);
-    const ptsD  = (p: string, d: number) => acD(p,d).reduce((sum:number,s:any) => sum+(CF_SCORE_MAP[Math.min(2400,Math.floor((s.problem?.rating||800)/100)*100)]||10),0);
-    const accD  = (p: string, d: number) => { const s=squadMatrix[p].metrics.rawSubsList.filter((x:any)=>(Date.now()/1000-x.creationTimeSeconds)/86400<=d); return s.length>0?parseFloat(((acD(p,d).length/s.length)*100).toFixed(1)):0; };
-    const maxRD = (p: string, d: number) => Math.max(0,...acD(p,d).map((s:any)=>s.problem?.rating||0));
-    const activeDaysD = (p: string, d: number) => new Set(acD(p,d).map((s:any)=>new Date(s.creationTimeSeconds*1000).toDateString())).size;
-
-    const mkBar = (label: string, fn: (p:string)=>number, color?: string) => ({
-      labels: players,
-      datasets: [{ label, data: players.map(fn), backgroundColor: color ? players.map((p,i) => p===config.main ? color : SQUAD_COLORS[i%SQUAD_COLORS.length]+'bb') : CHART_COLORS.map(c=>c+'bb'), borderColor: CHART_COLORS, borderWidth: 1, borderRadius: 4 }]
-    });
-
-    const comparisonCharts = {
-      weeklyScore:   mkBar('7D Synth Score',   p => ptsD(p,7)),
-      monthlyScore:  mkBar('30D Synth Score',  p => ptsD(p,30)),
-      weeklyAC:      mkBar('7D ACs',           p => acD(p,7).length),
-      monthlyAC:     mkBar('30D ACs',          p => acD(p,30).length),
-      weeklyAccRate: mkBar('7D Accepted %',    p => accD(p,7)),
-      monthlyAccRate:mkBar('30D Accepted %',   p => accD(p,30)),
-      highestRated:  mkBar('Highest Rated Solved', p => maxRD(p,36500)),
-      uniqueAC:      mkBar('Unique ACs (All)',  p => squadMatrix[p].metrics.unique),
-      activeDays7:   mkBar('Active Days (7D)', p => activeDaysD(p,7)),
-      activeDays30:  mkBar('Active Days (30D)',p => activeDaysD(p,30)),
-      rating:        mkBar('Current Rating',   p => squadMatrix[p].info.rating || 0),
-    };
-
-    const leaderboard = players.map(p => ({
-      handle: p, rating: squadMatrix[p].info.rating || 0, rank: squadMatrix[p].info.rank || 'unrated',
-      uniqueAC: squadMatrix[p].metrics.unique, weeklyScore: ptsD(p,7), monthlyScore: ptsD(p,30),
-      weeklyAC: acD(p,7).length, monthlyAC: acD(p,30).length, weeklyAcc: accD(p,7), monthlyAcc: accD(p,30),
-      highestRated: maxRD(p,36500), activeDays7: activeDaysD(p,7), activeDays30: activeDaysD(p,30),
-    }));
-
+    const acD = (p: string, d: number) => squadMatrix[p].metrics.rawSubsList.filter((s: any) => s.verdict === 'OK' && (Date.now() / 1000 - s.creationTimeSeconds) / 86400 <= d);
+    const ptsD = (p: string, d: number) => acD(p, d).reduce((sum: number, s: any) => sum + (CF_SCORE_MAP[Math.min(2400, Math.floor((s.problem?.rating || 800) / 100) * 100)] || 10), 0);
+    const accD = (p: string, d: number) => { const s = squadMatrix[p].metrics.rawSubsList.filter((x: any) => (Date.now() / 1000 - x.creationTimeSeconds) / 86400 <= d); return s.length > 0 ? parseFloat(((acD(p, d).length / s.length) * 100).toFixed(1)) : 0; };
+    const maxRD = (p: string, d: number) => Math.max(0, ...acD(p, d).map((s: any) => s.problem?.rating || 0));
+    const activeDaysD = (p: string, d: number) => new Set(acD(p, d).map((s: any) => new Date(s.creationTimeSeconds * 1000).toDateString())).size;
+    const mkBar = (label: string, fn: (p: string) => number, color?: string) => ({ labels: players, datasets: [{ label, data: players.map(fn), backgroundColor: color ? players.map((p, i) => p === config.main ? color : SQUAD_COLORS[i % SQUAD_COLORS.length] + 'bb') : CHART_COLORS.map(c => c + 'bb'), borderColor: CHART_COLORS, borderWidth: 1, borderRadius: 4 }] });
+    const comparisonCharts = { weeklyScore: mkBar('7D Synth Score', p => ptsD(p, 7)), monthlyScore: mkBar('30D Synth Score', p => ptsD(p, 30)), weeklyAC: mkBar('7D ACs', p => acD(p, 7).length), monthlyAC: mkBar('30D ACs', p => acD(p, 30).length), weeklyAccRate: mkBar('7D Accepted %', p => accD(p, 7)), monthlyAccRate: mkBar('30D Accepted %', p => accD(p, 30)), highestRated: mkBar('Highest Rated Solved', p => maxRD(p, 36500)), uniqueAC: mkBar('Unique ACs (All)', p => squadMatrix[p].metrics.unique), activeDays7: mkBar('Active Days (7D)', p => activeDaysD(p, 7)), activeDays30: mkBar('Active Days (30D)', p => activeDaysD(p, 30)), rating: mkBar('Current Rating', p => squadMatrix[p].info.rating || 0) };
+    const leaderboard = players.map(p => ({ handle: p, rating: squadMatrix[p].info.rating || 0, rank: squadMatrix[p].info.rank || 'unrated', uniqueAC: squadMatrix[p].metrics.unique, weeklyScore: ptsD(p, 7), monthlyScore: ptsD(p, 30), weeklyAC: acD(p, 7).length, monthlyAC: acD(p, 30).length, weeklyAcc: accD(p, 7), monthlyAcc: accD(p, 30), highestRated: maxRD(p, 36500), activeDays7: activeDaysD(p, 7), activeDays30: activeDaysD(p, 30) }));
     return { sprintData, radarData, lineData, players, comparisonCharts, leaderboard };
   }, [squadMatrix, config.main]);
 
@@ -380,106 +345,172 @@ export default function Home() {
     const isBlue = hoursInactive >= 1 && hoursInactive < 24;
     const isRed = hoursInactive >= 24;
     const bleedHours = isRed ? Math.floor(hoursInactive - 24) : 0;
-    const pointsLost = bleedHours;
-    return { hoursInactive: parseFloat(hoursInactive.toFixed(1)), bleedHours, pointsLost, isRed, isBlue };
+    return { hoursInactive: parseFloat(hoursInactive.toFixed(1)), bleedHours, pointsLost: bleedHours, isRed, isBlue };
   }, [mainMetrics, tick]);
 
   const timeStr = mounted ? new Date().toTimeString().slice(0, 8) : '--:--:--';
 
   return (
-    <div className="min-h-screen bg-[#030305] text-[#e0e6ed] selection:bg-[#f0a500] font-sans">
-      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} onSave={(newCfg) => {
-        setConfig(newCfg); setHandle(newCfg.main); setShowSettings(false);
-        fetchGlobalTelemetry(newCfg.main, newCfg.squad, false);
-      }} />}
+    <div className="min-h-screen font-sans" style={{ background: 'var(--bg-base)', color: 'var(--text-main)' }}>
+      {showSettings && (
+        <SettingsModal
+          onClose={() => setShowSettings(false)}
+          onSave={(newCfg) => { setConfig(newCfg); setHandle(newCfg.main); setShowSettings(false); fetchGlobalTelemetry(newCfg.main, newCfg.squad, false); }}
+        />
+      )}
 
       <style>{`
         @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.5;transform:scale(0.85)} }
-        @keyframes flicker { 0%,100%{opacity:1} 92%{opacity:1} 93%{opacity:0.8} 94%{opacity:1} }
         * { box-sizing: border-box; }
-        ::-webkit-scrollbar{width:4px;background:#050505} ::-webkit-scrollbar-thumb{background:#1a1a1a;border-radius:2px}
+        ::-webkit-scrollbar { width: 4px; background: var(--bg-base); }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+        ::selection { background: var(--accent-20); }
       `}</style>
 
-      <div className="fixed inset-0 pointer-events-none z-0" style={{ background: "repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px)" }} />
-
-      <header className="sticky top-0 z-50 border-b border-[#1a1a2a] px-8" style={{ background: "rgba(3,3,5,0.95)", backdropFilter: "blur(16px)" }}>
+      {/* ── HEADER ─────────────────────────────────────────────────────────── */}
+      <header className="sticky top-0 z-50 px-8"
+        style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)', backdropFilter: 'blur(16px)' }}>
         <div className="max-w-[1400px] mx-auto">
-          <div className="flex items-center justify-between py-3">
-            <div className="flex items-center gap-4">
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center text-base" style={{ background: "linear-gradient(135deg,#f0a500,#f85149)", boxShadow: "0 0 16px #f0a50044" }}>⚡</div>
+
+          {/* Top bar */}
+          <div className="flex items-center justify-between py-3 gap-6">
+
+            {/* Logo */}
+            <div className="flex items-center gap-3 shrink-0">
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center text-base font-bold"
+                style={{ background: 'var(--accent)', color: 'var(--bg-base)' }}>⚡</div>
               <div>
-                <div className="font-mono font-black text-base tracking-[3px] text-[#f0a500] uppercase animate-[flicker_4s_infinite]">CODEFORCES SYNTHESIS ENGINE</div>
-                <div className="font-mono text-[0.55rem] tracking-[2px] text-[#444]">TACTICAL COMPETITIVE INTELLIGENCE PLATFORM v4.2.1</div>
+                <div className="font-bold text-sm tracking-wide" style={{ color: 'var(--text-main)' }}>CF Synthesis</div>
+                <div className="text-[0.6rem] tracking-widest uppercase" style={{ color: 'var(--text-muted)' }}>Tactical Intelligence</div>
               </div>
             </div>
 
-            <div className="flex items-center gap-6">
-              <div className="flex bg-[#050505] rounded-[6px] border border-[#1a1a1a] overflow-hidden">
-                {['ALL', 'CONTEST', 'PRACTICE', 'RECON'].map(ctx => (
-                  <button key={ctx} onClick={() => setContextFilter(ctx)} className={`px-3 py-1 border-r border-[#1a1a1a] last:border-0 font-mono text-[0.65rem] transition-colors cursor-pointer ${contextFilter === ctx ? 'bg-[#f0a500] text-black font-bold' : 'bg-transparent text-[#888] hover:bg-white/5'}`}>{ctx}</button>
-                ))}
-              </div>
-              <div className="flex bg-[#050505] rounded-[6px] border border-[#1a1a1a] overflow-hidden mr-4">
-                {['ALL', '30', '7'].map(tf => (
-                  <button key={tf} onClick={() => setTimeFilter(tf)} className={`px-3 py-1 border-r border-[#1a1a1a] last:border-0 font-mono text-[0.65rem] transition-colors cursor-pointer ${timeFilter === tf ? 'bg-[#58a6ff] text-black font-bold' : 'bg-transparent text-[#888] hover:bg-white/5'}`}>{tf === 'ALL' ? 'ALL TIME' : tf + ' DAYS'}</button>
-                ))}
-              </div>
-
-              <div className="text-right">
-                <div className="font-mono text-lg font-bold text-[#f0a500] tracking-wider">{handle || "OFFLINE"}</div>
-                {mainMetrics && <div className="font-mono text-[0.6rem] tracking-wider text-[#56d364]">{squadData[config.main]?.info?.rank || "Unrated"} · {squadData[config.main]?.info?.rating || 0}</div>}
-              </div>
-              <img src={squadData[config.main]?.info?.titlePhoto || "/api/placeholder/44/44"} alt="Avatar" className="w-11 h-11 rounded-xl object-cover" style={{ border: "1px solid #f0a50033" }} />
-              <div className="text-right font-mono hidden md:block">
-                <div className="text-[0.85rem] text-[#58a6ff] tracking-wider">{timeStr}</div>
-                <div className="text-[0.55rem] tracking-wider text-[#333]">UTC SYSTEM CLOCK</div>
-              </div>
-
-              <button
-                onClick={() => fetchGlobalTelemetry(config.main, config.squad, true)}
-                disabled={isSyncing || loading}
-                className={`bg-[#050505] border border-[#1a1a1a] w-10 h-10 rounded-lg transition-colors font-mono text-lg flex items-center justify-center ${isSyncing || loading ? 'text-[#e3b341] cursor-not-allowed' : 'text-[#888] hover:text-[#56d364] hover:border-[#56d364] cursor-pointer'}`}
-                title="Force Global Sync"
-              >
-                <span className={isSyncing ? 'animate-spin' : ''}>↻</span>
-              </button>
-              <button onClick={() => setShowSettings(true)} className="bg-[#050505] border border-[#1a1a1a] w-10 h-10 rounded-lg text-[#888] hover:text-[#f0a500] hover:border-[#f0a500] transition-colors font-mono text-lg flex items-center justify-center cursor-pointer" title="Settings">⚙</button>
+            {/* Context filters */}
+            <div className="flex rounded-lg overflow-hidden border" style={{ borderColor: 'var(--border)' }}>
+              {['ALL', 'CONTEST', 'PRACTICE', 'RECON'].map(ctx => (
+                <button key={ctx} onClick={() => setContextFilter(ctx)}
+                  className="px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer border-r last:border-0"
+                  style={{
+                    borderColor: 'var(--border)',
+                    background: contextFilter === ctx ? 'var(--accent)' : 'transparent',
+                    color: contextFilter === ctx ? 'var(--bg-base)' : 'var(--text-muted)',
+                    fontWeight: contextFilter === ctx ? 700 : 400,
+                  }}>{ctx}</button>
+              ))}
             </div>
+
+            <div className="flex rounded-lg overflow-hidden border" style={{ borderColor: 'var(--border)' }}>
+              {['ALL', '30', '7'].map(tf => (
+                <button key={tf} onClick={() => setTimeFilter(tf)}
+                  className="px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer border-r last:border-0"
+                  style={{
+                    borderColor: 'var(--border)',
+                    background: timeFilter === tf ? 'var(--accent)' : 'transparent',
+                    color: timeFilter === tf ? 'var(--bg-base)' : 'var(--text-muted)',
+                    fontWeight: timeFilter === tf ? 700 : 400,
+                  }}>{tf === 'ALL' ? 'All Time' : tf + 'd'}</button>
+              ))}
+            </div>
+
+            <div className="flex-1" />
+
+            {/* Handle + rating */}
+            {mainMetrics && squadData[config.main] && (
+              <div className="flex items-center gap-3">
+                <img
+                  src={squadData[config.main]?.info?.titlePhoto || "/api/placeholder/36/36"}
+                  alt="Avatar"
+                  className="w-9 h-9 rounded-lg object-cover"
+                  style={{ border: '1px solid var(--border)' }}
+                />
+                <div className="text-right">
+                  <div className="font-bold text-sm font-mono" style={{ color: 'var(--accent)' }}>{handle || "—"}</div>
+                  <div className="text-[0.6rem] uppercase tracking-wider" style={{ color: 'var(--status-ac)' }}>
+                    {squadData[config.main]?.info?.rank || "Unrated"} · {squadData[config.main]?.info?.rating || 0}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Clock */}
+            <div className="font-mono text-sm hidden md:block" style={{ color: 'var(--text-muted)' }}>{timeStr}</div>
+
+            {/* Sync button */}
+            <button
+              onClick={() => fetchGlobalTelemetry(config.main, config.squad, true)}
+              disabled={isSyncing || loading}
+              title="Force sync"
+              className="w-9 h-9 rounded-lg flex items-center justify-center text-base transition-colors cursor-pointer disabled:cursor-not-allowed"
+              style={{
+                background: 'var(--bg-base)',
+                border: '1px solid var(--border)',
+                color: isSyncing ? 'var(--accent)' : 'var(--text-muted)',
+              }}
+            >
+              <span className={isSyncing ? 'animate-spin inline-block' : ''}>↻</span>
+            </button>
+
+            {/* Settings */}
+            <button
+              onClick={() => setShowSettings(true)}
+              title="Settings"
+              className="w-9 h-9 rounded-lg flex items-center justify-center text-base transition-colors cursor-pointer"
+              style={{ background: 'var(--bg-base)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}
+            >⚙</button>
           </div>
 
           {/* Tab bar */}
-          <div className="flex gap-1 pb-0">
-            {TABS.map(tab => (
-              <button key={tab} onClick={() => setActiveTab(tab)}
-                className={`px-4 py-2 font-mono text-[0.65rem] uppercase tracking-wider transition-all cursor-pointer border-b-2 ${activeTab === tab ? 'border-current' : 'border-transparent text-[#444] hover:text-[#888]'}`}
-                style={{ color: activeTab === tab ? TAB_COLORS[tab] : undefined }}>
-                {tab}
-              </button>
-            ))}
+          <div className="flex gap-0.5">
+            {TABS.map(({ id, icon }) => {
+              const isActive = activeTab === id;
+              return (
+                <button key={id} onClick={() => setActiveTab(id)}
+                  className="flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium transition-all cursor-pointer rounded-t-md border-b-2 whitespace-nowrap"
+                  style={{
+                    borderBottomColor: isActive ? 'var(--accent)' : 'transparent',
+                    color: isActive ? 'var(--accent)' : 'var(--text-muted)',
+                    background: isActive ? 'var(--accent-10)' : 'transparent',
+                  }}>
+                  <span>{icon}</span>
+                  <span className="font-mono tracking-wider uppercase text-[0.62rem]">{id}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
       </header>
 
-      <main className="max-w-[1400px] mx-auto px-8 py-8 mb-10">
-        <div className="font-mono text-[0.6rem] tracking-[3px] text-center mb-6 h-4">
+      {/* ── MAIN ───────────────────────────────────────────────────────────── */}
+      <main className="max-w-[1400px] mx-auto px-8 py-6 pb-16">
+
+        {/* Status strip */}
+        <div className="h-5 mb-6 flex items-center justify-center font-mono text-[0.6rem] tracking-widest">
           {isSyncing ? (
-            <span className="text-[#e3b341] animate-pulse uppercase tracking-[2px] font-bold">↻ SYNCING TELEMETRY...</span>
+            <span className="animate-pulse" style={{ color: 'var(--accent)' }}>↻ Syncing...</span>
           ) : updateToast ? (
-            <span className="text-[#56d364] animate-pulse uppercase tracking-[2px] font-bold">✓ DATABASE UPDATED</span>
-          ) : (
-            <><span className="text-[#1a1a1a]">SYS.INTEGRITY: </span><span className="text-[#56d364]">■■■■■■■■■■ 100%</span></>
-          )}
+            <span style={{ color: 'var(--status-ac)' }}>✓ Updated</span>
+          ) : null}
         </div>
 
-        {loading && <div className="text-center my-20 font-mono text-[#f0a500] text-[1.2rem] animate-pulse">{loadingMsg}</div>}
+        {/* Loading */}
+        {loading && (
+          <div className="text-center my-20 text-lg animate-pulse font-mono" style={{ color: 'var(--accent)' }}>
+            {loadingMsg}
+          </div>
+        )}
 
         {!loading && mainMetrics && squadData[config.main] && (
           <>
+            {/* Guillotine banner */}
             {activeTab === "COMMAND" && (guillotineStatus.isBlue || guillotineStatus.isRed) && (
-              <div className={`mb-8 p-6 rounded-2xl border flex justify-between items-center ${guillotineStatus.isRed ? 'bg-[rgba(248,81,73,0.05)] border-[#f85149] animate-[pulse_2s_ease-in-out_infinite]' : 'bg-[rgba(88,166,255,0.05)] border-[#58a6ff]'}`}>
+              <div className={`mb-8 p-5 rounded-2xl border flex justify-between items-center ${guillotineStatus.isRed ? 'animate-[pulse_2s_ease-in-out_infinite]' : ''}`}
+                style={{
+                  background: guillotineStatus.isRed ? 'rgba(248,81,73,0.05)' : 'rgba(88,166,255,0.05)',
+                  borderColor: guillotineStatus.isRed ? '#f85149' : '#58a6ff',
+                }}>
                 <div>
-                  <h2 className={`font-black uppercase tracking-widest m-0 font-mono text-lg ${guillotineStatus.isRed ? 'text-[#f85149]' : 'text-[#58a6ff]'}`}>
-                    {guillotineStatus.isRed ? '⚠ CRITICAL DECAY' : '🔵 RUST FORMING'}
+                  <h2 className="font-bold text-base m-0" style={{ color: guillotineStatus.isRed ? '#f85149' : '#58a6ff' }}>
+                    {guillotineStatus.isRed ? '⚠ Critical Decay' : '🔵 Rust Forming'}
                   </h2>
                   <p className="font-mono text-xs mt-1 mb-0" style={{ color: guillotineStatus.isRed ? '#f85149' : '#58a6ff' }}>
                     No submissions for <strong>{guillotineStatus.hoursInactive}h</strong>.
@@ -487,30 +518,36 @@ export default function Home() {
                   </p>
                 </div>
                 {guillotineStatus.isRed && (
-                  <div className="text-right">
-                    <div className="text-3xl font-black text-[#f85149] font-mono">-{guillotineStatus.pointsLost} PTS</div>
-                    <div className="text-[10px] text-[#f85149] uppercase tracking-widest font-mono mt-1">Simulated Elo Bleed</div>
+                  <div className="text-right font-mono">
+                    <div className="text-2xl font-black" style={{ color: '#f85149' }}>-{guillotineStatus.pointsLost} PTS</div>
+                    <div className="text-[10px] uppercase tracking-widest mt-1" style={{ color: '#f85149' }}>Simulated Elo Bleed</div>
                   </div>
                 )}
                 {guillotineStatus.isBlue && (
-                  <div className="text-right font-mono text-[#58a6ff]">
-                    <div className="text-3xl font-black">{guillotineStatus.hoursInactive}h</div>
+                  <div className="text-right font-mono" style={{ color: '#58a6ff' }}>
+                    <div className="text-2xl font-black">{guillotineStatus.hoursInactive}h</div>
                     <div className="text-[10px] uppercase tracking-widest mt-1">Hours Inactive</div>
                   </div>
                 )}
               </div>
             )}
 
-            {activeTab === "COMMAND" && <CommandTab metrics={mainMetrics} info={squadData[config.main].info} filter={contextFilter} config={config} squadData={squadData} />}
-            {activeTab === "WAR MAP" && <WarMap subs={mainMetrics.rawSubsList} />}
-            {activeTab === "ARMORY" && <div className="animate-in fade-in"><Armory badges={computedBadges} mainHandle={config.main} variant="full" players={[config.main, ...config.squad].filter(h => squadData[h])} /></div>}
+            {activeTab === "COMMAND"   && <CommandTab metrics={mainMetrics} info={squadData[config.main].info} filter={contextFilter} config={config} squadData={squadData} />}
+            {activeTab === "WAR MAP"   && <WarMap subs={mainMetrics.rawSubsList} />}
+            {activeTab === "ARMORY"    && <div className="animate-in fade-in"><Armory badges={computedBadges} mainHandle={config.main} variant="full" players={[config.main, ...config.squad].filter(h => squadData[h])} /></div>}
             {activeTab === "SQUAD OPS" && <SquadOpsTab squadMatrix={squadMatrix} config={config} squadCharts={squadCharts} bounties={bounties} />}
-            {activeTab === "NEMESIS" && (
+            {activeTab === "NEMESIS"   && (
               <div className="animate-in fade-in">
-                <div className="mb-6 flex gap-4 items-center">
-                  <span className="text-[#888] font-mono text-xs uppercase">Select Target:</span>
+                <div className="mb-6 flex gap-3 items-center flex-wrap">
+                  <span className="text-xs uppercase tracking-widest font-mono" style={{ color: 'var(--text-muted)' }}>Target:</span>
                   {config.squad.map(h => (
-                    <button key={h} onClick={() => setNemesisTarget(h)} className={`px-4 py-2 rounded-lg font-mono uppercase text-xs transition-colors cursor-pointer border ${nemesisTarget === h ? 'bg-[#f85149]/10 text-[#f85149] border-[#f85149]' : 'bg-[#050505] text-[#888] border-[#1a1a1a] hover:bg-white/5'}`}>{h}</button>
+                    <button key={h} onClick={() => setNemesisTarget(h)}
+                      className="px-4 py-2 rounded-lg font-mono text-xs transition-colors cursor-pointer border"
+                      style={{
+                        background: nemesisTarget === h ? 'rgba(248,81,73,0.1)' : 'transparent',
+                        color: nemesisTarget === h ? '#f85149' : 'var(--text-muted)',
+                        borderColor: nemesisTarget === h ? '#f85149' : 'var(--border)',
+                      }}>{h}</button>
                   ))}
                 </div>
                 {nemesisTarget && squadData[nemesisTarget] ? (
@@ -520,23 +557,19 @@ export default function Home() {
                     myHandle={config.main} myHistory={squadData[config.main].history} targetHistory={squadData[nemesisTarget].history}
                     myInfo={squadData[config.main].info} targetInfo={squadData[nemesisTarget].info}
                   />
-                ) : <div className="text-center py-20 text-[#888] font-mono">Select a valid squad target to initiate Nemesis protocol.</div>}
+                ) : (
+                  <div className="text-center py-20 font-mono text-sm" style={{ color: 'var(--text-muted)' }}>
+                    Select a squad target to initiate Nemesis protocol.
+                  </div>
+                )}
               </div>
             )}
-            {activeTab === "GRIND" && <GrindMode handle={config.main} />}
-            {activeTab === "TITAN" && <TitanTab myInfo={squadData[config.main]?.info} myRating={squadData[config.main]?.info?.rating || 0} myHandle={config.main} />}
-            {activeTab === "CONTESTS" && mainMetrics && (
-              <ContestTracker handle={config.main} rawSubs={squadData[config.main].rawSubs} />
-            )}
+            {activeTab === "GRIND"    && <GrindMode handle={config.main} />}
+            {activeTab === "TITAN"    && <TitanTab myInfo={squadData[config.main]?.info} myRating={squadData[config.main]?.info?.rating || 0} myHandle={config.main} />}
+            {activeTab === "CONTESTS" && <ContestTracker handle={config.main} rawSubs={squadData[config.main].rawSubs} />}
           </>
         )}
       </main>
-
-      <div className="fixed bottom-0 left-0 right-0 h-7 flex items-center px-8 gap-8 z-50 hidden md:flex" style={{ background: "rgba(3,3,5,0.98)", borderTop: "1px solid #0f0f1a" }}>
-        {[["CF API","#56d364"],["SQUAD SYNC","#56d364"],["NEMESIS ENGINE","#f0a500"],["FORGE MODULE","#58a6ff"]].map(([l, col]) => <StatusLabel key={l} label={l as string} color={col as string} />)}
-        <div className="flex-1" />
-        <div className="font-mono text-[0.55rem] text-[#1a1a2a]">{"<<<"} CODEFORCES SYNTHESIS ENGINE · TACTICAL EDGE {">>>"}</div>
-      </div>
     </div>
   );
 }

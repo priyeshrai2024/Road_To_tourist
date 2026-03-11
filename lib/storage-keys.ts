@@ -24,4 +24,7 @@ export const STORAGE_KEYS = {
 
   /** Contest archive cache (ContestTracker) */
   CONTEST_ARCHIVE:  'cf_contest_archive_v2',
+
+  /** Active UI theme id */
+  THEME:            'cf_theme',
 } as const;
