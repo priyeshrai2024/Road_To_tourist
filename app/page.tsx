@@ -448,17 +448,17 @@ export default function Home() {
                 <div className="text-[0.55rem] tracking-wider text-[#333]">UTC SYSTEM CLOCK</div>
               </div>
               
-              {/* GLOBAL MANUAL SYNC BUTTON */}
+              {/* GLOBAL MANUAL SYNC BUTTON WITH SPINNER */}
               <button 
-                onClick={() => fetchGlobalTelemetry(config.main, config.squad, false)} 
+                onClick={() => fetchGlobalTelemetry(config.main, config.squad, true)} 
                 disabled={isSyncing || loading}
-                className={`bg-[#050505] border border-[#1a1a1a] px-3 py-2 rounded-lg transition-colors font-mono text-sm ${isSyncing || loading ? 'text-[#555] cursor-not-allowed' : 'text-[#888] hover:text-[#56d364] hover:border-[#56d364] cursor-pointer'}`}
+                className={`bg-[#050505] border border-[#1a1a1a] w-10 h-10 rounded-lg transition-colors font-mono text-lg flex items-center justify-center ${isSyncing || loading ? 'text-[#e3b341] cursor-not-allowed' : 'text-[#888] hover:text-[#56d364] hover:border-[#56d364] cursor-pointer'}`}
                 title="Force Global Sync"
               >
-                ↻
+                <span className={isSyncing ? "animate-spin inline-block" : ""}>↻</span>
               </button>
               
-              <button onClick={() => setShowSettings(true)} className="bg-[#050505] border border-[#1a1a1a] text-[#888] px-3 py-2 rounded-lg cursor-pointer transition-colors hover:text-[#f0a500] hover:border-[#f0a500]">⚙️</button>
+              <button onClick={() => setShowSettings(true)} className="bg-[#050505] border border-[#1a1a1a] w-10 h-10 flex items-center justify-center text-[#888] rounded-lg cursor-pointer transition-colors hover:text-[#f0a500] hover:border-[#f0a500] text-lg">⚙</button>
             </div>
           </div>
 
