@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { CF_SCORE_MAP } from "@/lib/constants";
 import { STORAGE_KEYS } from "@/lib/storage-keys";
 
@@ -25,28 +25,16 @@ function fmt(s: number) {
 function fmtMins(s: number) { const h = Math.floor(s/3600), m = Math.floor((s%3600)/60); return h > 0 ? `${h}h ${m}m` : `${m}m`; }
 function getWeekMonday(d: Date) { const day=new Date(d), dow=day.getDay(), diff=dow===0?-6:1-dow; day.setDate(day.getDate()+diff); day.setHours(0,0,0,0); return day; }
 
-// ── Notification System ──────────────────────────────────────────────────────
-function notifyHQ(title: string, body: string) {
-  if (!("Notification" in window)) return;
-  if (Notification.permission === "granted") {
-    new Notification(title, { body, icon: '/icon.jpg' });
-  } else if (Notification.permission !== "denied") {
-    Notification.requestPermission().then(permission => {
-      if (permission === "granted") new Notification(title, { body, icon: '/icon.jpg' });
-    });
-  }
-}
-
-// ── Theme Colors ─────────────────────────────────────────────────────────────
+// ── Theme Colors (CSS custom properties) ────────────────────────────────────
 const theme = {
-  bg:      'var(--bg-base, #1d2021)',
-  surface: 'var(--bg-card, #282828)',
-  sh:      'var(--border, #3c3836)',
-  text:    'var(--text-main, #ebdbb2)',
-  muted:   'var(--text-muted, #a89984)',
-  accent:  'var(--accent, #fabd2f)',
-  stop:    'var(--status-wa, #fb4934)',
-  ok:      'var(--status-ac, #b8bb26)',
+  bg:      'var(--bg-base)',
+  surface: 'var(--bg-card)',
+  sh:      'var(--border)',
+  text:    'var(--text-main)',
+  muted:   'var(--text-muted)',
+  accent:  'var(--accent)',
+  stop:    'var(--status-wa)',
+  ok:      'var(--status-ac)',
 };
 
 // ── Animated flow ring ───────────────────────────────────────────────────────
@@ -105,7 +93,6 @@ export default function GrindMode({ handle }: { handle: string }) {
 
   const timerRef = useRef<NodeJS.Timeout|null>(null);
   const [wrActiveTab, setWrActiveTab] = useState(0);
-  const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
 
   // ── Init ──────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -113,23 +100,7 @@ export default function GrindMode({ handle }: { handle: string }) {
     try { const t = localStorage.getItem(STORAGE_KEYS.GRIND_TASKS); if (t) setTasks(JSON.parse(t)); } catch {}
     try { const tp = localStorage.getItem(STORAGE_KEYS.GRIND_TMR_PLAN); if (tp) setTmrPlan(JSON.parse(tp)); } catch {}
     try { const tg = localStorage.getItem(STORAGE_KEYS.GRIND_TARGET_HRS); if (tg) setTargetHrs(parseInt(tg)); } catch {}
-    
-    // Ask for notification permissions proactively
-    if ("Notification" in window && Notification.permission === "default") {
-      Notification.requestPermission();
-    }
   }, []);
-
-  // ── Smart Notifications Watcher ───────────────────────────────────────────
-  useEffect(() => {
-    if (phase === 'REST' && targetRest > 0 && restSecs === targetRest) {
-      notifyHQ('🔔 Rest Complete', 'Cooldown finished. Ready to resume execution.');
-    }
-    // Notify every hour of continuous flow
-    if (phase === 'FLOW' && workSecs > 0 && workSecs % 3600 === 0) {
-      notifyHQ('⏱ Milestone Reached', `You've been in flow state for ${workSecs / 3600} hour(s). Stay sharp.`);
-    }
-  }, [phase, restSecs, workSecs, targetRest]);
 
   // ── Rogue AC Detection ────────────────────────────────────────────────────
   useEffect(() => {
@@ -175,13 +146,10 @@ export default function GrindMode({ handle }: { handle: string }) {
     if (phase === 'IDLE' || phase === 'INTENT') {
       setSessionStartTS(Date.now() / 1000);
       setWorkSecs(0); setBreakCount(0);
-      notifyHQ('⚡ Protocol Engaged', intent ? `Locked onto target: ${intent}` : 'Focus session initiated.');
-    } else {
-      notifyHQ('⚡ Resuming Execution', 'Back in the flow state.');
     }
     setPhase('FLOW');
     startTick('work');
-  }, [phase, startTick, intent]);
+  }, [phase, startTick]);
 
   const initiateRest = useCallback(() => {
     const rec = Math.max(60, Math.floor(workSecs / 5));
@@ -190,14 +158,9 @@ export default function GrindMode({ handle }: { handle: string }) {
     setBreakCount(b => b + 1);
     setPhase('REST');
     startTick('rest');
-    notifyHQ('⏸ Mandatory Rest', `Cooldown initiated. Taking a ${Math.round(rec/60)} minute breather.`);
   }, [workSecs, startTick]);
 
-  const resumeFlow = useCallback(() => { 
-    setPhase('FLOW'); 
-    startTick('work'); 
-    notifyHQ('⚡ Execution Resumed', 'Back to the grind.');
-  }, [startTick]);
+  const resumeFlow = useCallback(() => { setPhase('FLOW'); startTick('work'); }, [startTick]);
 
   // ── Terminate & extract ───────────────────────────────────────────────────
   const terminate = useCallback(async () => {
@@ -496,7 +459,7 @@ export default function GrindMode({ handle }: { handle: string }) {
           <div className="mt-4 space-y-2 text-left">
             {tasks.filter(t => !t.done).map(t => (
               <div key={t.id} className="flex items-center gap-3 p-3 rounded-lg border border-l-4 transition-colors hover:border-gray-500" style={{ background: 'rgba(0,0,0,0.1)', borderColor: theme.sh, borderLeftColor: t.priority==='high' ? theme.stop : theme.sh }}>
-                <input type="checkbox" onChange={() => saveTasks(tasks.map(x => x.id === t.id ? {...x, done: true} : x))} className="w-4 h-4 cursor-pointer accent-[#b8bb26]" />
+                <input type="checkbox" onChange={() => saveTasks(tasks.map(x => x.id === t.id ? {...x, done: true} : x))} className="w-4 h-4 cursor-pointer accent-green-400" />
                 <span className="text-sm font-medium flex-1">{t.text}</span>
                 {t.estMins && <span className="text-[10px] font-mono px-2 py-1 rounded" style={{ background: 'rgba(255,255,255,0.05)', color: theme.muted }}>~{t.estMins}m</span>}
                 <div className="flex gap-2">
@@ -651,82 +614,25 @@ export default function GrindMode({ handle }: { handle: string }) {
                       {history.length === 0 ? (
                         <tr><td colSpan={5} className="p-8 text-center italic" style={{ color: theme.muted }}>No sessions recorded.</td></tr>
                       ) : history.map(h => (
-                        <React.Fragment key={h.id}>
-                          <tr className="border-t transition-colors hover:bg-white/5 cursor-pointer" style={{ borderColor: theme.sh }} onClick={() => setExpandedSessionId(expandedSessionId === h.id ? null : h.id)}>
-                            <td className="p-4 font-mono text-xs" style={{ color: theme.accent }}>
-                              <div className="flex items-center gap-2">
-                                <span className="text-[10px]">{expandedSessionId === h.id ? '▼' : '▶'}</span>
-                                {new Date(h.startTs * 1000).toLocaleString('en-GB', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'})}
-                              </div>
-                            </td>
-                            <td className="p-4 truncate max-w-[200px]">{h.intent || '—'}</td>
-                            <td className="p-4 text-center" onClick={e => e.stopPropagation()}>
-                              <input type="number" value={h.workMins} onChange={e => {
-                                const v = Number(e.target.value);
-                                setHistory(prev => { const next = prev.map(x => x.id === h.id ? {...x, workMins: v} : x); localStorage.setItem(STORAGE_KEYS.GRIND_SESSIONS, JSON.stringify(next)); return next; });
-                              }} className="w-16 px-2 py-1 rounded outline-none font-mono text-center bg-black/40 border-none transition-colors focus:bg-white/10" style={{ color: theme.text }} />
-                            </td>
-                            <td className="p-4 text-center" onClick={e => e.stopPropagation()}>
-                              <input type="number" min="0" max="5" value={h.flowRating || 0} onChange={e => {
-                                const v = Number(e.target.value);
-                                setHistory(prev => { const next = prev.map(x => x.id === h.id ? {...x, flowRating: v} : x); localStorage.setItem(STORAGE_KEYS.GRIND_SESSIONS, JSON.stringify(next)); return next; });
-                              }} className="w-12 px-2 py-1 rounded outline-none font-mono text-center bg-black/40 border-none transition-colors focus:bg-white/10" style={{ color: theme.text }} />
-                            </td>
-                            <td className="p-4 text-center" onClick={e => e.stopPropagation()}>
-                              <button onClick={() => { const next = history.filter(x => x.id !== h.id); saveHistory(next); }} className="text-xs font-bold uppercase cursor-pointer bg-transparent border-none hover:text-red-400 transition-colors" style={{ color: theme.muted }}>Del</button>
-                            </td>
-                          </tr>
-                          
-                          {/* EXPANDED TELEMETRY ROW */}
-                          {expandedSessionId === h.id && (
-                            <tr style={{ background: 'rgba(0,0,0,0.3)' }}>
-                              <td colSpan={5} className="p-6 border-b" style={{ borderColor: theme.sh }}>
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
-                                  <div className="p-3 rounded border" style={{ background: 'rgba(0,0,0,0.2)', borderColor: 'rgba(255,255,255,0.05)' }}>
-                                    <div className="text-[9px] uppercase tracking-widest mb-1" style={{ color: theme.muted }}>Total XP Earned</div>
-                                    <div className="font-mono text-xl font-bold" style={{ color: '#58a6ff' }}>{h.pointsEarned}</div>
-                                  </div>
-                                  <div className="p-3 rounded border" style={{ background: 'rgba(0,0,0,0.2)', borderColor: 'rgba(255,255,255,0.05)' }}>
-                                    <div className="text-[9px] uppercase tracking-widest mb-1" style={{ color: theme.muted }}>Avg XP / Problem</div>
-                                    <div className="font-mono text-xl font-bold" style={{ color: '#58a6ff' }}>{h.problemsSolved > 0 ? (h.pointsEarned / h.problemsSolved).toFixed(1) : 0}</div>
-                                  </div>
-                                  <div className="p-3 rounded border" style={{ background: 'rgba(0,0,0,0.2)', borderColor: 'rgba(255,255,255,0.05)' }}>
-                                    <div className="text-[9px] uppercase tracking-widest mb-1" style={{ color: theme.muted }}>XP / Minute (Efficiency)</div>
-                                    <div className="font-mono text-xl font-bold" style={{ color: theme.accent }}>{h.workMins > 0 ? (h.pointsEarned / h.workMins).toFixed(2) : 0}</div>
-                                  </div>
-                                  <div className="p-3 rounded border" style={{ background: 'rgba(0,0,0,0.2)', borderColor: 'rgba(255,255,255,0.05)' }}>
-                                    <div className="text-[9px] uppercase tracking-widest mb-1" style={{ color: theme.muted }}>Avg Time / Problem</div>
-                                    <div className="font-mono text-xl font-bold" style={{ color: theme.text }}>{fmt(h.avgTimeSecs)}</div>
-                                  </div>
-                                </div>
-                                
-                                <div className="flex items-center gap-6 mb-4 text-xs" style={{ color: theme.muted }}>
-                                  <div><span className="font-bold" style={{ color: theme.text }}>Type:</span> {h.type}</div>
-                                  <div><span className="font-bold" style={{ color: theme.text }}>Breaks Taken:</span> {h.breakCount || 0}</div>
-                                  {h.plannedMins && <div><span className="font-bold" style={{ color: theme.text }}>Planned Mins:</span> {h.plannedMins}m</div>}
-                                </div>
-
-                                {h.details && h.details.length > 0 && (
-                                  <div>
-                                    <div className="text-[10px] font-bold uppercase tracking-[2px] mb-2" style={{ color: theme.ok }}>Problems Solved ({h.problemsSolved})</div>
-                                    <div className="space-y-1.5 bg-black/40 p-3 rounded-lg border border-white/5">
-                                      {h.details.map((d, i) => (
-                                        <div key={i} className="flex justify-between items-center text-xs p-1.5 rounded transition-colors hover:bg-white/5">
-                                          <a href={`https://codeforces.com/contest/${d.pid.split('-')[0]}/problem/${d.pid.split('-')[1]}`} target="_blank" rel="noreferrer" className="font-mono w-16 hover:underline" style={{ color: '#58a6ff' }}>
-                                            {d.pid}
-                                          </a>
-                                          <span className="flex-1 truncate mx-3 font-medium" style={{ color: theme.text }}>{d.name}</span>
-                                          <span className="w-16 text-right font-mono" style={{ color: theme.accent }}>★ {d.rating}</span>
-                                          <span className="font-mono w-16 text-right" style={{ color: theme.muted }}>{fmt(d.timeTakenSecs)}</span>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-                              </td>
-                            </tr>
-                          )}
-                        </React.Fragment>
+                        <tr key={h.id} className="border-t transition-colors hover:bg-white/5" style={{ borderColor: theme.sh }}>
+                          <td className="p-4 font-mono text-xs">{new Date(h.startTs * 1000).toLocaleString('en-GB', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'})}</td>
+                          <td className="p-4 truncate max-w-[200px]">{h.intent || '—'}</td>
+                          <td className="p-4 text-center">
+                            <input type="number" value={h.workMins} onChange={e => {
+                              const v = Number(e.target.value);
+                              setHistory(prev => { const next = prev.map(x => x.id === h.id ? {...x, workMins: v} : x); localStorage.setItem(STORAGE_KEYS.GRIND_SESSIONS, JSON.stringify(next)); return next; });
+                            }} className="w-16 px-2 py-1 rounded outline-none font-mono text-center bg-black/40 border-none" style={{ color: theme.text }} />
+                          </td>
+                          <td className="p-4 text-center">
+                            <input type="number" min="0" max="5" value={h.flowRating || 0} onChange={e => {
+                              const v = Number(e.target.value);
+                              setHistory(prev => { const next = prev.map(x => x.id === h.id ? {...x, flowRating: v} : x); localStorage.setItem(STORAGE_KEYS.GRIND_SESSIONS, JSON.stringify(next)); return next; });
+                            }} className="w-12 px-2 py-1 rounded outline-none font-mono text-center bg-black/40 border-none" style={{ color: theme.text }} />
+                          </td>
+                          <td className="p-4 text-center">
+                            <button onClick={() => { const next = history.filter(x => x.id !== h.id); saveHistory(next); }} className="text-xs font-bold uppercase cursor-pointer bg-transparent border-none hover:text-red-400 transition-colors" style={{ color: theme.muted }}>Del</button>
+                          </td>
+                        </tr>
                       ))}
                     </tbody>
                   </table>

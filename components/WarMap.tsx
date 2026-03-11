@@ -2,6 +2,18 @@
 
 import React, { useRef, useState, useMemo, MouseEvent as ReactMouseEvent } from 'react';
 
+// ─── THEME PALETTE (ROYAL ACADEMIC) ───────────────────────────────────────────
+const theme = {
+  bg:      '#0b090a',       // Deep obsidian
+  surface: '#151314',       // Dark charcoal velvet
+  sh:      'rgba(212, 175, 55, 0.15)', // Tarnished gold border
+  text:    '#f0e6d2',       // Ivory/Parchment
+  muted:   '#9c8973',       // Antique gold
+  accent:  '#d4af37',       // Royal Gold
+  stop:    '#8b0000',       // Crimson
+  ok:      '#2e8b57',       // Emerald
+};
+
 // ─── NODE DEFINITIONS ─────────────────────────────────────────────────────────
 export const T_NODES: Record<string, any> = {
   impl:        { id:'impl',        label:'Implementation / Sims',      tag:'implementation',            x:3000, y:2500, parent:null },
@@ -128,14 +140,14 @@ function getLevel(xp: number) {
   return lv;
 }
 
-// ─── ARCHITECTURE ─────────────────────────────────────────────────────────────
+// ─── ARCHITECTURE (ROYAL UPGRADE) ─────────────────────────────────────────────
 const ARCH_TIERS = [
-  { minLv:6, minR:2200, color:'#f85149', name:'LEGENDARY',  shadow:'0 0 30px rgba(248,81,73,0.55)',  border:'#f85149', bg:'rgba(248,81,73,0.08)' },
-  { minLv:5, minR:1900, color:'#e3b341', name:'CITADEL',    shadow:'0 0 20px rgba(227,179,65,0.45)', border:'#e3b341', bg:'rgba(227,179,65,0.08)' },
-  { minLv:4, minR:1500, color:'#d2a8ff', name:'FORTRESS',   shadow:'0 0 14px rgba(210,168,255,0.35)',border:'#d2a8ff', bg:'rgba(210,168,255,0.06)' },
-  { minLv:3, minR:1300, color:'#58a6ff', name:'KEEP',       shadow:'',                               border:'#58a6ff', bg:'rgba(88,166,255,0.06)' },
-  { minLv:2, minR:1100, color:'#56d364', name:'SETTLEMENT', shadow:'',                               border:'#56d364', bg:'rgba(86,211,100,0.06)' },
-  { minLv:1, minR:800,  color:'#8b949e', name:'OUTPOST',    shadow:'',                               border:'#8b949e', bg:'rgba(139,148,158,0.04)' },
+  { minLv:6, minR:2200, color:'#dc143c', name:'LEGENDARY',  shadow:'0 0 40px rgba(220, 20, 60, 0.6)', border:'#dc143c', bg:'rgba(220, 20, 60, 0.1)' },
+  { minLv:5, minR:1900, color:'#d4af37', name:'CITADEL',    shadow:'0 0 30px rgba(212, 175, 55, 0.5)', border:'#d4af37', bg:'rgba(212, 175, 55, 0.1)' },
+  { minLv:4, minR:1500, color:'#9932cc', name:'FORTRESS',   shadow:'0 0 20px rgba(153, 50, 204, 0.4)', border:'#9932cc', bg:'rgba(153, 50, 204, 0.1)' },
+  { minLv:3, minR:1300, color:'#4169e1', name:'KEEP',       shadow:'0 0 15px rgba(65, 105, 225, 0.3)', border:'#4169e1', bg:'rgba(65, 105, 225, 0.08)' },
+  { minLv:2, minR:1100, color:'#2e8b57', name:'SETTLEMENT', shadow:'0 0 10px rgba(46, 139, 87, 0.2)',  border:'#2e8b57', bg:'rgba(46, 139, 87, 0.06)' },
+  { minLv:1, minR:800,  color:'#a89984', name:'OUTPOST',    shadow:'',                                 border:'#a89984', bg:'rgba(168, 153, 132, 0.05)' },
 ];
 
 function getArch(lv: number, maxR: number) {
@@ -145,7 +157,7 @@ function getArch(lv: number, maxR: number) {
   return null;
 }
 
-// ─── GARRISON ─────────────────────────────────────────────────────────────────
+// ─── GARRISON (LORE UPGRADE) ──────────────────────────────────────────────────
 type Garrison = 'RUINS'|'REBELLION'|'CRUMBLING'|'FORTIFIED'|'HOLDING'|'SCOUTED'|'OCCUPIED';
 
 function getGarrison(lv: number, netXp: number, grossXp: number, solved: number, failed: number, lastAcDays: number): Garrison {
@@ -163,14 +175,14 @@ function getGarrison(lv: number, netXp: number, grossXp: number, solved: number,
   return 'OCCUPIED';
 }
 
-const G_META: Record<Garrison, { label: string; color: string }> = {
-  RUINS:     { label:'💀 RUINS',     color:'#8b0000' },
-  REBELLION: { label:'🔴 REBELLION', color:'#db6d28' },
-  CRUMBLING: { label:'🟠 CRUMBLING', color:'#e3b341' },
-  FORTIFIED: { label:'🟢 FORTIFIED', color:'#56d364' },
-  HOLDING:   { label:'🟡 HOLDING',   color:'#e3b341' },
-  SCOUTED:   { label:'⚪ SCOUTED',   color:'#444' },
-  OCCUPIED:  { label:'',             color:'' },
+const G_META: Record<Garrison, { label: string; color: string; bg: string }> = {
+  RUINS:     { label:'🏚️ FALLEN',     color:'#8b0000', bg:'#1a0505' },
+  REBELLION: { label:'⚔️ REBELLION', color:'#dc143c', bg:'#2a0808' },
+  CRUMBLING: { label:'⚖️ CRUMBLING', color:'#d4af37', bg:'#2a2008' },
+  FORTIFIED: { label:'🛡️ FORTIFIED', color:'#2e8b57', bg:'#081f12' },
+  HOLDING:   { label:'⚜️ HOLDING',   color:'#4169e1', bg:'#0a122a' },
+  SCOUTED:   { label:'📜 SCOUTED',   color:'#9c8973', bg:'#1c1a17' },
+  OCCUPIED:  { label:'',             color:'',        bg:'' },
 };
 
 // ─── COMPONENT ────────────────────────────────────────────────────────────────
@@ -262,83 +274,142 @@ export default function WarMap({ subs }: { subs: any[] }) {
 
   return (
     <div ref={containerRef}
-      className="relative w-full h-[800px] bg-black border border-[#30363d] rounded-xl overflow-hidden cursor-grab active:cursor-grabbing shadow-[inset_0_0_120px_rgba(0,0,0,1)] select-none"
+      className="relative w-full h-[800px] rounded-xl overflow-hidden cursor-grab active:cursor-grabbing select-none"
+      style={{ background: theme.bg, border: `1px solid ${theme.sh}`, boxShadow: 'inset 0 0 150px rgba(0,0,0,0.9)' }}
       onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp} onWheel={onWheel}
     >
-      {/* Vignette */}
-      <div className="absolute inset-0 pointer-events-none z-40 bg-[radial-gradient(circle_at_center,transparent_30%,rgba(0,0,0,0.85)_100%)]" />
+      <style>{`
+        .royal-serif { font-family: 'Georgia', 'Times New Roman', serif; }
+        @keyframes pulse-rebellion { 0% { box-shadow: 0 0 10px rgba(220, 20, 60, 0.4); } 50% { box-shadow: 0 0 25px rgba(220, 20, 60, 0.8); } 100% { box-shadow: 0 0 10px rgba(220, 20, 60, 0.4); } }
+      `}</style>
 
-      {/* Zoom controls */}
-      <div className="absolute top-4 right-4 z-50 flex flex-col gap-2 no-drag">
+      {/* Vignette Shadow */}
+      <div className="absolute inset-0 pointer-events-none z-40 bg-[radial-gradient(circle_at_center,transparent_20%,rgba(10,9,10,0.95)_100%)]" />
+
+      {/* Brass Zoom Controls */}
+      <div className="absolute top-6 right-6 z-50 flex flex-col gap-3 no-drag">
         {(['+', '−', '⌂'] as const).map((lbl) => (
           <button key={lbl} onClick={() => {
             if (lbl === '+') setScale(s => Math.min(s + 0.2, 3.0));
             else if (lbl === '−') setScale(s => Math.max(s - 0.2, 0.2));
             else { setScale(1); setPan({ x: -2300, y: -2100 }); }
-          }} className="w-10 h-10 bg-[#0d1117]/90 border border-[#30363d] text-white rounded hover:bg-[#e3b341] hover:text-black transition-colors shadow-lg text-xl no-drag">{lbl}</button>
+          }} 
+          className="w-10 h-10 flex items-center justify-center rounded transition-all shadow-xl no-drag royal-serif text-xl"
+          style={{ 
+            background: 'linear-gradient(145deg, rgba(30,28,29,0.9), rgba(15,13,14,0.9))',
+            border: `1px solid ${theme.sh}`,
+            color: theme.accent
+          }}
+          onMouseOver={(e) => { e.currentTarget.style.background = theme.accent; e.currentTarget.style.color = theme.bg; }}
+          onMouseOut={(e) => { e.currentTarget.style.background = 'linear-gradient(145deg, rgba(30,28,29,0.9), rgba(15,13,14,0.9))'; e.currentTarget.style.color = theme.accent; }}
+          >
+            {lbl}
+          </button>
         ))}
       </div>
 
-      {/* Legend */}
-      <div className="absolute bottom-4 left-4 z-50 bg-[#0d1117]/95 border border-[#30363d] p-4 rounded-xl font-mono text-[10px] text-[#8b949e] no-drag backdrop-blur-md w-[210px]">
-        <div className="text-[#e3b341] font-bold text-xs mb-2">⚔ Architecture</div>
+      {/* Cartographer's Key (Legend) */}
+      <div className="absolute bottom-6 left-6 z-50 p-5 rounded-xl no-drag w-[240px]"
+           style={{ 
+             background: 'linear-gradient(135deg, rgba(21,19,20,0.95) 0%, rgba(10,9,10,0.98) 100%)', 
+             border: `1px solid ${theme.sh}`,
+             boxShadow: '0 10px 30px rgba(0,0,0,0.8), inset 0 0 20px rgba(212, 175, 55, 0.05)',
+             backdropFilter: 'blur(10px)'
+           }}>
+        
+        <div className="royal-serif text-center uppercase tracking-widest text-[11px] mb-4 pb-2 border-b" style={{ color: theme.accent, borderColor: theme.sh }}>
+          Cartographer's Key
+        </div>
+
+        <div className="text-[9px] uppercase tracking-widest mb-2" style={{ color: theme.muted }}>⚜️ Architecture Tiers</div>
         {ARCH_TIERS.map(a => (
-          <div key={a.name} className="flex items-center gap-2 mb-1.5">
-            <div className="w-3 h-3 rounded-sm flex-shrink-0" style={{ border: `1px solid ${a.color}`, background: a.bg }} />
+          <div key={a.name} className="flex items-center gap-3 mb-2 font-mono text-[10px]">
+            <div className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ border: `1px solid ${a.color}`, background: a.bg, boxShadow: `0 0 5px ${a.color}` }} />
             <span style={{ color: a.color }}>{a.name}</span>
-            <span className="text-[#333] ml-auto text-[9px]">Lv{a.minLv}+{a.minR}+</span>
+            <span className="ml-auto opacity-50 text-[9px]" style={{ color: theme.text }}>Lv{a.minLv} / R{a.minR}+</span>
           </div>
         ))}
-        <div className="border-t border-[#21262d] my-2" />
-        <div className="text-[#e3b341] font-bold text-xs mb-2">🏴 Garrison</div>
+
+        <div className="border-t my-3" style={{ borderColor: 'rgba(212, 175, 55, 0.1)' }} />
+        
+        <div className="text-[9px] uppercase tracking-widest mb-2" style={{ color: theme.muted }}>🏴 Territory States</div>
         {(['RUINS','REBELLION','CRUMBLING','FORTIFIED','HOLDING'] as Garrison[]).map(g => (
-          <div key={g} className="flex items-center gap-2 mb-1">
-            <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: G_META[g].color }} />
+          <div key={g} className="flex items-center gap-3 mb-1.5 font-mono text-[9px]">
+            <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: G_META[g].color, boxShadow: `0 0 4px ${G_META[g].color}` }} />
             <span style={{ color: G_META[g].color }}>{G_META[g].label}</span>
           </div>
         ))}
-        <div className="border-t border-[#21262d] my-2" />
-        <div className="text-[#e3b341] font-bold text-xs mb-1.5">📉 XP Decay</div>
-        {[['0–30d','100%','#56d364'],['30–90d','70%','#e3b341'],['90–180d','40%','#db6d28'],['180d+','15%','#f85149']].map(([d,p,c])=>(
-          <div key={d} className="flex justify-between mb-1"><span>{d}</span><span style={{color:c}}>{p}</span></div>
+
+        <div className="border-t my-3" style={{ borderColor: 'rgba(212, 175, 55, 0.1)' }} />
+        
+        <div className="text-[9px] uppercase tracking-widest mb-1.5" style={{ color: theme.muted }}>⏳ Attrition Rules</div>
+        {[['0–30d','100%','#2e8b57'],['30–90d','70%','#d4af37'],['90–180d','40%','#dc143c'],['180d+','15%','#8b0000']].map(([d,p,c])=>(
+          <div key={d} className="flex justify-between mb-1 font-mono text-[9px]" style={{ color: theme.text }}>
+            <span>{d}</span><span style={{color:c, fontWeight: 'bold'}}>{p}</span>
+          </div>
         ))}
-        <div className="text-[#333] text-[9px] mt-2">WA: −30% pts per unique unsolved fail</div>
+        <div className="text-[8px] mt-2 font-mono text-center opacity-60" style={{ color: theme.text }}>
+          Failed Incursions: −30% XP
+        </div>
       </div>
 
-      {/* Canvas */}
-      <div className="absolute origin-top-left" style={{
+      {/* The War Table Canvas */}
+      <div className="absolute origin-top-left transition-transform duration-75" style={{
         width:6000, height:5000,
         transform:`matrix(${scale},0,0,${scale},${pan.x},${pan.y})`,
         willChange:'transform',
-        backgroundImage:'linear-gradient(rgba(48,54,61,0.1) 1px,transparent 1px),linear-gradient(90deg,rgba(48,54,61,0.1) 1px,transparent 1px)',
+        backgroundImage:`linear-gradient(${theme.sh} 1px, transparent 1px), linear-gradient(90deg, ${theme.sh} 1px, transparent 1px)`,
         backgroundSize:'100px 100px',
       }}>
-        {/* Zone labels */}
-        {([[2400,2800,'Implementation & Logic'],[1400,4200,'Math & Combinatorics'],[3600,2400,'Graphs & Trees'],[1400,1600,'Data Vaults']] as [number,number,string][]).map(([t,l,txt])=>(
-          <div key={txt} className="absolute font-mono font-black uppercase text-white/[0.025] pointer-events-none text-6xl tracking-[16px]" style={{top:t,left:l}}>{txt}</div>
+        
+        {/* Giant Watermark Zone Labels */}
+        {([[2400,2800,'Implementation & Tactics'],[1400,4200,'Math & Combinatorics'],[3600,2400,'Networks & Trees'],[1400,1600,'Data Vaults']] as [number,number,string][]).map(([t,l,txt])=>(
+          <div key={txt} className="absolute royal-serif font-black uppercase pointer-events-none text-7xl tracking-[24px]" 
+               style={{ top:t, left:l, color: 'rgba(212, 175, 55, 0.03)', textShadow: '0 2px 10px rgba(0,0,0,0.5)' }}>
+            {txt}
+          </div>
         ))}
 
-        {/* Edges */}
+        {/* Glowing Supply Lines (Edges) */}
         <svg className="absolute inset-0 w-full h-full pointer-events-none z-10 overflow-visible">
           {mapNodes.map(n => {
             if (!n.parent || !T_NODES[n.parent]) return null;
             const p = T_NODES[n.parent];
             const pSt = mapState[p.id], nSt = mapState[n.id];
             if (!pSt?.isRevealed || !nSt?.isRevealed) return null;
+            
             const active = pSt.lv > 0 && nSt.lv > 0;
             const sx=p.x+95, sy=p.y+35, ex=n.x+95, ey=n.y+35;
-            const color = active ? ((nSt.arch?.color ?? '#58a6ff') + '77') : 'rgba(48,54,61,0.25)';
+            
+            // Determine path color and style based on state
+            let color = 'rgba(156, 137, 115, 0.15)'; // Default faint bronze
+            let strokeWidth = 1.5;
+            let dash = '6 8';
+            
+            if (active) {
+              if (nSt.garrison === 'RUINS' || nSt.garrison === 'CRUMBLING') {
+                color = 'rgba(139, 0, 0, 0.6)'; // Broken red supply line
+                dash = '4 6';
+              } else {
+                color = 'rgba(212, 175, 55, 0.6)'; // Glowing gold supply line
+                strokeWidth = 2.5;
+                dash = '';
+              }
+            }
+
             return (
               <path key={`e-${n.id}`}
                 d={`M ${sx} ${sy} Q ${(sx+ex)/2} ${(sy+ey)/2-80} ${ex} ${ey}`}
-                stroke={color} strokeWidth={active ? 2.5 : 1.5}
-                strokeDasharray={active ? (nSt.garrison==='RUINS'?'4 4':'') : '6 6'}
-                fill="none" />
+                stroke={color} strokeWidth={strokeWidth}
+                strokeDasharray={dash}
+                fill="none" 
+                style={{ filter: active && nSt.garrison !== 'RUINS' ? `drop-shadow(0 0 5px ${color})` : 'none' }}
+              />
             );
           })}
         </svg>
 
-        {/* Nodes */}
+        {/* Territory Nodes (Plaques) */}
         {mapNodes.map(n => {
           const st = mapState[n.id];
           if (!st?.isRevealed) return null;
@@ -346,89 +417,104 @@ export default function WarMap({ subs }: { subs: any[] }) {
           const isScouted = st.lv === 0;
           const arch = st.arch;
           const gMeta = G_META[st.garrison as Garrison];
+          
           const netXpClamped = Math.max(0, st.netXp);
           const curLv = LEVELS[st.lv];
           const nextLv = LEVELS[Math.min(st.lv + 1, 6)];
           const bandSize = nextLv.xp - curLv.xp;
           const xpPct = st.lv >= 6 ? 100 : Math.min(100, ((netXpClamped - curLv.xp) / bandSize) * 100);
+          
           const decayLoss = st.grossXp - netXpClamped - st.penaltyXp;
           const showDecayWarn = st.grossXp > 0 && decayLoss / st.grossXp > 0.2;
 
-          const borderColor = isScouted ? '#21262d' : (arch?.border ?? '#21262d');
-          const bgColor = isScouted ? 'transparent' : (arch?.bg ?? 'transparent');
+          // Plaque Styling
+          const borderColor = isScouted ? theme.sh : (arch?.border ?? theme.sh);
+          const bgColor = isScouted ? 'transparent' : `linear-gradient(145deg, ${theme.surface} 0%, #0a090a 100%)`;
           const boxShadow = [
-            '0 4px 15px rgba(0,0,0,0.8)',
+            '0 8px 25px rgba(0,0,0,0.9)',
             arch?.shadow ?? '',
-            st.garrison === 'REBELLION' ? '0 0 18px rgba(219,109,40,0.45)' : '',
-            st.garrison === 'CRUMBLING' ? '0 0 12px rgba(227,179,65,0.3)' : '',
-            st.garrison === 'FORTIFIED' ? '0 0 20px rgba(86,211,100,0.4)' : '',
-            st.garrison === 'RUINS'     ? '0 0 15px rgba(139,0,0,0.5)' : '',
+            !isScouted ? `inset 0 1px 0 rgba(255,255,255,0.05), inset 0 0 15px ${arch?.bg ?? 'transparent'}` : ''
           ].filter(Boolean).join(', ');
+
+          const isRebellion = st.garrison === 'REBELLION';
 
           return (
             <div key={n.id}
-              className="absolute w-[195px] rounded-xl z-20 flex flex-col transition-all hover:scale-110 hover:z-50 border-2"
+              className="absolute w-[195px] rounded-sm z-20 flex flex-col transition-all duration-300 hover:scale-[1.15] hover:z-50 border group"
               style={{
                 left:n.x, top:n.y,
                 borderColor,
                 background: st.garrison === 'RUINS'
-                  ? 'repeating-linear-gradient(45deg,#0d0505,#0d0505 8px,#120303 8px,#120303 16px)'
+                  ? 'repeating-linear-gradient(45deg, #0d0505, #0d0505 8px, #1a0808 8px, #1a0808 16px)'
                   : bgColor,
                 boxShadow,
-                opacity: isScouted ? 0.3 : 1,
+                opacity: isScouted ? 0.4 : 1,
                 borderStyle: isScouted ? 'dashed' : 'solid',
+                animation: isRebellion ? 'pulse-rebellion 3s infinite' : 'none'
               }}
             >
-              {/* Garrison badge */}
+              {/* Corner Accents for non-scouted */}
+              {!isScouted && (
+                <>
+                  <div className="absolute top-0 left-0 w-1.5 h-1.5 border-t border-l" style={{ borderColor: arch?.color }} />
+                  <div className="absolute top-0 right-0 w-1.5 h-1.5 border-t border-r" style={{ borderColor: arch?.color }} />
+                  <div className="absolute bottom-0 left-0 w-1.5 h-1.5 border-b border-l" style={{ borderColor: arch?.color }} />
+                  <div className="absolute bottom-0 right-0 w-1.5 h-1.5 border-b border-r" style={{ borderColor: arch?.color }} />
+                </>
+              )}
+
+              {/* Garrison Seal */}
               {st.garrison !== 'OCCUPIED' && st.garrison !== 'SCOUTED' && gMeta.label && (
-                <div className="absolute -top-3 left-1/2 -translate-x-1/2 whitespace-nowrap text-[9px] font-bold px-2 py-0.5 rounded z-10 text-black font-mono"
-                  style={{ background: gMeta.color }}>
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2 whitespace-nowrap text-[9px] font-bold px-2 py-0.5 rounded shadow-lg z-10 font-mono tracking-widest border"
+                  style={{ background: gMeta.bg, color: gMeta.color, borderColor: gMeta.color }}>
                   {gMeta.label}
                 </div>
               )}
 
-              <div className="p-3 flex flex-col gap-1.5">
+              <div className="p-3 flex flex-col gap-2 relative z-10">
                 {/* Level chip */}
                 <div className="flex items-center">
                   {!isScouted && arch ? (
-                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded font-mono"
-                      style={{ background:`${arch.color}18`, color:arch.color, border:`1px solid ${arch.color}33` }}>
+                    <span className="text-[8px] font-bold px-1.5 py-0.5 font-mono uppercase tracking-widest"
+                      style={{ color: arch.color, borderBottom: `1px solid ${arch.color}55` }}>
                       LV{st.lv} {st.lvName}
                     </span>
                   ) : (
-                    <span className="text-[9px] text-[#333] font-mono">LV0 SCOUTED</span>
+                    <span className="text-[8px] text-[#555] font-mono tracking-widest uppercase border-b border-[#333]">LV0 UNCHARTED</span>
                   )}
                 </div>
 
-                {/* Label */}
-                <div className={`font-bold text-[12px] leading-tight ${isScouted ? 'text-[#2a2a2a]' : 'text-white'}`}>
-                  {isScouted ? '???' : n.label}
+                {/* Territory Label */}
+                <div className={`royal-serif font-bold text-[13px] leading-snug tracking-wide ${isScouted ? 'text-[#555]' : 'text-[#f0e6d2]'}`} style={{ textShadow: !isScouted ? '0 2px 4px rgba(0,0,0,0.8)' : 'none' }}>
+                  {isScouted ? 'Terra Incognita' : n.label}
                 </div>
 
                 {!isScouted && (
                   <>
-                    {/* XP bar */}
-                    <div className="mt-0.5">
-                      <div className="flex justify-between text-[9px] font-mono mb-1" style={{ color: arch?.color ?? '#555' }}>
+                    {/* XP Progress (Gold Fill) */}
+                    <div className="mt-1">
+                      <div className="flex justify-between text-[8px] font-mono mb-1 tracking-wider" style={{ color: arch?.color ?? theme.muted }}>
                         <span>{Math.floor(netXpClamped).toLocaleString()} XP</span>
-                        <span>{st.lv < 6 ? `→ ${nextLv.xp.toLocaleString()}` : 'MAX'}</span>
+                        <span>{st.lv < 6 ? `→ ${nextLv.xp.toLocaleString()}` : 'MAXIMUM'}</span>
                       </div>
-                      <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,255,255,0.05)' }}>
-                        <div className="h-full rounded-full" style={{ width:`${xpPct}%`, background: arch?.color ?? '#555', transition:'width 0.3s' }} />
+                      <div className="w-full h-1 bg-[#0a090a] border" style={{ borderColor: 'rgba(212, 175, 55, 0.2)' }}>
+                        <div className="h-full relative overflow-hidden" style={{ width:`${xpPct}%`, background: arch?.color ?? theme.muted, transition:'width 0.5s ease-out', boxShadow: `0 0 8px ${arch?.color}` }}>
+                           <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent w-[200%] animate-[translateX_2s_infinite]" />
+                        </div>
                       </div>
                     </div>
 
-                    {/* Stats */}
-                    <div className="flex justify-between text-[9px] font-mono border-t pt-1.5 mt-0.5" style={{ borderColor:'rgba(255,255,255,0.05)', color:'#555' }}>
-                      <span style={{ color:'#56d364' }}>AC {st.acPids.size}</span>
-                      <span style={{ color: st.failPids.size > st.acPids.size ? '#f85149' : '#8b949e' }}>WA {st.failPids.size}</span>
-                      <span style={{ color:'#8b949e' }}>R {st.maxR || '—'}</span>
+                    {/* Stats Ledger */}
+                    <div className="flex justify-between text-[9px] font-mono border-t pt-2 mt-1 bg-black/20 -mx-1 px-1 rounded" style={{ borderColor:'rgba(212, 175, 55, 0.1)' }}>
+                      <span style={{ color: theme.ok }}>AC:{st.acPids.size}</span>
+                      <span style={{ color: st.failPids.size > st.acPids.size ? theme.stop : theme.muted }}>WA:{st.failPids.size}</span>
+                      <span style={{ color: theme.accent }}>R:{st.maxR || '—'}</span>
                     </div>
 
                     {/* Decay warning */}
                     {showDecayWarn && (
-                      <div className="text-[8px] font-mono" style={{ color:'#e3b341', opacity:0.7 }}>
-                        ⚠ −{Math.floor(decayLoss).toLocaleString()} XP decayed
+                      <div className="text-[8px] font-mono tracking-widest text-center mt-1" style={{ color: theme.muted }}>
+                        ⚠ −{Math.floor(decayLoss).toLocaleString()} XP ATTRITION
                       </div>
                     )}
                   </>
