@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { VerdictChart, TagsRadarChart, TacticalBarChart, ResourceScatterChart, TimeToSolveChart, StressBarChart, RatingLineChart, ActivityHeatmap, ChronotypeChart } from "@/components/Charts";
 import WarMap, { T_NODES } from "@/components/WarMap";
 import SettingsModal from "@/components/SettingsModal";
 import Armory, { BadgeDef } from "@/components/Armory";
@@ -12,12 +11,11 @@ import CommandTab from "@/components/CommandTab";
 import SquadOpsTab from "@/components/SquadOpsTab";
 import TitanTab from "@/components/TitanTab";
 import ContestTracker from "@/components/ContestTracker";
-import { Line, Bar, Radar } from 'react-chartjs-2';
 import { CF_SCORE_MAP, SQUAD_COLORS } from "@/lib/constants";
 import { computeBadges } from "@/lib/badges";
 import type { CFSubmission, CFInfo, CFRating, ProcessedMetrics, SquadMemberData } from "@/lib/types";
 
-// ─── CONSTANTS & TYPES imported from @/lib/constants and @/lib/types ──────────
+// ─── CONSTANTS ────────────────────────────────────────────────────────
 const TABS = ["COMMAND", "WAR MAP", "ARMORY", "SQUAD OPS", "NEMESIS", "GRIND", "TITAN", "CONTESTS"];
 const TAB_COLORS: Record<string, string> = { COMMAND: "#f0a500", "WAR MAP": "#56d364", ARMORY: "#e879f9", "SQUAD OPS": "#58a6ff", NEMESIS: "#f85149", GRIND: "#f85149", TITAN: "#f85149", CONTESTS: "#e3b341" };
 
@@ -140,10 +138,6 @@ function GlowPulse({ color = "#f0a500" }) {
   return <span className="inline-block w-2 h-2 rounded-full animate-[pulse_1.5s_ease-in-out_infinite]" style={{ background: color, boxShadow: `0 0 6px ${color}, 0 0 12px ${color}` }} />;
 }
 
-function TopLine({ color }: { color: string }) {
-  return <div className="absolute top-0 left-0 right-0 h-px" style={{ background: `linear-gradient(90deg, transparent, ${color}, transparent)` }} />;
-}
-
 function StatusLabel({ label, color, icon }: { label: string, color: string, icon?: string }) {
   return (
     <div className="flex items-center gap-1.5 font-mono text-[0.6rem] uppercase tracking-widest" style={{ color }}>
@@ -154,74 +148,124 @@ function StatusLabel({ label, color, icon }: { label: string, color: string, ico
   );
 }
 
-function StatCard({ label, value, sub, color = "#f0a500", icon }: any) {
-  return (
-    <div className="relative overflow-hidden rounded-2xl p-5 transition-transform hover:-translate-y-1" style={{ background: "linear-gradient(135deg, rgba(255,255,255,0.03) 0%, rgba(0,0,0,0.2) 100%)", border: `1px solid ${color}33`, boxShadow: `0 0 24px ${color}15, inset 0 1px 0 rgba(255,255,255,0.05)` }}>
-      <TopLine color={color} />
-      <div className="text-2xl mb-1">{icon}</div>
-      <div className="font-mono text-3xl font-black leading-none" style={{ color, letterSpacing: "-0.5px" }}>{value}</div>
-      <div className="font-mono text-[0.62rem] uppercase tracking-[2px] mt-1.5" style={{ color: "#666" }}>{label}</div>
-      {sub && <div className="font-mono text-[0.72rem] mt-0.5" style={{ color: "#888" }}>{sub}</div>}
-    </div>
-  );
-}
-
-
-// ─── TAB COMPONENTS imported from @/components/CommandTab, SquadOpsTab, TitanTab ──
 
 // ─── ROOT COMPONENT ───────────────────────────────────────────────────────────
 export default function Home() {
   const [handle, setHandle] = useState("");
   const [squadData, setSquadData] = useState<Record<string, any>>({});
+  
+  // App States
   const [loading, setLoading] = useState(false);
   const [loadingMsg, setLoadingMsg] = useState("");
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [updateToast, setUpdateToast] = useState(false);
+  
   const [activeTab, setActiveTab] = useState("COMMAND");
   const [nemesisTarget, setNemesisTarget] = useState("");
   const [contextFilter, setContextFilter] = useState("ALL");
   const [timeFilter, setTimeFilter] = useState("ALL");
   const [showSettings, setShowSettings] = useState(false);
   const [config, setConfig] = useState({ main: "", squad: [] as string[], titans: [] as string[] });
+  
   const [tick, setTick] = useState(0);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => { setMounted(true); const iv = setInterval(() => setTick(t => t + 1), 1000); return () => clearInterval(iv); }, []);
 
+  // ─── OFFLINE-FIRST BOOT SEQUENCE ───────────────────────────────────────
   useEffect(() => {
-    const saved = localStorage.getItem('cf_config_v6');
-    if (saved) { 
-      const parsed = JSON.parse(saved); 
+    const savedConfig = localStorage.getItem('cf_config_v6');
+    if (savedConfig) { 
+      const parsed = JSON.parse(savedConfig); 
       setConfig(parsed); setHandle(parsed.main || "");
       if (parsed.squad && parsed.squad.length > 0) setNemesisTarget(parsed.squad[0]);
-      if (parsed.main) fetchGlobalTelemetry(parsed.main, parsed.squad);
+
+      // Cache Check
+      const cachedSquad = localStorage.getItem('cf_squad_cache_v2');
+      if (cachedSquad) {
+        try {
+          setSquadData(JSON.parse(cachedSquad));
+          // Cache hit: Boot instantly, trigger background sync
+          if (parsed.main) fetchGlobalTelemetry(parsed.main, parsed.squad, true);
+        } catch (e) {
+          // Cache corrupted: Block load
+          if (parsed.main) fetchGlobalTelemetry(parsed.main, parsed.squad, false);
+        }
+      } else {
+        // No cache: Block load
+        if (parsed.main) fetchGlobalTelemetry(parsed.main, parsed.squad, false);
+      }
     } else setShowSettings(true);
   }, []);
 
-  const fetchGlobalTelemetry = async (mainH: string, squadH: string[]) => {
+  // ─── API SYNCHRONIZATION ───────────────────────────────────────────────
+  const fetchGlobalTelemetry = async (mainH: string, squadH: string[], isBackground = false) => {
     if (!mainH) return;
-    setLoading(true); setLoadingMsg(`ESTABLISHING SECURE UPLINK...`);
+    
+    if (!isBackground) {
+      setLoading(true); setLoadingMsg(`ESTABLISHING SECURE UPLINK...`);
+    } else {
+      setIsSyncing(true);
+    }
+    
     const newSquadData: Record<string, any> = {};
     const allHandles = [mainH, ...squadH].filter(Boolean);
 
     const fetchCF = async (url: string, retries = 3) => {
       for (let i = 0; i < retries; i++) {
-        try { await new Promise(res => setTimeout(res, 1500)); const res = await fetch(url); const data = await res.json(); if (data.status === 'OK') return data.result; if (data.comment && data.comment.includes("not found")) return null; } 
-        catch (e) { console.warn(`Fetch glitch for ${url}, retrying...`); }
+        try { 
+          const res = await fetch(url); 
+          const data = await res.json(); 
+          if (data.status === 'OK') return data.result; 
+          if (data.comment && data.comment.includes("not found")) return null; 
+        } 
+        catch (e) { 
+          await new Promise(res => setTimeout(res, 1500)); 
+          console.warn(`Fetch glitch for ${url}, retrying...`); 
+        }
       }
       throw new Error("API Timeout");
     };
 
     try {
       const infoResult = await fetchCF(`https://codeforces.com/api/user.info?handles=${allHandles.join(';')}`);
-      if (infoResult) allHandles.forEach(h => { const info = infoResult.find((u: any) => u.handle.toLowerCase() === h.toLowerCase()); if (info) newSquadData[h] = { handle: h, info: info, rawSubs: [], history: [] }; });
+      if (infoResult) allHandles.forEach(h => { 
+        const info = infoResult.find((u: any) => u.handle.toLowerCase() === h.toLowerCase()); 
+        if (info) newSquadData[h] = { handle: h, info: info, rawSubs: [], history: [] }; 
+      });
+
       for (const h of allHandles) {
         if (!newSquadData[h]) continue; 
-        setLoadingMsg(`SYNCING OPERATIVE: ${h.toUpperCase()}...`);
-        const subs = await fetchCF(`https://codeforces.com/api/user.status?handle=${h}`); if (subs) newSquadData[h].rawSubs = subs;
-        const history = await fetchCF(`https://codeforces.com/api/user.rating?handle=${h}`); if (history) newSquadData[h].history = history;
+        if (!isBackground) setLoadingMsg(`SYNCING OPERATIVE: ${h.toUpperCase()}...`);
+        
+        const subs = await fetchCF(`https://codeforces.com/api/user.status?handle=${h}`); 
+        if (subs) newSquadData[h].rawSubs = subs;
+        await new Promise(r => setTimeout(r, 400)); // Rate limit buffer
+        
+        const history = await fetchCF(`https://codeforces.com/api/user.rating?handle=${h}`); 
+        if (history) newSquadData[h].history = history;
+        await new Promise(r => setTimeout(r, 400)); // Rate limit buffer
       }
+      
       setSquadData(newSquadData);
-    } catch (err) { alert("Engine Failure: Codeforces API is overwhelmed. Please wait 60 seconds and try again."); setShowSettings(true); }
-    setLoading(false);
+      
+      // Save fresh data to local cache
+      try { localStorage.setItem('cf_squad_cache_v2', JSON.stringify(newSquadData)); } catch(e) {}
+      
+      // Fire success toast if it was a background update
+      if (isBackground) {
+        setUpdateToast(true);
+        setTimeout(() => setUpdateToast(false), 4000);
+      }
+    } catch (err) { 
+      if (!isBackground) {
+        alert("Engine Failure: Codeforces API is overwhelmed. Please wait 60 seconds and try again."); 
+        setShowSettings(true); 
+      }
+    } finally {
+      setLoading(false);
+      setIsSyncing(false);
+    }
   };
 
   const getFilteredSubs = (subs: CFSubmission[]) => {
@@ -257,7 +301,7 @@ export default function Home() {
         }
       });
       bMatrix[p] = { active: Object.keys(pMap).filter(pid => pMap[pid].fails >= 3 && !pMap[pid].solved), resurrected: Object.keys(pMap).filter(pid => pMap[pid].fails >= 3 && pMap[pid].solved).length, solvedSet: new Set(Object.keys(pMap).filter(pid => pMap[pid].solved)) };
-      // Graveyard: only problems attempted in last 30 days (last attempt within 30d), 3+ fails, unsolved
+      
       const now30 = Date.now() / 1000;
       Object.keys(pMap).forEach(pid => {
         const pm = pMap[pid];
@@ -284,18 +328,7 @@ export default function Home() {
 
     const reconMetrics = processMetrics(getFilteredSubs(squadData[config.main].rawSubs)); 
     const mapMetrics = evaluateMapMetrics(squadData[config.main].rawSubs);
-    const now = Date.now() / 1000;
-
-    const findWinner = (pathFn: (p: string) => number, min = 0, isMin = false) => { let best: string | null = null; let bestVal = isMin ? Infinity : -Infinity; allPlayers.forEach(p => { let v = pathFn(p); if (!isMin && v > bestVal && v >= min) { bestVal = v; best = p; } else if (isMin && v < bestVal && v <= min) { bestVal = v; best = p; } }); return best; };
-    const ac = (p: string, d: number) => sMatrix[p].metrics.rawSubsList.filter((s:CFSubmission) => s.verdict==='OK' && (now - s.creationTimeSeconds)/86400 <= d);
-    const subs = (p: string, d: number) => sMatrix[p].metrics.rawSubsList.filter((s:CFSubmission) => (now - s.creationTimeSeconds)/86400 <= d);
-    const tags = (p: string, d: number, t: string) => ac(p, d).filter((s:CFSubmission) => s.problem.tags?.includes(t)).length;
-    const maxR = (p: string, d: number) => Math.max(0, ...ac(p, d).map((s:CFSubmission) => s.problem.rating || 0));
-    const pts = (p: string, d: number) => ac(p, d).reduce((sum, s) => sum + (CF_SCORE_MAP[Math.min(2400, Math.floor((s.problem.rating||800)/100)*100)] || 10), 0);
-    const activeDays = (p: string, d: number) => new Set(ac(p, d).map((s:CFSubmission) => new Date(s.creationTimeSeconds*1000).toDateString())).size;
-    const acc = (p: string, d: number) => { let a = subs(p, d); let oks = ac(p, d); return a.length > 0 ? oks.length / a.length : 0; };
-
-    const badges: BadgeDef[] = computeBadges(allPlayers, sMatrix, bMatrix, reconMetrics, mapMetrics, config.main, now);
+    const badges: BadgeDef[] = computeBadges(allPlayers, sMatrix, bMatrix, reconMetrics, mapMetrics, config.main, Date.now() / 1000);
 
     return { mainMetrics, squadMatrix: sMatrix, bounties: uniqueBounties.slice(0,30), computedBadges: badges, absoluteMySolves: absSolves };
   }, [squadData, config, contextFilter, timeFilter]);
@@ -303,7 +336,6 @@ export default function Home() {
   const squadCharts = useMemo(() => {
     if (!squadMatrix[config.main]) return null;
 
-    if (!squadMatrix[config.main]) return null;
     const players = Object.keys(squadMatrix).sort((a,b) => (squadMatrix[b].info.rating||0) - (squadMatrix[a].info.rating||0));
     const sprintData = { labels: players, datasets: [ { label: '7-Day Score', data: players.map(p => squadMatrix[p].metrics.weeklyScore), backgroundColor: '#f85149', borderRadius: 4 }, { label: '30-Day Score', data: players.map(p => squadMatrix[p].metrics.monthlyScore), backgroundColor: '#d2a8ff', borderRadius: 4 } ] };
     let allTags: Record<string, number> = {}; players.forEach(p => Object.keys(squadMatrix[p].metrics.tagsDist).forEach(t => allTags[t] = (allTags[t] || 0) + squadMatrix[p].metrics.tagsDist[t]));
@@ -312,7 +344,7 @@ export default function Home() {
     let allTS = new Set<number>(); players.forEach(p => Object.values(squadMatrix[p].history).forEach((h:any) => allTS.add(h.ratingUpdateTimeSeconds)));
     const sortedTS = Array.from(allTS).sort((a,b) => a-b);
     const lineData = { labels: sortedTS.map(ts => { const d = new Date(ts*1000); return `${d.getMonth()+1}/${d.getFullYear().toString().substring(2)}`; }), datasets: players.map((p, i) => { let data: (number|null)[] = []; let lastR: number|null = null; let hMap: Record<number, number> = {}; squadMatrix[p].history.forEach((h:CFRating) => hMap[h.ratingUpdateTimeSeconds] = h.newRating); sortedTS.forEach(ts => { if(hMap[ts]) lastR = hMap[ts]; data.push(lastR); }); return { label: p, data, borderColor: p === config.main ? '#e3b341' : SQUAD_COLORS[i % SQUAD_COLORS.length], backgroundColor: 'transparent', borderWidth: 2, pointRadius: 2, tension: 0.2, spanGaps: false } }) };
-    // Per-player computed stats for comparison charts
+    
     const now2 = Date.now() / 1000;
     const acD = (p: string, d: number) => squadMatrix[p].metrics.rawSubsList.filter((s:CFSubmission) => s.verdict==='OK' && (now2 - s.creationTimeSeconds)/86400 <= d);
     const subsD = (p: string, d: number) => squadMatrix[p].metrics.rawSubsList.filter((s:CFSubmission) => (now2 - s.creationTimeSeconds)/86400 <= d);
@@ -342,21 +374,11 @@ export default function Home() {
       rating:        mkBar('Current Rating',   p => squadMatrix[p].info.rating || 0),
     };
 
-    // Leaderboard rows
     const leaderboard = players.map(p => ({
-      handle: p,
-      rating: squadMatrix[p].info.rating || 0,
-      rank: squadMatrix[p].info.rank || 'unrated',
-      uniqueAC: squadMatrix[p].metrics.unique,
-      weeklyScore: ptsD(p,7),
-      monthlyScore: ptsD(p,30),
-      weeklyAC: acD(p,7).length,
-      monthlyAC: acD(p,30).length,
-      weeklyAcc: accD(p,7),
-      monthlyAcc: accD(p,30),
-      highestRated: maxRD(p,36500),
-      activeDays7: activeDaysD(p,7),
-      activeDays30: activeDaysD(p,30),
+      handle: p, rating: squadMatrix[p].info.rating || 0, rank: squadMatrix[p].info.rank || 'unrated',
+      uniqueAC: squadMatrix[p].metrics.unique, weeklyScore: ptsD(p,7), monthlyScore: ptsD(p,30),
+      weeklyAC: acD(p,7).length, monthlyAC: acD(p,30).length, weeklyAcc: accD(p,7), monthlyAcc: accD(p,30),
+      highestRated: maxRD(p,36500), activeDays7: activeDaysD(p,7), activeDays30: activeDaysD(p,30),
     }));
 
     return { sprintData, radarData, lineData, players, comparisonCharts, leaderboard };
@@ -364,7 +386,6 @@ export default function Home() {
 
   const guillotineStatus = useMemo(() => {
     if (!mainMetrics || mainMetrics.rawSubsList.length === 0) return { hoursInactive: 0, bleedHours: 0, pointsLost: 0, isRed: false, isBlue: false };
-    // rawSubsList is oldest-first after processMetrics reverse(), so last element = newest submission
     const allSubs = mainMetrics.rawSubsList;
     const lastSub = allSubs[allSubs.length - 1].creationTimeSeconds;
     const hoursInactive = (Date.now() / 1000 - lastSub) / 3600;
@@ -379,7 +400,11 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-[#030305] text-[#e0e6ed] selection:bg-[#f0a500] font-sans">
-      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} onSave={(newCfg) => { setConfig(newCfg); setHandle(newCfg.main); setShowSettings(false); fetchGlobalTelemetry(newCfg.main, newCfg.squad); }} />}
+      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} onSave={(newCfg) => { 
+        setConfig(newCfg); setHandle(newCfg.main); setShowSettings(false); 
+        fetchGlobalTelemetry(newCfg.main, newCfg.squad, false); 
+      }} />}
+      
       <style>{`
         @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.5;transform:scale(0.85)} }
         @keyframes flicker { 0%,100%{opacity:1} 92%{opacity:1} 93%{opacity:0.8} 94%{opacity:1} }
@@ -401,14 +426,12 @@ export default function Home() {
             </div>
 
             <div className="flex items-center gap-6">
-              {/* Context Filters */}
+              {/* Filters */}
               <div className="flex bg-[#050505] rounded-[6px] border border-[#1a1a1a] overflow-hidden">
                 {['ALL', 'CONTEST'].map(ctx => (
                   <button key={ctx} onClick={() => setContextFilter(ctx)} className={`px-3 py-1 border-r border-[#1a1a1a] last:border-0 font-mono text-[0.65rem] transition-colors cursor-pointer ${contextFilter === ctx ? 'bg-[#f0a500] text-black font-bold' : 'bg-transparent text-[#888] hover:bg-white/5'}`}>{ctx}</button>
                 ))}
               </div>
-              
-              {/* Time Filters */}
               <div className="flex bg-[#050505] rounded-[6px] border border-[#1a1a1a] overflow-hidden mr-4">
                 {['ALL', '30', '7'].map(tf => (
                   <button key={tf} onClick={() => setTimeFilter(tf)} className={`px-3 py-1 border-r border-[#1a1a1a] last:border-0 font-mono text-[0.65rem] transition-colors cursor-pointer ${timeFilter === tf ? 'bg-[#58a6ff] text-black font-bold' : 'bg-transparent text-[#888] hover:bg-white/5'}`}>{tf === 'ALL' ? 'ALL TIME' : tf + ' DAYS'}</button>
@@ -417,9 +440,9 @@ export default function Home() {
               
               <div className="text-right">
                 <div className="font-mono text-lg font-bold text-[#f0a500] tracking-wider">{handle || "OFFLINE"}</div>
-                {mainMetrics && <div className="font-mono text-[0.6rem] tracking-wider text-[#56d364]">{squadData[config.main]?.info.rank || "Unrated"} · {squadData[config.main]?.info.rating || 0}</div>}
+                {mainMetrics && <div className="font-mono text-[0.6rem] tracking-wider text-[#56d364]">{squadData[config.main]?.info?.rank || "Unrated"} · {squadData[config.main]?.info?.rating || 0}</div>}
               </div>
-              <img src={squadData[config.main]?.info.titlePhoto || "/api/placeholder/44/44"} alt="Avatar" className="w-11 h-11 rounded-xl object-cover" style={{ border: "1px solid #f0a50033" }} />
+              <img src={squadData[config.main]?.info?.titlePhoto || "/api/placeholder/44/44"} alt="Avatar" className="w-11 h-11 rounded-xl object-cover" style={{ border: "1px solid #f0a50033" }} />
               <div className="text-right font-mono hidden md:block">
                 <div className="text-[0.85rem] text-[#58a6ff] tracking-wider">{timeStr}</div>
                 <div className="text-[0.55rem] tracking-wider text-[#333]">UTC SYSTEM CLOCK</div>
@@ -444,13 +467,21 @@ export default function Home() {
       </header>
 
       <main className="max-w-[1400px] mx-auto px-8 pt-6 pb-16 relative z-10 min-h-[70vh]">
+        
+        {/* TOP STATUS BAR: Background Sync Indicator */}
         <div className="flex items-center gap-3 mb-6 font-mono text-[0.6rem] text-[#333] flex-wrap">
-          <GlowPulse color="#56d364" />
+          <GlowPulse color={isSyncing ? "#e3b341" : "#56d364"} />
           <span className="text-[#444]">MODULE:</span><span className="text-[#56d364] tracking-[2px]">{activeTab}</span><span className="text-[#1a1a1a]">|</span>
           <span className="text-[#444]">OPERATOR:</span><span className="text-[#f0a500]">{handle || "N/A"}</span><span className="text-[#1a1a1a]">|</span>
           <span className="text-[#444]">UPTIME:</span><span className="text-[#58a6ff]">{tick}s</span>
           <div className="flex-1" />
-          <span className="text-[#1a1a1a]">SYS.INTEGRITY: </span><span className="text-[#56d364]">■■■■■■■■■■ 100%</span>
+          {isSyncing ? (
+            <span className="text-[#e3b341] animate-pulse uppercase tracking-[2px] font-bold">↻ SYNCING TELEMETRY...</span>
+          ) : updateToast ? (
+            <span className="text-[#56d364] animate-pulse uppercase tracking-[2px] font-bold">✓ DATABASE UPDATED</span>
+          ) : (
+            <><span className="text-[#1a1a1a]">SYS.INTEGRITY: </span><span className="text-[#56d364]">■■■■■■■■■■ 100%</span></>
+          )}
         </div>
 
         {loading && <div className="text-center my-20 font-mono text-[#f0a500] text-[1.2rem] animate-pulse">{loadingMsg}</div>}
@@ -498,20 +529,15 @@ export default function Home() {
                 </div>
                 {nemesisTarget && squadData[nemesisTarget] ? (
                   <Nemesis 
-                    mySubs={squadData[config.main].rawSubs} 
-                    targetSubs={squadData[nemesisTarget].rawSubs} 
-                    targetHandle={nemesisTarget} 
-                    myRating={squadData[config.main].info.rating || 1200}
-                    myHandle={config.main}
-                    myHistory={squadData[config.main].history}
-                    targetHistory={squadData[nemesisTarget].history}
-                    myInfo={squadData[config.main].info}
-                    targetInfo={squadData[nemesisTarget].info}
+                    mySubs={squadData[config.main].rawSubs} targetSubs={squadData[nemesisTarget].rawSubs} 
+                    targetHandle={nemesisTarget} myRating={squadData[config.main].info.rating || 1200}
+                    myHandle={config.main} myHistory={squadData[config.main].history} targetHistory={squadData[nemesisTarget].history}
+                    myInfo={squadData[config.main].info} targetInfo={squadData[nemesisTarget].info}
                   />
                 ) : <div className="text-center py-20 text-[#888] font-mono">Select a valid squad target to initiate Nemesis protocol.</div>}
               </div>
             )}
-{activeTab === "GRIND" && <GrindMode handle={config.main} />}
+            {activeTab === "GRIND" && <GrindMode handle={config.main} />}
             {activeTab === "TITAN" && <TitanTab myInfo={squadData[config.main]?.info} myRating={squadData[config.main]?.info?.rating || 0} myHandle={config.main} />}
             {activeTab === "CONTESTS" && mainMetrics && (
               <ContestTracker handle={config.main} rawSubs={squadData[config.main].rawSubs} />
