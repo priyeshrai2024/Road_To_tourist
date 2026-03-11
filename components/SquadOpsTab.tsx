@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Line, Bar } from 'react-chartjs-2';
-import { SQUAD_COLORS } from "@/lib/constants";
+import { CF_SCORE_MAP, SQUAD_COLORS } from "@/lib/constants";
 import type { SquadMemberData } from "@/lib/types";
 
 function TopLine({ color }: { color: string }) {
@@ -48,56 +48,85 @@ interface SquadOpsTabProps {
   bounties: any[];
 }
 
-const LB_COLS: { key: string; label: string; color: string }[] = [
-  { key:'weeklyScore',   label:'7D Score',   color:'#e3b341' },
-  { key:'monthlyScore',  label:'30D Score',  color:'#d2a8ff' },
-  { key:'weeklyAC',      label:'7D ACs',     color:'#56d364' },
-  { key:'monthlyAC',     label:'30D ACs',    color:'#58a6ff' },
-  { key:'weeklyAcc',     label:'7D Acc%',    color:'#e879f9' },
-  { key:'monthlyAcc',    label:'30D Acc%',   color:'#db6d28' },
-  { key:'highestRated',  label:'Best Rated', color:'#f85149' },
-  { key:'uniqueAC',      label:'Unique AC',  color:'#8b949e' },
-  { key:'activeDays7',   label:'Active 7D',  color:'#56d364' },
-  { key:'activeDays30',  label:'Active 30D', color:'#58a6ff' },
-  { key:'rating',        label:'Rating',     color:'#e3b341' },
-];
-
 export default function SquadOpsTab({ squadMatrix, config, squadCharts, bounties }: SquadOpsTabProps) {
-  const [lbSort, setLbSort] = useState<string>('weeklyScore');
+  const [sprintMode, setSprintMode] = useState<'7D' | '30D'>('7D');
 
   const allPlayers = [config.main, ...config.squad]
     .filter(h => squadMatrix[h])
     .sort((a, b) => (squadMatrix[b].info.rating || 0) - (squadMatrix[a].info.rating || 0));
 
   const COLORS = allPlayers.map((p, i) => p === config.main ? '#e3b341' : SQUAD_COLORS[i % SQUAD_COLORS.length]);
-
-  const lb = squadCharts?.leaderboard ?? [];
-  const sortedLb = [...lb].sort((a, b) => (b[lbSort] ?? 0) - (a[lbSort] ?? 0));
   const cc = squadCharts?.comparisonCharts;
 
-  const renderLeaderboardCell = (key: string, val: any, color: string, isSorted: boolean) => {
-    const opacity = isSorted ? '1' : '0.6';
-    if (key.includes('Acc')) {
-      return (
-        <div className="flex items-center justify-end gap-2" style={{ opacity }}>
-          <div className="w-12 h-1.5 bg-[#1a1a1a] rounded-full overflow-hidden hidden md:block">
-            <div className="h-full rounded-full" style={{ width: `${val}%`, backgroundColor: color }} />
-          </div>
-          <span style={{ color, fontWeight: isSorted ? 700 : 400 }}>{val}%</span>
-        </div>
-      );
-    }
-    if (key.includes('Score')) {
-      return <span style={{ color, opacity, fontWeight: isSorted ? 700 : 400 }}>{val.toLocaleString()} <span className="text-[9px] opacity-40">XP</span></span>;
-    }
-    if (key.includes('Days')) {
-      return <span style={{ color, opacity, fontWeight: isSorted ? 700 : 400 }}>{val} <span className="text-[9px] opacity-40">D</span></span>;
-    }
-    return <span style={{ color, opacity, fontWeight: isSorted ? 700 : 400 }}>{val.toLocaleString()}</span>;
-  };
+  // ─── CONTEST-STYLE STANDINGS CALCULATIONS ──────────────────────────────
+  const standings = useMemo(() => {
+    const days = sprintMode === '7D' ? 7 : 30;
+    const now = Date.now() / 1000;
+    const cutoffTs = now - (days * 86400);
+
+    const stats = allPlayers.map(p => {
+      if (!squadMatrix[p] || !squadMatrix[p].metrics) return null;
+      
+      // Sort submissions chronologically to track attempts before AC
+      const subs = squadMatrix[p].metrics.rawSubsList
+        .filter((s: any) => s.creationTimeSeconds >= cutoffTs)
+        .sort((a: any, b: any) => a.creationTimeSeconds - b.creationTimeSeconds);
+
+      let score = 0;
+      let penalty = 0;
+      let acs = 0;
+      const probStats: Record<string, { fails: number, solved: boolean, rating: number }> = {};
+
+      subs.forEach((s: any) => {
+        if (!s.problem) return;
+        const pid = `${s.problem.contestId}-${s.problem.index}`;
+        
+        if (!probStats[pid]) {
+          probStats[pid] = { 
+            fails: 0, 
+            solved: false, 
+            rating: s.problem.rating ? Math.floor(s.problem.rating / 100) * 100 : 800 
+          };
+        }
+        
+        // If already solved, ignore further submissions for penalty
+        if (probStats[pid].solved) return;
+
+        if (s.verdict === 'OK') {
+          probStats[pid].solved = true;
+          acs++;
+          
+          // Calculate score
+          const baseScore = CF_SCORE_MAP[Math.min(2400, probStats[pid].rating)] || 10;
+          score += baseScore;
+          
+          // Add penalty: (Problem Score / 10) * Number of fails
+          penalty += (baseScore / 10) * probStats[pid].fails;
+        } 
+        else if (s.verdict !== 'COMPILATION_ERROR' && s.verdict !== 'SKIPPED') {
+          probStats[pid].fails++;
+        }
+      });
+
+      const acc = subs.length > 0 ? parseFloat(((acs / subs.length) * 100).toFixed(1)) : 0;
+
+      return { 
+        handle: p, 
+        score, 
+        penalty: Math.round(penalty), 
+        acs, 
+        acc, 
+        rankInfo: squadMatrix[p].info?.rank || 'Unrated' 
+      };
+    }).filter(Boolean);
+
+    // Primary sort: Score (Descending). Secondary sort: Penalty (Ascending).
+    stats.sort((a: any, b: any) => b.score - a.score || a.penalty - b.penalty);
+    return stats;
+  }, [squadMatrix, allPlayers, sprintMode]);
 
   return (
-    <div className="flex flex-col gap-8 animate-in fade-in duration-400">
+    <div className="flex flex-col gap-6 animate-in fade-in duration-400">
 
       {/* ── Player Cards ── */}
       <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))' }}>
@@ -134,76 +163,6 @@ export default function SquadOpsTab({ squadMatrix, config, squadCharts, bounties
           );
         })}
       </div>
-
-      {/* ── Sprint Leaderboard (Upgraded UI) ── */}
-      {lb.length > 0 && (
-        <div className="rounded-2xl p-6 relative overflow-hidden" style={{ background: '#050505', border: '1px solid #1a1a1a', boxShadow: 'inset 0 4px 20px rgba(0,0,0,0.5)' }}>
-          <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
-            <div className="font-mono text-[0.7rem] font-bold uppercase tracking-[3px] text-[#e3b341] flex items-center gap-2">
-              <span className="text-lg">🏆</span> SQUAD LEADERBOARD
-            </div>
-            <div className="flex flex-wrap gap-1.5 bg-[#0a0a0a] p-1.5 rounded-lg border border-[#1a1a1a]">
-              {LB_COLS.map(c => (
-                <button key={c.key} onClick={() => setLbSort(c.key)}
-                  className="font-mono text-[9px] px-2.5 py-1 rounded-[4px] transition-all cursor-pointer border-none"
-                  style={{
-                    background: lbSort === c.key ? `${c.color}22` : 'transparent',
-                    color: lbSort === c.key ? c.color : '#555',
-                    fontWeight: lbSort === c.key ? 'bold' : 'normal'
-                  }}>
-                  {c.label}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="overflow-x-auto custom-scrollbar pb-2">
-            <table className="w-full font-mono text-[11px] border-collapse min-w-[800px]">
-              <thead>
-                <tr className="border-b-2 border-[#1a1a1a]">
-                  <th className="text-center py-3 px-2 text-[#444] font-normal w-12">POS</th>
-                  <th className="text-left py-3 px-4 text-[#444] font-normal">OPERATIVE</th>
-                  {LB_COLS.map(c => (
-                    <th key={c.key} className="text-right py-3 px-3 font-normal uppercase tracking-wider" 
-                        style={{ color: lbSort === c.key ? c.color : '#444' }}>
-                      {c.label}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {sortedLb.map((row, i) => {
-                  const isMe = row.handle === config.main;
-                  const idx = allPlayers.indexOf(row.handle);
-                  const rowColor = idx >= 0 ? COLORS[idx] : '#8b949e';
-                  const rankBadge = i === 0 ? { bg: '#ffd70015', text: '#ffd700', icon: '🥇' } : 
-                                    i === 1 ? { bg: '#c0c0c015', text: '#c0c0c0', icon: '🥈' } : 
-                                    i === 2 ? { bg: '#cd7f3215', text: '#cd7f32', icon: '🥉' } : 
-                                              { bg: '#111', text: '#555', icon: `${i+1}` };
-                  return (
-                    <tr key={row.handle} className={`border-b border-[#0f0f0f] transition-colors group ${isMe ? 'bg-[rgba(227,179,65,0.03)] hover:bg-[rgba(227,179,65,0.06)]' : 'hover:bg-[#0a0a0a]'}`}>
-                      <td className="py-3 px-2">
-                        <div className="mx-auto w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs" 
-                             style={{ background: rankBadge.bg, color: rankBadge.text }}>
-                          {rankBadge.icon}
-                        </div>
-                      </td>
-                      <td className="py-3 px-4">
-                        <div className="font-bold text-sm" style={{ color: rowColor }}>{row.handle}</div>
-                        <div className="text-[9px] uppercase tracking-widest text-[#555] mt-0.5">{row.rank}</div>
-                      </td>
-                      {LB_COLS.map(c => (
-                        <td key={c.key} className="py-3 px-3 text-right">
-                          {renderLeaderboardCell(c.key, row[c.key] ?? 0, c.color, lbSort === c.key)}
-                        </td>
-                      ))}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
 
       {/* ── Graveyard ── */}
       <div className="rounded-2xl p-6" style={{ background: '#050505', border: '1px solid #1a1a1a', borderLeft: '4px solid #f85149' }}>
@@ -247,59 +206,129 @@ export default function SquadOpsTab({ squadMatrix, config, squadCharts, bounties
         }
       </div>
 
-      {/* ── THEME-GROUPED CHARTS ── */}
-      {squadCharts && cc && (
+      {/* ── SQUAD STANDINGS [LIVE CONTEST STYLE] ── */}
+      <div className="rounded-2xl p-6 relative overflow-hidden" style={{ background: '#050505', border: '1px solid #1a1a1a', boxShadow: 'inset 0 4px 20px rgba(0,0,0,0.5)' }}>
+        <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
+          <div className="font-mono text-[0.7rem] font-bold uppercase tracking-[3px] text-[#e3b341] flex items-center gap-2">
+            <span className="text-lg">🏆</span> SQUAD STANDINGS [LIVE]
+          </div>
+          <div className="flex bg-[#0a0a0a] rounded-lg border border-[#1a1a1a] p-1">
+            {['7D', '30D'].map(mode => (
+              <button key={mode} onClick={() => setSprintMode(mode as any)}
+                className={`font-mono text-[9px] px-4 py-1.5 rounded-[4px] transition-all cursor-pointer border-none uppercase tracking-wider ${sprintMode === mode ? 'bg-[#e3b341] text-black font-bold' : 'bg-transparent text-[#555] hover:text-[#888]'}`}>
+                {mode === '7D' ? '7-Day Sprint' : '30-Day Campaign'}
+              </button>
+            ))}
+          </div>
+        </div>
+        
+        <div className="overflow-x-auto custom-scrollbar pb-2">
+          <table className="w-full font-mono text-[11px] border-collapse min-w-[600px]">
+            <thead>
+              <tr className="border-b-2 border-[#1a1a1a]">
+                <th className="text-center py-3 px-2 text-[#444] font-normal w-12">RNK</th>
+                <th className="text-left py-3 px-4 text-[#444] font-normal">OPERATIVE</th>
+                <th className="text-right py-3 px-4 text-[#e3b341] font-bold tracking-widest">SCORE</th>
+                <th className="text-right py-3 px-4 text-[#f85149] font-normal tracking-widest">PENALTY</th>
+                <th className="text-right py-3 px-4 text-[#56d364] font-normal tracking-widest">ACs</th>
+                <th className="text-right py-3 px-4 text-[#58a6ff] font-normal tracking-widest">ACCURACY</th>
+              </tr>
+            </thead>
+            <tbody>
+              {standings.map((row: any, i: number) => {
+                const isMe = row.handle === config.main;
+                const idx = allPlayers.indexOf(row.handle);
+                const rowColor = idx >= 0 ? COLORS[idx] : '#8b949e';
+                const rankBadge = i === 0 ? { bg: '#ffd70015', text: '#ffd700', icon: '🥇' } : 
+                                  i === 1 ? { bg: '#c0c0c015', text: '#c0c0c0', icon: '🥈' } : 
+                                  i === 2 ? { bg: '#cd7f3215', text: '#cd7f32', icon: '🥉' } : 
+                                            { bg: '#111', text: '#555', icon: `${i+1}` };
+                return (
+                  <tr key={row.handle} className={`border-b border-[#0f0f0f] transition-colors group ${isMe ? 'bg-[rgba(227,179,65,0.03)] hover:bg-[rgba(227,179,65,0.06)]' : 'hover:bg-[#0a0a0a]'}`}>
+                    <td className="py-3 px-2">
+                      <div className="mx-auto w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs" 
+                           style={{ background: rankBadge.bg, color: rankBadge.text }}>
+                        {rankBadge.icon}
+                      </div>
+                    </td>
+                    <td className="py-3 px-4">
+                      <div className="font-bold text-sm" style={{ color: rowColor }}>{row.handle}</div>
+                      <div className="text-[9px] uppercase tracking-widest text-[#555] mt-0.5">{row.rankInfo}</div>
+                    </td>
+                    <td className="py-3 px-4 text-right">
+                      <span className="text-lg font-black" style={{ color: '#e3b341' }}>{row.score.toLocaleString()}</span>
+                      <span className="text-[9px] text-[#e3b341] opacity-50 ml-1">XP</span>
+                    </td>
+                    <td className="py-3 px-4 text-right">
+                      <span className="font-bold" style={{ color: row.penalty > 0 ? '#f85149' : '#444' }}>{row.penalty > 0 ? `+${row.penalty}` : '0'}</span>
+                    </td>
+                    <td className="py-3 px-4 text-right text-[#56d364] font-bold">{row.acs}</td>
+                    <td className="py-3 px-4 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <div className="w-12 h-1.5 bg-[#1a1a1a] rounded-full overflow-hidden hidden sm:block">
+                          <div className="h-full rounded-full bg-[#58a6ff]" style={{ width: `${row.acc}%` }} />
+                        </div>
+                        <span className="text-[#58a6ff] font-bold">{row.acc}%</span>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* ── Rating Warfare (All Time) ── */}
+      {squadCharts && (
+        <ChartCard title="📡 Rating Warfare (All Time)" color="#58a6ff">
+          <Line data={squadCharts.lineData} options={LINE_OPT} />
+        </ChartCard>
+      )}
+
+      {/* ── STRUCTURED COMPARISON CHARTS ── */}
+      {cc && (
         <div className="flex flex-col gap-10 mt-4">
           
-          {/* RATING SUPREMACY (All Time Line Chart) */}
-          <div className="rounded-2xl p-6 relative overflow-hidden" style={{ background: '#050505', border: '1px solid #1a1a1a' }}>
-            <TopLine color="#58a6ff" />
-            <div className="font-mono text-[0.7rem] uppercase tracking-[3px] text-[#58a6ff] mb-4 flex items-center gap-2">
-              <span className="text-lg">📡</span> RATING WARFARE (ALL TIME)
-            </div>
-            <div className="h-[300px] w-full">
-              <Line data={squadCharts.lineData} options={LINE_OPT} />
-            </div>
-          </div>
-
           {/* PHASE I: ACTIVE SPRINT */}
           <div>
-            <div className="font-mono text-[0.65rem] uppercase tracking-[3px] text-[#e3b341] mb-4 flex items-center gap-2 pl-2">
-              <span className="w-2 h-2 rounded-full bg-[#e3b341] animate-pulse" /> PHASE I: ACTIVE SPRINT (LAST 7 DAYS)
+            <div className="font-mono text-[0.65rem] uppercase tracking-[3px] text-[#e3b341] mb-4 flex items-center gap-2 pl-3 border-l-2 border-[#e3b341]">
+              <span className="text-lg leading-none">⚡</span> PHASE I: ACTIVE SPRINT (7 DAYS)
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <ChartCard title="⚡ Synth Score" color="#e3b341"><Bar data={cc.weeklyScore} options={CHART_OPT()} /></ChartCard>
-              <ChartCard title="🎯 Operations (AC)" color="#56d364"><Bar data={cc.weeklyAC} options={CHART_OPT()} /></ChartCard>
-              <ChartCard title="🔬 Strike Accuracy" color="#e879f9"><Bar data={cc.weeklyAccRate} options={CHART_OPT('%')} /></ChartCard>
-              <ChartCard title="🗓 Days Deployed" color="#58a6ff"><Bar data={cc.activeDays7} options={CHART_OPT()} /></ChartCard>
+              <ChartCard title="7-Day Synth Score" color="#e3b341"><Bar data={cc.weeklyScore} options={CHART_OPT()} /></ChartCard>
+              <ChartCard title="7-Day ACs" color="#56d364"><Bar data={cc.weeklyAC} options={CHART_OPT()} /></ChartCard>
+              <ChartCard title="7-Day Accepted Rate" color="#e879f9"><Bar data={cc.weeklyAccRate} options={CHART_OPT('%')} /></ChartCard>
+              <ChartCard title="Active Days (7D)" color="#58a6ff"><Bar data={cc.activeDays7} options={CHART_OPT()} /></ChartCard>
             </div>
           </div>
 
           {/* PHASE II: SUSTAINED CAMPAIGN */}
           <div>
-            <div className="font-mono text-[0.65rem] uppercase tracking-[3px] text-[#58a6ff] mb-4 flex items-center gap-2 pl-2">
-              <span className="w-2 h-2 rounded-full bg-[#58a6ff]" /> PHASE II: SUSTAINED CAMPAIGN (LAST 30 DAYS)
+            <div className="font-mono text-[0.65rem] uppercase tracking-[3px] text-[#58a6ff] mb-4 flex items-center gap-2 pl-3 border-l-2 border-[#58a6ff]">
+              <span className="text-lg leading-none">📅</span> PHASE II: SUSTAINED CAMPAIGN (30 DAYS)
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <ChartCard title="📅 Synth Score" color="#d2a8ff"><Bar data={cc.monthlyScore} options={CHART_OPT()} /></ChartCard>
-              <ChartCard title="📦 Operations (AC)" color="#58a6ff"><Bar data={cc.monthlyAC} options={CHART_OPT()} /></ChartCard>
-              <ChartCard title="📊 Strike Accuracy" color="#db6d28"><Bar data={cc.monthlyAccRate} options={CHART_OPT('%')} /></ChartCard>
-              <ChartCard title="📆 Days Deployed" color="#e3b341"><Bar data={cc.activeDays30} options={CHART_OPT()} /></ChartCard>
+              <ChartCard title="30-Day Synth Score" color="#d2a8ff"><Bar data={cc.monthlyScore} options={CHART_OPT()} /></ChartCard>
+              <ChartCard title="30-Day ACs" color="#58a6ff"><Bar data={cc.monthlyAC} options={CHART_OPT()} /></ChartCard>
+              <ChartCard title="30-Day Accepted Rate" color="#db6d28"><Bar data={cc.monthlyAccRate} options={CHART_OPT('%')} /></ChartCard>
+              <ChartCard title="Active Days (30D)" color="#e3b341"><Bar data={cc.activeDays30} options={CHART_OPT()} /></ChartCard>
             </div>
           </div>
 
-          {/* PHASE III: LIFETIME ARSENAL */}
+          {/* PHASE III: LIFETIME SUPREMACY & OVERVIEW */}
           <div>
-            <div className="font-mono text-[0.65rem] uppercase tracking-[3px] text-[#f85149] mb-4 flex items-center gap-2 pl-2">
-              <span className="w-2 h-2 rounded-full bg-[#f85149]" /> PHASE III: LIFETIME SUPREMACY
+            <div className="font-mono text-[0.65rem] uppercase tracking-[3px] text-[#f85149] mb-4 flex items-center gap-2 pl-3 border-l-2 border-[#f85149]">
+              <span className="text-lg leading-none">🏆</span> PHASE III: LIFETIME SUPREMACY
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <ChartCard title="📈 Current Rating" color="#e3b341"><Bar data={cc.rating} options={CHART_OPT()} /></ChartCard>
-              <ChartCard title="🏆 Highest Rated Kill" color="#f85149"><Bar data={cc.highestRated} options={CHART_OPT()} /></ChartCard>
-              <ChartCard title="🎖️ Total Unique ACs" color="#8b949e"><Bar data={cc.uniqueAC} options={CHART_OPT()} /></ChartCard>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <ChartCard title="Current Rating" color="#e3b341"><Bar data={cc.rating} options={CHART_OPT()} /></ChartCard>
+              <ChartCard title="Highest Rated Solved" color="#f85149"><Bar data={cc.highestRated} options={CHART_OPT()} /></ChartCard>
+              <ChartCard title="Unique ACs (All Time)" color="#8b949e"><Bar data={cc.uniqueAC} options={CHART_OPT()} /></ChartCard>
+              <ChartCard title="Sprint Overview (7D+30D)" color="#f0a500"><Bar data={squadCharts.sprintData} options={CHART_OPT()} /></ChartCard>
             </div>
           </div>
-          
+
         </div>
       )}
 
