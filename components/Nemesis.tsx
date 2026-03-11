@@ -405,7 +405,7 @@ export default function Nemesis({
             <span className="text-[#f85149] bg-[#f85149]/10 px-3 py-1 rounded border border-[#f85149]/20">They Coded Faster: {metrics.theirSpeedWins}</span>
           </div>
         </div>
-        <div className="h-[350px] w-full"><Scatter data={scatterData} options={scatterOpts} /></div>
+        <div className="h-[350px] w-full"><Scatter data={scatterData as any} options={scatterOpts as any} /></div>
         <p className="text-[#666] font-mono text-[9px] uppercase mt-4 text-center">
           Plots execution time (ms) for every problem you both solved. Dots above the line mean your algorithm was faster.
         </p>
