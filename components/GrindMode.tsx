@@ -1,17 +1,17 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { CF_SCORE_MAP } from "@/lib/constants";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 interface ProbDetail { pid: string; name: string; timeTakenSecs: number; rating: number; }
 interface SessionLog {
-  id: string; date: string; workMins: number; problemsSolved: number;
-  pointsEarned: number; type: string; avgTimeSecs: number;
-  details: ProbDetail[]; flowRating?: number; intent?: string;
-  plannedMins?: number; breakCount: number;
+  id: string; date: string; startTs: number; endTs: number; workMins: number; 
+  problemsSolved: number; pointsEarned: number; type: string; avgTimeSecs: number;
+  details: ProbDetail[]; flowRating?: number; intent?: string; breakCount: number;
 }
-interface GrindTask { id: number; text: string; done: boolean; pinned: boolean; priority: 'high' | 'normal'; }
+interface GrindTask { id: number; text: string; done: boolean; pinned: boolean; priority: 'high' | 'normal'; estMins?: number; }
+interface TmrPlan { id: number; text: string; }
 type Phase = 'IDLE' | 'INTENT' | 'FLOW' | 'REST' | 'RATE';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -21,7 +21,13 @@ function fmt(s: number) {
   return `${m.toString().padStart(2,'0')}:${sc.toString().padStart(2,'0')}`;
 }
 function fmtMins(s: number) { const h = Math.floor(s/3600), m = Math.floor((s%3600)/60); return h > 0 ? `${h}h ${m}m` : `${m}m`; }
-function todayKey() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+function getWeekMonday(d: Date) { const day=new Date(d), dow=day.getDay(), diff=dow===0?-6:1-dow; day.setDate(day.getDate()+diff); day.setHours(0,0,0,0); return day; }
+
+// ── Theme Colors (Gruvbox matching HTML) ────────────────────────────────────
+const theme = {
+  bg: '#1d2021', surface: '#282828', sh: '#3c3836', text: '#ebdbb2',
+  muted: '#a89984', accent: '#fabd2f', stop: '#fb4934', ok: '#b8bb26'
+};
 
 // ── Animated flow ring ───────────────────────────────────────────────────────
 function FlowRing({ phase, targetRest, restSecs }: { phase: Phase; targetRest: number; restSecs: number }) {
@@ -30,15 +36,14 @@ function FlowRing({ phase, targetRest, restSecs }: { phase: Phase; targetRest: n
   return (
     <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 280 280">
       {phase === 'FLOW' && (
-        <circle cx="140" cy="140" r={r} fill="none" stroke="#f85149" strokeWidth="1"
-          strokeDasharray="3 14" strokeLinecap="round"
-          style={{ transformOrigin:'center', animation:'grindRingSpin 45s linear infinite', opacity: 0.4 }} />
+        <circle cx="140" cy="140" r={r} fill="none" stroke={theme.accent} strokeWidth="2"
+          strokeDasharray="4 16" strokeLinecap="round"
+          style={{ transformOrigin:'center', animation:'grindRingSpin 45s linear infinite', opacity: 0.5 }} />
       )}
       {phase === 'REST' && (
         <>
-          <circle cx="140" cy="140" r={r} fill="none" stroke="#111" strokeWidth="2.5" />
-          <circle cx="140" cy="140" r={r} fill="none" stroke="#58a6ff" strokeWidth="2.5"
-            strokeLinecap="round"
+          <circle cx="140" cy="140" r={r} fill="none" stroke={theme.sh} strokeWidth="3" />
+          <circle cx="140" cy="140" r={r} fill="none" stroke="#58a6ff" strokeWidth="3" strokeLinecap="round"
             strokeDasharray={`${c * pct} ${c * (1 - pct)}`}
             style={{ transform:'rotate(-90deg)', transformOrigin:'center', transition:'stroke-dasharray 1s ease' }} />
         </>
@@ -53,40 +58,62 @@ export default function GrindMode({ handle }: { handle: string }) {
   const [workSecs, setWorkSecs] = useState(0);
   const [restSecs, setRestSecs] = useState(0);
   const [targetRest, setTargetRest] = useState(0);
-  const [showEditRest, setShowEditRest] = useState(false);
-  const [editRestVal, setEditRestVal] = useState('');
 
   const [intent, setIntent] = useState('');
   const [plannedMins, setPlannedMins] = useState('');
-  const [showPrompt, setShowPrompt] = useState(false);
-
+  
   const [flowRating, setFlowRating] = useState(0);
   const [breakCount, setBreakCount] = useState(0);
 
   const [tasks, setTasks] = useState<GrindTask[]>([]);
   const [newTask, setNewTask] = useState('');
   const [newPri, setNewPri] = useState<'normal'|'high'>('normal');
-  const [editingTask, setEditingTask] = useState<GrindTask|null>(null);
-  const [editText, setEditText] = useState('');
-  const [showTaskPanel, setShowTaskPanel] = useState(true);
+  const [newEst, setNewEst] = useState('');
+  
+  const [tmrPlan, setTmrPlan] = useState<TmrPlan[]>([]);
+  const [newTmr, setNewTmr] = useState('');
+  const [showTmrModal, setShowTmrModal] = useState(false);
 
   const [sessionStartTS, setSessionStartTS] = useState<number|null>(null);
   const [syncing, setSyncing] = useState(false);
   const [lastReport, setLastReport] = useState<SessionLog|null>(null);
   const [history, setHistory] = useState<SessionLog[]>([]);
-  const [weekData, setWeekData] = useState<Record<string,number>>({});
-  const [showHistory, setShowHistory] = useState(false);
+  
+  const [targetHrs, setTargetHrs] = useState(15);
+  const [showSettings, setShowSettings] = useState(false);
+  const [rogueACs, setRogueACs] = useState<any[]>([]);
 
   const timerRef = useRef<NodeJS.Timeout|null>(null);
+  const [wrActiveTab, setWrActiveTab] = useState(0);
 
   // ── Init ──────────────────────────────────────────────────────────────────
   useEffect(() => {
-    try { const h = localStorage.getItem('cf_grind_v3'); if (h) setHistory(JSON.parse(h)); } catch {}
-    try { const t = localStorage.getItem('cf_grind_tasks'); if (t) setTasks(JSON.parse(t)); } catch {}
-    try { const w = localStorage.getItem('cf_grind_week'); if (w) setWeekData(JSON.parse(w)); } catch {}
-    const t = setTimeout(() => setShowPrompt(true), 1800);
-    return () => clearTimeout(t);
+    try { const h = localStorage.getItem('cf_grind_v4'); if (h) setHistory(JSON.parse(h)); } catch {}
+    try { const t = localStorage.getItem('cf_grind_tasks_v4'); if (t) setTasks(JSON.parse(t)); } catch {}
+    try { const tp = localStorage.getItem('cf_grind_tmr'); if (tp) setTmrPlan(JSON.parse(tp)); } catch {}
+    try { const tg = localStorage.getItem('cf_grind_target'); if (tg) setTargetHrs(parseInt(tg)); } catch {}
   }, []);
+
+  // ── Rogue AC Detection ────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!handle || phase !== 'IDLE') return;
+    const checkForRogues = async () => {
+      try {
+        const res = await fetch(`https://codeforces.com/api/user.status?handle=${handle}&from=1&count=50`);
+        const data = await res.json();
+        if (data.status === 'OK') {
+          const now = Date.now() / 1000;
+          const recent = data.result.filter((s:any) => s.verdict === 'OK' && s.author.participantType === 'PRACTICE' && (now - s.creationTimeSeconds) < 86400 * 2);
+          
+          const missing = recent.filter((s:any) => {
+            return !history.some(h => s.creationTimeSeconds >= h.startTs && s.creationTimeSeconds <= h.endTs);
+          });
+          setRogueACs(missing);
+        }
+      } catch (e) {}
+    };
+    checkForRogues();
+  }, [handle, phase, history]);
 
   useEffect(() => {
     const style = document.createElement('style');
@@ -95,15 +122,9 @@ export default function GrindMode({ handle }: { handle: string }) {
     if (!document.getElementById('grind-ring-css')) document.head.appendChild(style);
   }, []);
 
-  const saveTasks = useCallback((t: GrindTask[]) => {
-    setTasks(t);
-    try { localStorage.setItem('cf_grind_tasks', JSON.stringify(t)); } catch {}
-  }, []);
-
-  const saveHistory = useCallback((h: SessionLog[]) => {
-    setHistory(h);
-    try { localStorage.setItem('cf_grind_v3', JSON.stringify(h)); } catch {}
-  }, []);
+  const saveTasks = useCallback((t: GrindTask[]) => { setTasks(t); try { localStorage.setItem('cf_grind_tasks_v4', JSON.stringify(t)); } catch {} }, []);
+  const saveHistory = useCallback((h: SessionLog[]) => { setHistory(h); try { localStorage.setItem('cf_grind_v4', JSON.stringify(h)); } catch {} }, []);
+  const saveTmrPlan = useCallback((tp: TmrPlan[]) => { setTmrPlan(tp); try { localStorage.setItem('cf_grind_tmr', JSON.stringify(tp)); } catch {} }, []);
 
   // ── Timer ─────────────────────────────────────────────────────────────────
   const startTick = useCallback((field: 'work'|'rest') => {
@@ -126,23 +147,13 @@ export default function GrindMode({ handle }: { handle: string }) {
   const initiateRest = useCallback(() => {
     const rec = Math.max(60, Math.floor(workSecs / 5));
     setTargetRest(rec);
-    setEditRestVal(String(Math.round(rec / 60)));
     setRestSecs(0);
     setBreakCount(b => b + 1);
     setPhase('REST');
     startTick('rest');
   }, [workSecs, startTick]);
 
-  const resumeFlow = useCallback(() => {
-    setPhase('FLOW');
-    startTick('work');
-  }, [startTick]);
-
-  const applyRestEdit = useCallback(() => {
-    const m = parseInt(editRestVal);
-    if (!isNaN(m) && m > 0) setTargetRest(m * 60);
-    setShowEditRest(false);
-  }, [editRestVal]);
+  const resumeFlow = useCallback(() => { setPhase('FLOW'); startTick('work'); }, [startTick]);
 
   // ── Terminate & extract ───────────────────────────────────────────────────
   const terminate = useCallback(async () => {
@@ -150,7 +161,7 @@ export default function GrindMode({ handle }: { handle: string }) {
     setPhase('RATE');
     setSyncing(true);
 
-    let points = 0, type = 'GRIND / PRACTICE';
+    let points = 0, type = 'PRACTICE GRIND';
     const details: ProbDetail[] = [];
 
     try {
@@ -159,12 +170,10 @@ export default function GrindMode({ handle }: { handle: string }) {
         const data = await res.json();
         if (data.status === 'OK') {
           const subs = data.result.filter((s:any) => s.creationTimeSeconds >= sessionStartTS).reverse();
-          if (subs.some((s:any) => s.author.participantType === 'CONTESTANT')) type = 'LIVE OPS (RATED)';
-          else if (subs.some((s:any) => s.author.participantType === 'VIRTUAL')) type = 'SIMULATION (VIRTUAL)';
           let mark = sessionStartTS;
           const seen = new Set<string>();
           subs.forEach((s:any) => {
-            if (s.verdict === 'OK' && s.problem) {
+            if (s.verdict === 'OK' && s.problem && s.author.participantType === 'PRACTICE') {
               const pid = `${s.problem.contestId}-${s.problem.index}`;
               if (!seen.has(pid)) {
                 seen.add(pid);
@@ -180,13 +189,10 @@ export default function GrindMode({ handle }: { handle: string }) {
     } catch {}
 
     const avg = details.length > 0 ? Math.round(details.reduce((a,p) => a + p.timeTakenSecs, 0) / details.length) : 0;
-    const today = todayKey();
-    const newWd = { ...weekData, [today]: (weekData[today] || 0) + workSecs };
-    try { localStorage.setItem('cf_grind_week', JSON.stringify(newWd)); } catch {}
-    setWeekData(newWd);
 
     const report: SessionLog = {
       id: Date.now().toString(), date: new Date().toISOString(),
+      startTs: sessionStartTS || (Date.now()/1000 - workSecs), endTs: Date.now()/1000,
       workMins: parseFloat((workSecs / 60).toFixed(1)),
       problemsSolved: details.length, pointsEarned: points, type,
       avgTimeSecs: avg, details, flowRating: 0,
@@ -198,88 +204,114 @@ export default function GrindMode({ handle }: { handle: string }) {
     setSyncing(false);
     setFlowRating(0);
     setWorkSecs(0); setRestSecs(0); setTargetRest(0); setSessionStartTS(null); setBreakCount(0);
-    // Save placeholder (rating applied on confirm)
     saveHistory([report, ...history]);
-  }, [sessionStartTS, handle, workSecs, intent, plannedMins, breakCount, weekData, history, saveHistory]);
+  }, [sessionStartTS, handle, workSecs, intent, plannedMins, breakCount, history, saveHistory]);
 
   const confirmRate = useCallback(() => {
     if (!lastReport) { setPhase('IDLE'); return; }
     const updated = { ...lastReport, flowRating };
     saveHistory([updated, ...history.slice(1)]);
     setLastReport(updated);
-    setPhase('IDLE');
-    setIntent(''); setPlannedMins('');
-    setTimeout(() => setShowPrompt(true), 2500);
+    setPhase('IDLE'); setIntent(''); setPlannedMins('');
   }, [lastReport, flowRating, history, saveHistory]);
 
-  // ── Task ops ───────────────────────────────────────────────────────────────
-  const addTask = () => {
-    if (!newTask.trim()) return;
-    saveTasks([{ id: Date.now(), text: newTask.trim(), done: false, pinned: false, priority: newPri }, ...tasks]);
-    setNewTask(''); setNewPri('normal');
+  const logRogueACs = () => {
+    if (rogueACs.length === 0) return;
+    const pts = rogueACs.reduce((sum, s) => sum + (CF_SCORE_MAP[s.problem?.rating ? Math.floor(s.problem.rating/100)*100 : 800] || 10), 0);
+    const details = rogueACs.map(s => ({ pid: `${s.problem.contestId}-${s.problem.index}`, name: s.problem.name, timeTakenSecs: 0, rating: s.problem.rating || 800 }));
+    const assumedMins = rogueACs.length * 20; 
+    const ts = rogueACs[rogueACs.length-1].creationTimeSeconds;
+    
+    const report: SessionLog = {
+      id: Date.now().toString(), date: new Date(ts*1000).toISOString(), startTs: ts - (assumedMins*60), endTs: ts,
+      workMins: assumedMins, problemsSolved: rogueACs.length, pointsEarned: pts, type: 'RETROACTIVE RECON',
+      avgTimeSecs: 0, details, flowRating: 3, intent: 'Logged retroactively', breakCount: 0
+    };
+    saveHistory([report, ...history].sort((a,b) => b.endTs - a.endTs));
+    setRogueACs([]);
   };
-  const toggleTask = (id: number) => saveTasks(tasks.map(t => t.id===id ? {...t, done:!t.done} : t));
-  const pinTask = (id: number) => saveTasks(tasks.map(t => ({...t, pinned: t.id===id ? !t.pinned : false})));
-  const deleteTask = (id: number) => saveTasks(tasks.filter(t => t.id!==id));
-  const saveEdit = () => {
-    if (!editingTask) return;
-    if (editText.trim()) saveTasks(tasks.map(t => t.id===editingTask.id ? {...t, text:editText.trim()} : t));
-    setEditingTask(null);
-  };
 
-  const pinned  = tasks.find(t => t.pinned && !t.done);
-  const pending = tasks.filter(t => !t.done && !t.pinned);
-  const done    = tasks.filter(t => t.done);
+  // ── Stats Calculations ──────────────────────────────────────────────────────
+  const { totalMins, todayMins, streak, weekSecs, peakGrid, weeklyReviews } = useMemo(() => {
+    let tMins = 0, tdyMins = 0;
+    const dMap: Record<string, number> = {};
+    const hSecs = new Array(24).fill(0);
+    
+    const now = new Date();
+    const todayStr = now.toLocaleDateString();
+    const mon = getWeekMonday(now);
 
-  // ── Weekly bars ────────────────────────────────────────────────────────────
-  const weekBars = Array.from({length:7}, (_,i) => {
-    const d = new Date(); d.setDate(d.getDate() - (6-i));
-    const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-    const sec = weekData[key] || 0;
-    return { key, sec, pct: Math.min(100, sec/(8*3600)*100), isToday: key===todayKey(), day: d.toLocaleDateString('en-GB',{weekday:'short'}) };
-  });
+    history.forEach(h => {
+      tMins += h.workMins;
+      const dStr = new Date(h.date).toLocaleDateString();
+      if (dStr === todayStr) tdyMins += h.workMins;
+      dMap[dStr] = (dMap[dStr] || 0) + h.workMins;
+      const hour = new Date(h.startTs * 1000).getHours();
+      hSecs[hour] += h.workMins;
+    });
 
-  const totalMins = history.reduce((a,h) => a+h.workMins, 0);
-  const totalACs  = history.reduce((a,h) => a+h.problemsSolved, 0);
-  const totalXP   = history.reduce((a,h) => a+h.pointsEarned, 0);
+    let s = 0; let c = new Date();
+    while (true) {
+      if (dMap[c.toLocaleDateString()] > 0) s++;
+      else if (c.toLocaleDateString() !== todayStr) break;
+      c.setDate(c.getDate() - 1);
+    }
+
+    let wSecs = 0;
+    for(let i=0; i<7; i++) {
+      const d = new Date(mon); d.setDate(d.getDate() + i);
+      wSecs += (dMap[d.toLocaleDateString()] || 0) * 60;
+    }
+
+    const reviews = [];
+    for(let w=0; w<4; w++) {
+      const wMon = new Date(mon); wMon.setDate(wMon.getDate() - (w * 7));
+      const wSun = new Date(wMon); wSun.setDate(wSun.getDate() + 6);
+      let wTotal = 0, wAcs = 0, maxD = 0, activeD = 0;
+      for(let i=0; i<7; i++) {
+        const d = new Date(wMon); d.setDate(d.getDate() + i);
+        const dStr = d.toLocaleDateString();
+        if (dMap[dStr] > 0) {
+          wTotal += dMap[dStr]; activeD++;
+          if (dMap[dStr] > maxD) maxD = dMap[dStr];
+        }
+      }
+      history.filter(h => {
+        const d = new Date(h.date); return d >= wMon && d <= wSun;
+      }).forEach(h => wAcs += h.problemsSolved);
+      
+      reviews.push({ label: w === 0 ? 'This Week' : `${wMon.getDate()}/${wMon.getMonth()+1} - ${wSun.getDate()}/${wSun.getMonth()+1}`, total: wTotal, acs: wAcs, maxD, activeD });
+    }
+
+    const maxH = Math.max(1, ...hSecs);
+    const pGrid = hSecs.map(sec => sec === 0 ? 0 : Math.ceil((sec / maxH) * 5));
+
+    return { totalMins: tMins, todayMins: tdyMins, streak: s, weekSecs: wSecs, peakGrid: pGrid, weeklyReviews: reviews };
+  }, [history]);
 
   // ════════════════════════════════════════════════════════════════════════════
   // PHASE: INTENT
   // ════════════════════════════════════════════════════════════════════════════
   if (phase === 'INTENT') return (
-    <div className="fixed inset-0 bg-[#050505] z-[9999] flex items-center justify-center font-mono p-8">
-      <div className="w-full max-w-md space-y-5">
-        <div className="text-[#f85149] text-[9px] uppercase tracking-[4px]">// Pre-session briefing</div>
-        <h2 className="text-white text-3xl font-black leading-tight">What's the<br/>mission?</h2>
-        <div className="space-y-1">
-          <div className="text-[#333] text-[9px] uppercase tracking-[2px] mb-1.5">Session intent</div>
-          <input
-            value={intent} onChange={e => setIntent(e.target.value)}
-            onKeyDown={e => { if (e.key==='Enter') startFlow(); if (e.key==='Escape') setPhase('IDLE'); }}
-            placeholder="e.g. Crack 3 Div2 D's, finish segment tree problems…"
-            className="w-full bg-transparent border border-[#1a1a1a] focus:border-[#f85149] text-white font-mono text-sm px-4 py-3 rounded-[4px] outline-none transition-colors placeholder:text-[#222]"
-            autoFocus
-          />
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center font-sans p-8" style={{ background: 'rgba(29, 32, 33, 0.95)' }}>
+      <div className="w-full max-w-md space-y-6 p-8 rounded-2xl shadow-2xl" style={{ background: theme.surface, border: `1px solid ${theme.sh}` }}>
+        <div className="text-[11px] uppercase tracking-[3px] font-bold" style={{ color: theme.accent }}>// Pre-Flight Briefing</div>
+        <h2 className="text-3xl font-black leading-tight tracking-tight" style={{ color: theme.text }}>What is the<br/>target?</h2>
+        <div className="space-y-2">
+          <div className="text-[11px] uppercase tracking-[2px] font-semibold" style={{ color: theme.muted }}>Session intent</div>
+          <input value={intent} onChange={e => setIntent(e.target.value)} onKeyDown={e => { if (e.key==='Enter') startFlow(); if (e.key==='Escape') setPhase('IDLE'); }}
+            placeholder="e.g. Clear 3 Div2 D's..." className="w-full text-sm px-4 py-3 rounded outline-none transition-colors" 
+            style={{ background: 'rgba(0,0,0,0.2)', border: `1px solid ${theme.sh}`, color: theme.text }} autoFocus />
         </div>
-        <div className="space-y-1">
-          <div className="text-[#333] text-[9px] uppercase tracking-[2px] mb-1.5">Approx. time you'll grind</div>
-          <div className="flex items-center gap-3">
-            <input type="number" min="10" max="600" value={plannedMins} onChange={e => setPlannedMins(e.target.value)}
-              placeholder="90"
-              className="w-24 bg-transparent border border-[#1a1a1a] focus:border-[#e3b341] text-white font-mono text-sm px-3 py-2.5 rounded-[4px] outline-none transition-colors text-center" />
-            <span className="text-[#333] text-xs font-mono uppercase tracking-[1px]">minutes</span>
-            {plannedMins && <span className="text-[#444] text-xs font-mono">(≈ {fmtMins(parseInt(plannedMins)*60)})</span>}
-          </div>
+        <div className="space-y-2">
+          <div className="text-[11px] uppercase tracking-[2px] font-semibold" style={{ color: theme.muted }}>Approx. duration (mins)</div>
+          <input type="number" min="10" max="600" value={plannedMins} onChange={e => setPlannedMins(e.target.value)} placeholder="90"
+            className="w-full text-sm px-4 py-3 rounded outline-none transition-colors" 
+            style={{ background: 'rgba(0,0,0,0.2)', border: `1px solid ${theme.sh}`, color: theme.text }} />
         </div>
-        <div className="flex gap-3 pt-1">
-          <button onClick={() => setPhase('IDLE')}
-            className="flex-1 bg-transparent border border-[#1a1a1a] text-[#444] font-mono text-xs py-3 rounded-[4px] hover:border-[#333] hover:text-[#666] transition-all uppercase tracking-wider">
-            ← Back
-          </button>
-          <button onClick={startFlow}
-            className="flex-[2] bg-[#f85149] text-black font-black text-sm py-3 rounded-[4px] hover:bg-[#ff6a64] transition-all uppercase tracking-widest shadow-[0_0_20px_rgba(248,81,73,0.25)]">
-            {intent ? 'Engage Protocol →' : 'Skip & Engage →'}
-          </button>
+        <div className="flex gap-3 pt-2">
+          <button onClick={() => setPhase('IDLE')} className="flex-1 py-3 rounded transition-all uppercase tracking-wider text-xs font-bold" style={{ background: 'transparent', border: `1px solid ${theme.sh}`, color: theme.muted }}>Abort</button>
+          <button onClick={startFlow} className="flex-[2] font-black text-sm py-3 rounded transition-all uppercase tracking-widest" style={{ background: theme.accent, color: theme.bg, boxShadow: `0 4px 15px rgba(250,189,47,0.2)` }}>Engage Protocol</button>
         </div>
       </div>
     </div>
@@ -290,159 +322,48 @@ export default function GrindMode({ handle }: { handle: string }) {
   // ════════════════════════════════════════════════════════════════════════════
   if (phase === 'FLOW' || phase === 'REST') {
     const isFlow = phase === 'FLOW';
-    const accent = isFlow ? '#f85149' : '#58a6ff';
+    const accent = isFlow ? theme.accent : '#58a6ff';
     const restPct = targetRest > 0 ? Math.min(100, Math.round(restSecs/targetRest*100)) : 0;
+    const pinned = tasks.find(t => t.pinned && !t.done);
 
     return (
-      <div className="fixed inset-0 bg-[#050505] z-[9999] flex flex-col font-mono overflow-hidden select-none">
-        {/* Top bar */}
-        <div className="flex items-center justify-between px-8 pt-6 text-[9px] uppercase tracking-[4px]">
-          <span style={{ color: accent }}>
-            {isFlow ? '[ Flow State Active ]' : '[ Mandatory Rest Phase ]'}
-          </span>
-          <div className="flex items-center gap-5 text-[#222]">
-            {intent && <span className="max-w-xs truncate normal-case text-[#2a2a2a]">↳ {intent}</span>}
+      <div className="fixed inset-0 z-[9999] flex flex-col font-sans overflow-hidden select-none" style={{ background: '#050505' }}>
+        <div className="flex items-center justify-between px-8 pt-8 text-[11px] font-bold uppercase tracking-[3px]">
+          <span style={{ color: accent }}>{isFlow ? '⚡ FLOW STATE ACTIVE' : '⏸ MANDATORY REST'}</span>
+          <div className="flex items-center gap-5 text-[#888]">
+            {intent && <span className="max-w-xs truncate">↳ {intent}</span>}
             {breakCount > 0 && <span>Breaks: {breakCount}</span>}
           </div>
         </div>
 
-        {/* Timer */}
-        <div className="flex-1 flex flex-col items-center justify-center gap-3">
-          <div className="relative w-[280px] h-[280px] flex items-center justify-center">
+        <div className="flex-1 flex flex-col items-center justify-center gap-6">
+          <div className="relative w-[340px] h-[340px] flex items-center justify-center">
             <FlowRing phase={phase} targetRest={targetRest} restSecs={restSecs} />
             <div className="z-10 text-center">
-              <div className="font-black tracking-tighter leading-none transition-colors duration-700"
-                style={{ fontSize:'clamp(4rem,11vw,7rem)', color: accent, textShadow:`0 0 60px ${accent}30` }}>
+              <div className="font-mono font-light tracking-tighter leading-none transition-colors duration-700" style={{ fontSize:'6.5rem', color: accent, textShadow:`0 0 40px ${accent}40` }}>
                 {isFlow ? fmt(workSecs) : fmt(restSecs)}
               </div>
-              {!isFlow && targetRest > 0 && (
-                <div className="text-[10px] mt-2 uppercase tracking-[2px]" style={{ color: accent }}>
-                  {restPct}% complete
-                </div>
-              )}
+              {!isFlow && targetRest > 0 && <div className="text-xs mt-3 font-bold uppercase tracking-[2px]" style={{ color: accent }}>{restPct}% complete</div>}
             </div>
           </div>
-
-          <div className="text-[#222] text-[9px] uppercase tracking-[3px]">
-            {isFlow ? 'Nescafé-fueled execution' : `Rest target: ${fmtMins(targetRest)}`}
-          </div>
-
-          {/* Edit rest */}
-          {!isFlow && (
-            <div className="flex items-center gap-2 mt-1">
-              {showEditRest ? (
-                <>
-                  <input type="number" value={editRestVal} min="1" onChange={e => setEditRestVal(e.target.value)}
-                    onKeyDown={e => { if(e.key==='Enter') applyRestEdit(); if(e.key==='Escape') setShowEditRest(false); }}
-                    className="w-14 bg-transparent border border-[#222] focus:border-[#58a6ff] text-white text-sm px-2 py-1 rounded-[4px] outline-none text-center font-mono" autoFocus />
-                  <span className="text-[#333] text-xs">min</span>
-                  <button onClick={applyRestEdit} className="text-xs text-[#56d364] border border-[#56d364]/30 px-2 py-1 rounded-[4px] hover:bg-[#56d364]/10 transition-all bg-transparent cursor-pointer">✓</button>
-                  <button onClick={() => setShowEditRest(false)} className="text-xs text-[#333] bg-transparent border-none cursor-pointer">✕</button>
-                </>
-              ) : (
-                <button onClick={() => setShowEditRest(true)} className="text-[8px] uppercase tracking-[2px] text-[#222] hover:text-[#555] transition-colors bg-transparent border-none cursor-pointer">
-                  ✎ Edit rest duration
-                </button>
-              )}
-            </div>
-          )}
         </div>
 
-        {/* Pinned task */}
         {isFlow && pinned && (
-          <div className="mx-8 mb-3 flex items-center gap-3 px-4 py-2.5 rounded-[4px]"
-            style={{ border:'1px solid rgba(248,81,73,0.2)', background:'rgba(248,81,73,0.03)' }}>
-            <span className="text-[#f85149] text-[8px] uppercase tracking-[2px] shrink-0">Locked On</span>
-            <span className="text-[#c9d1d9] text-sm flex-1 truncate">{pinned.text}</span>
-            <button onClick={() => toggleTask(pinned.id)}
-              className="text-[8px] text-[#56d364] uppercase tracking-[2px] border border-[#56d364]/30 px-2 py-1 rounded-[4px] hover:bg-[#56d364]/10 transition-all bg-transparent cursor-pointer">
-              Done ✓
-            </button>
+          <div className="mx-auto w-full max-w-lg mb-8 flex items-center gap-4 px-5 py-4 rounded-xl border" style={{ borderColor: `${accent}40`, background: `${accent}10` }}>
+            <span className="text-[10px] font-bold uppercase tracking-[2px] shrink-0" style={{ color: accent }}>Locked On</span>
+            <span className="text-white text-sm font-medium flex-1 truncate">{pinned.text}</span>
+            <button onClick={() => saveTasks(tasks.map(t => t.id === pinned.id ? {...t, done: true} : t))} className="text-[10px] font-bold uppercase tracking-[2px] border px-3 py-1.5 rounded transition-all cursor-pointer hover:bg-white/10" style={{ borderColor: accent, color: accent, background: 'transparent' }}>Done ✓</button>
           </div>
         )}
 
-        {/* Controls */}
-        <div className="flex gap-4 justify-center px-8 pb-8 flex-wrap">
+        <div className="flex gap-4 justify-center px-8 pb-12 flex-wrap">
           {isFlow ? (
-            <>
-              <button onClick={initiateRest}
-                className="px-8 py-3 bg-transparent border-2 border-[#58a6ff] text-[#58a6ff] font-bold uppercase tracking-widest hover:bg-[#58a6ff] hover:text-black transition-all text-sm rounded-[4px]">
-                Initiate Rest
-              </button>
-              <button onClick={() => setShowTaskPanel(s => !s)}
-                className="px-5 py-3 bg-transparent border border-[#1a1a1a] text-[#333] font-mono text-xs uppercase tracking-wider hover:border-[#333] hover:text-[#666] transition-all rounded-[4px]">
-                Tasks {pending.length + (pinned ? 1 : 0) > 0 ? `(${pending.length + (pinned ? 1 : 0)})` : ''}
-              </button>
-            </>
+            <button onClick={initiateRest} className="px-8 py-3 bg-transparent border-2 font-bold uppercase tracking-widest transition-all text-sm rounded cursor-pointer" style={{ borderColor: '#58a6ff', color: '#58a6ff' }}>Initiate Rest</button>
           ) : (
-            <button onClick={resumeFlow}
-              className="px-8 py-3 bg-transparent border-2 border-[#f85149] text-[#f85149] font-bold uppercase tracking-widest hover:bg-[#f85149] hover:text-black transition-all text-sm rounded-[4px]">
-              Resume Execution
-            </button>
+            <button onClick={resumeFlow} className="px-8 py-3 bg-transparent border-2 font-bold uppercase tracking-widest transition-all text-sm rounded cursor-pointer" style={{ borderColor: theme.accent, color: theme.accent }}>Resume Execution</button>
           )}
-          <button onClick={terminate}
-            className="px-5 py-3 bg-transparent border border-[#1a1a1a] text-[#333] font-mono text-xs uppercase tracking-wider hover:border-[#f85149] hover:text-[#f85149] transition-all rounded-[4px]">
-            Terminate &amp; Extract
-          </button>
+          <button onClick={terminate} className="px-6 py-3 bg-transparent border text-xs font-bold uppercase tracking-wider transition-all rounded cursor-pointer" style={{ borderColor: theme.sh, color: theme.muted }}>Extract</button>
         </div>
-
-        {/* Floating task panel */}
-        {isFlow && showTaskPanel && (
-          <div className="absolute top-16 right-5 w-68 max-w-[280px] bg-[#0a0a0a] border border-[#151515] rounded-[6px] p-4 max-h-[55vh] overflow-y-auto shadow-[0_10px_40px_rgba(0,0,0,0.6)] z-20">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-[#333] text-[8px] uppercase tracking-[3px]">Task Queue</span>
-              <button onClick={() => setShowTaskPanel(false)} className="text-[#222] text-xs hover:text-[#444] bg-transparent border-none cursor-pointer">✕</button>
-            </div>
-            <div className="flex gap-1.5 mb-3">
-              <button onClick={() => setNewPri(p => p==='high'?'normal':'high')}
-                className={`w-7 h-7 rounded-[4px] border font-mono text-xs font-black transition-all bg-transparent cursor-pointer shrink-0 ${newPri==='high' ? 'border-[#f85149] text-[#f85149]' : 'border-[#1a1a1a] text-[#222]'}`}>!</button>
-              <input value={newTask} onChange={e => setNewTask(e.target.value)}
-                onKeyDown={e => e.key==='Enter' && addTask()} placeholder="New task…"
-                className="flex-1 bg-transparent border border-[#1a1a1a] focus:border-[#333] text-white text-xs px-2 py-1.5 rounded-[4px] outline-none font-mono placeholder:text-[#1a1a1a]" />
-              <button onClick={addTask} className="w-7 h-7 bg-[#f85149] text-black text-xs font-black rounded-[4px] hover:bg-[#ff6a64] transition-all cursor-pointer shrink-0">+</button>
-            </div>
-            <div className="space-y-1">
-              {pinned && (
-                <div className="flex items-center gap-1.5 pl-2 py-1.5 rounded-[4px] border-l-2 border-[#f85149] bg-[rgba(248,81,73,0.04)]">
-                  <input type="checkbox" onChange={() => toggleTask(pinned.id)} className="w-3 h-3 accent-[#56d364] cursor-pointer shrink-0" />
-                  <span className="text-white text-xs flex-1 truncate">{pinned.text}</span>
-                  <button onClick={() => pinTask(pinned.id)} className="text-[8px] text-[#e3b341] bg-transparent border-none cursor-pointer shrink-0">📌</button>
-                </div>
-              )}
-              {pending.map(t => (
-                <div key={t.id} className="flex items-center gap-1.5 pl-2 py-1.5 rounded-[4px] group hover:bg-[#111] transition-colors">
-                  <input type="checkbox" onChange={() => toggleTask(t.id)} className="w-3 h-3 accent-[#56d364] cursor-pointer shrink-0" />
-                  <span className={`text-xs flex-1 truncate ${t.priority==='high'?'text-[#f85149]':'text-[#555]'}`}>{t.text}</span>
-                  <div className="hidden group-hover:flex gap-1 shrink-0">
-                    <button onClick={() => pinTask(t.id)} className="text-[8px] text-[#333] hover:text-[#e3b341] bg-transparent border-none cursor-pointer">📌</button>
-                    <button onClick={() => deleteTask(t.id)} className="text-[8px] text-[#333] hover:text-[#f85149] bg-transparent border-none cursor-pointer">✕</button>
-                  </div>
-                </div>
-              ))}
-              {done.length > 0 && (
-                <div className="pt-1.5 mt-1 border-t border-[#111] text-[7px] uppercase tracking-[2px] text-[#1a1a1a]">
-                  {done.length} done
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Edit task modal during flow */}
-        {editingTask && (
-          <div className="absolute inset-0 bg-black/80 flex items-center justify-center z-30">
-            <div className="bg-[#0d0d0d] border border-[#222] rounded-[6px] p-5 w-72 space-y-3">
-              <div className="text-[#58a6ff] text-[9px] uppercase tracking-[3px]">Edit Task</div>
-              <input value={editText} onChange={e => setEditText(e.target.value)}
-                onKeyDown={e => { if(e.key==='Enter') saveEdit(); if(e.key==='Escape') setEditingTask(null); }}
-                className="w-full bg-transparent border border-[#222] focus:border-[#58a6ff] text-white font-mono text-sm px-3 py-2 rounded-[4px] outline-none" autoFocus />
-              <div className="flex gap-2">
-                <button onClick={() => setEditingTask(null)} className="flex-1 bg-transparent border border-[#222] text-[#444] text-xs py-2 rounded-[4px] cursor-pointer">Cancel</button>
-                <button onClick={saveEdit} className="flex-[2] bg-[#58a6ff] text-black text-xs font-bold py-2 rounded-[4px] cursor-pointer hover:bg-[#7ab8ff] transition-all">Save</button>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     );
   }
@@ -451,56 +372,30 @@ export default function GrindMode({ handle }: { handle: string }) {
   // PHASE: RATE
   // ════════════════════════════════════════════════════════════════════════════
   if (phase === 'RATE') return (
-    <div className="fixed inset-0 bg-[#050505] z-[9999] flex items-center justify-center font-mono p-8">
-      <div className="w-full max-w-sm text-center space-y-5">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center font-sans p-8" style={{ background: 'rgba(29, 32, 33, 0.95)' }}>
+      <div className="w-full max-w-sm text-center space-y-6">
         {syncing ? (
-          <div className="text-[#e3b341] text-sm animate-pulse uppercase tracking-[3px]">[ Fetching and parsing telemetry… ]</div>
+          <div className="text-sm font-bold animate-pulse uppercase tracking-[3px]" style={{ color: theme.accent }}>[ Fetching Telemetry... ]</div>
         ) : (
           <>
-            <div className="text-[#56d364] text-[9px] uppercase tracking-[4px]">// Operation complete</div>
-            <h2 className="text-white text-2xl font-black">Rate your flow</h2>
+            <div className="text-[11px] font-bold uppercase tracking-[4px]" style={{ color: theme.ok }}>// Extraction Complete</div>
+            <h2 className="text-4xl font-black" style={{ color: theme.text }}>Rate your flow</h2>
             {lastReport && (
               <div className="grid grid-cols-3 gap-3">
-                {[
-                  { l:'Focus Time', v:`${lastReport.workMins}m`, c:'#e3b341' },
-                  { l:'ACs', v:String(lastReport.problemsSolved), c:'#56d364' },
-                  { l:'XP', v:`+${lastReport.pointsEarned}`, c:'#56d364' },
-                ].map(s => (
-                  <div key={s.l} className="bg-[#0a0a0a] border border-[#111] rounded-[4px] p-3">
-                    <div className="text-[#333] text-[7px] uppercase tracking-[2px] mb-1">{s.l}</div>
-                    <div className="font-black text-lg" style={{color:s.c}}>{s.v}</div>
+                {[{ l:'Focus', v:`${lastReport.workMins}m`, c:theme.accent }, { l:'ACs', v:String(lastReport.problemsSolved), c:theme.ok }, { l:'XP', v:`+${lastReport.pointsEarned}`, c:'#58a6ff' }].map(s => (
+                  <div key={s.l} className="rounded-xl p-4 text-center" style={{ background: theme.surface, border: `1px solid ${theme.sh}` }}>
+                    <div className="text-[9px] font-bold uppercase tracking-[2px] mb-1" style={{ color: theme.muted }}>{s.l}</div>
+                    <div className="font-black text-2xl font-mono" style={{ color: s.c }}>{s.v}</div>
                   </div>
                 ))}
               </div>
             )}
-            {lastReport?.intent && (
-              <div className="text-left text-[#2a2a2a] text-xs border-l-2 border-[#111] pl-3 italic">
-                "{lastReport.intent}"
-                {lastReport.plannedMins && (
-                  <span className="ml-2 not-italic text-[#222]">· planned {lastReport.plannedMins}m, actual {lastReport.workMins}m</span>
-                )}
-              </div>
-            )}
-            {lastReport && lastReport.breakCount > 0 && (
-              <div className="text-[#222] text-[9px] uppercase tracking-[2px]">{lastReport.breakCount} break{lastReport.breakCount>1?'s':''} taken</div>
-            )}
-            {/* Stars */}
-            <div className="flex justify-center gap-4 py-2">
+            <div className="flex justify-center gap-4 py-4">
               {[1,2,3,4,5].map(n => (
-                <button key={n} onClick={() => setFlowRating(n)}
-                  className="text-4xl transition-all bg-transparent border-none cursor-pointer hover:scale-110"
-                  style={{ filter: n<=flowRating ? 'drop-shadow(0 0 8px #e3b341)' : 'none', opacity: n<=flowRating ? 1 : 0.15 }}>
-                  ★
-                </button>
+                <button key={n} onClick={() => setFlowRating(n)} className="text-4xl transition-all bg-transparent border-none cursor-pointer hover:scale-125" style={{ filter: n<=flowRating ? `drop-shadow(0 0 10px ${theme.accent})` : 'none', opacity: n<=flowRating ? 1 : 0.2 }}>★</button>
               ))}
             </div>
-            <div className="text-[#333] text-[9px] uppercase tracking-[2px]">
-              {['Skip rating','Rough session','Below average','Decent grind','Good flow','Peak performance'][flowRating]}
-            </div>
-            <button onClick={confirmRate}
-              className="w-full bg-[#56d364] text-black font-black uppercase tracking-widest py-4 rounded-[4px] hover:bg-[#6ee87a] transition-all text-sm">
-              Log Session &amp; Exit
-            </button>
+            <button onClick={confirmRate} className="w-full font-black uppercase tracking-widest py-4 rounded transition-all text-sm cursor-pointer shadow-lg hover:-translate-y-1" style={{ background: theme.ok, color: theme.bg }}>Log Session</button>
           </>
         )}
       </div>
@@ -508,254 +403,254 @@ export default function GrindMode({ handle }: { handle: string }) {
   );
 
   // ════════════════════════════════════════════════════════════════════════════
-  // PHASE: IDLE
+  // PHASE: IDLE (DASHBOARD)
   // ════════════════════════════════════════════════════════════════════════════
   return (
-    <div className="animate-in fade-in duration-400 space-y-5">
-
-      {/* Engage prompt */}
-      {showPrompt && (
-        <div className="relative overflow-hidden rounded-[4px] p-5 flex items-center justify-between gap-4"
-          style={{ background:'#050505', border:'1px solid rgba(248,81,73,0.25)', boxShadow:'0 0 30px rgba(248,81,73,0.06)' }}>
-          <div className="absolute top-0 left-0 right-0 h-[1px]"
-            style={{ background:'linear-gradient(90deg, transparent, #f85149, transparent)' }} />
+    <div className="animate-in fade-in duration-400 space-y-6 max-w-4xl mx-auto pb-20 font-sans" style={{ color: theme.text }}>
+      
+      {/* ROGUE AC BANNER */}
+      {rogueACs.length > 0 && (
+        <div className="rounded-xl p-5 flex items-center justify-between" style={{ background: 'rgba(251,73,52,0.1)', border: `1px solid rgba(251,73,52,0.3)` }}>
           <div>
-            <div className="font-mono text-[9px] uppercase tracking-[3px] text-[#f85149] flex items-center gap-2 mb-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#f85149] animate-pulse shadow-[0_0_6px_#f85149] inline-block" />
-              Standby — no active engagement detected
-            </div>
-            <p className="font-mono text-[11px] text-[#333]">Would you like to initialize Grind Mode?</p>
+            <div className="font-bold text-[11px] uppercase tracking-[2px] mb-1 flex items-center gap-2" style={{ color: theme.stop }}><span className="w-2 h-2 rounded-full animate-pulse" style={{ background: theme.stop }} /> Rogue Activity Detected</div>
+            <div className="text-sm font-medium">You solved <span className="font-bold" style={{ color: theme.stop }}>{rogueACs.length} problems</span> outside of Grind Mode recently.</div>
           </div>
-          <div className="flex gap-2 shrink-0">
-            <button onClick={() => setShowPrompt(false)}
-              className="bg-transparent border border-[#111] text-[#333] font-mono text-xs px-3 py-2 rounded-[4px] hover:border-[#222] hover:text-[#555] transition-all cursor-pointer uppercase tracking-wider">
-              Later
-            </button>
-            <button onClick={() => { setShowPrompt(false); setPhase('INTENT'); }}
-              className="bg-[#f85149] text-black font-black text-xs px-4 py-2 rounded-[4px] hover:bg-[#ff6a64] transition-all cursor-pointer uppercase tracking-widest shadow-[0_0_12px_rgba(248,81,73,0.25)]">
-              Engage →
-            </button>
+          <div className="flex gap-3">
+            <button onClick={() => setRogueACs([])} className="text-xs font-bold uppercase transition-colors bg-transparent border-none cursor-pointer" style={{ color: theme.muted }}>Dismiss</button>
+            <button onClick={logRogueACs} className="font-bold text-xs uppercase px-4 py-2 rounded transition-colors cursor-pointer" style={{ background: theme.stop, color: theme.text, border: 'none' }}>Log as Session</button>
           </div>
         </div>
       )}
 
-      {/* Launch card */}
-      <div className="bg-[#050505] border-l-[4px] border-l-[#f85149] border border-[#f85149]/20 rounded-[4px] p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-[0_0_30px_rgba(248,81,73,0.07)]">
-        <div>
-          <h2 className="text-[#f85149] font-mono text-xl font-black uppercase tracking-widest mb-1">Grind Mode</h2>
-          <p className="text-[#2a2a2a] font-mono text-[10px] uppercase tracking-[1px]">Flowmodoro · Session intent · Editable breaks · Auto-context · Per-problem speed</p>
-          {lastReport && (
-            <div className="mt-2 font-mono text-[9px] text-[#2a2a2a] flex items-center gap-3">
-              <span>Last: {new Date(lastReport.date).toLocaleDateString('en-GB',{day:'numeric',month:'short'})}</span>
-              <span>·</span><span>{lastReport.workMins}m</span>
-              <span>·</span><span>{lastReport.problemsSolved} ACs</span>
-              <span>·</span><span>+{lastReport.pointsEarned} XP</span>
-              {lastReport.flowRating ? <><span>·</span><span className="text-[#e3b341]">{'★'.repeat(lastReport.flowRating)}</span></> : null}
+      {/* MAIN FOCUS CARD (Matches HTML structure perfectly) */}
+      <div className="p-8 md:p-10 rounded-2xl relative shadow-2xl flex flex-col items-center text-center" style={{ background: theme.surface, border: `1px solid ${theme.sh}` }}>
+        <button onClick={() => setShowSettings(true)} className="absolute top-5 right-5 text-xl transition-transform hover:rotate-45 cursor-pointer bg-transparent border-none" style={{ color: theme.muted }} title="Settings">⚙</button>
+        
+        <h2 className="text-[12px] font-bold uppercase tracking-[3px] mb-6" style={{ color: theme.muted }}>Focus Session</h2>
+
+        {/* Tomorrow's Plan Banner */}
+        {tmrPlan.length > 0 && (
+          <div className="w-full max-w-sm mb-8 p-4 rounded-xl text-left cursor-pointer transition-colors border-l-4" style={{ background: 'rgba(0,0,0,0.2)', border: `1px solid ${theme.sh}`, borderLeftColor: theme.accent }} onClick={() => setShowTmrModal(true)}>
+            <span className="font-bold text-[10px] uppercase tracking-[1.5px] block mb-2" style={{ color: theme.accent }}>📋 Today's Intentions</span>
+            <div className="space-y-1.5">
+              {tmrPlan.map((t, i) => (
+                <div key={t.id} className="text-sm font-medium"><span className="font-mono text-[10px] mr-2" style={{ color: theme.accent }}>{i+1}.</span>{t.text}</div>
+              ))}
             </div>
-          )}
-        </div>
-        <button onClick={() => setPhase('INTENT')}
-          className="bg-[#f85149] text-black font-black uppercase tracking-widest px-8 py-4 rounded-[4px] text-sm hover:bg-[#ff6a64] transition-all shadow-[0_0_20px_rgba(248,81,73,0.3)] shrink-0 cursor-pointer">
-          Engage Protocol
+          </div>
+        )}
+
+        <div className="text-[6.5rem] font-mono font-light leading-none tracking-tighter mb-8">{fmt(workSecs)}</div>
+
+        <button onClick={() => setPhase('INTENT')} className="px-12 py-4 rounded-lg font-black uppercase tracking-widest text-sm shadow-xl transition-transform hover:-translate-y-1 cursor-pointer" style={{ background: theme.accent, color: theme.bg }}>
+          Start Session
         </button>
-      </div>
 
-      {/* Last report */}
-      {lastReport && !syncing && (
-        <div className="bg-[#050505] border border-[#58a6ff]/20 border-t-[2px] border-t-[#58a6ff] rounded-[4px] p-5">
-          <div className="font-mono text-[9px] uppercase tracking-[3px] text-[#58a6ff] mb-4 flex items-center gap-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#58a6ff] inline-block" />
-            Last Operation — {lastReport.type}
+        {/* Task Section */}
+        <div className="w-full mt-10 pt-8 border-t" style={{ borderColor: theme.sh }}>
+          <div className="flex gap-2">
+            <button onClick={() => setNewPri(p => p==='high'?'normal':'high')} className="w-11 h-11 rounded flex items-center justify-center font-bold text-lg cursor-pointer transition-colors" style={{ background: newPri === 'high' ? 'rgba(251,73,52,0.1)' : 'transparent', border: `1px solid ${newPri === 'high' ? theme.stop : theme.sh}`, color: newPri === 'high' ? theme.stop : theme.muted }}>{newPri==='high'?'!':'–'}</button>
+            <input value={newTask} onChange={e => setNewTask(e.target.value)} onKeyDown={e => e.key==='Enter' && saveTasks([...tasks, { id: Date.now(), text: newTask.trim(), done: false, pinned: false, priority: newPri }])} placeholder="What are you working on?" className="flex-1 px-4 py-3 rounded text-sm outline-none transition-colors" style={{ background: 'rgba(0,0,0,0.2)', border: `1px solid ${theme.sh}`, color: theme.text }} />
+            <input type="number" value={newEst} onChange={e => setNewEst(e.target.value)} placeholder="~min" className="w-20 px-3 py-3 rounded text-sm outline-none transition-colors" style={{ background: 'rgba(0,0,0,0.2)', border: `1px solid ${theme.sh}`, color: theme.text }} />
+            <button onClick={() => { if(newTask.trim()) { saveTasks([...tasks, { id: Date.now(), text: newTask.trim(), done: false, pinned: false, priority: newPri, estMins: parseInt(newEst)||undefined }]); setNewTask(''); setNewEst(''); setNewPri('normal'); } }} className="px-6 py-3 rounded font-bold text-sm cursor-pointer" style={{ background: theme.sh, color: theme.text, border: 'none' }}>Add</button>
           </div>
-          <div className="grid grid-cols-3 md:grid-cols-5 gap-3 mb-4">
-            {[
-              { l:'Focus', v:`${lastReport.workMins}m`, c:'#e3b341' },
-              { l:'Avg Solve', v:fmt(lastReport.avgTimeSecs), c:'#d2a8ff' },
-              { l:'ACs', v:String(lastReport.problemsSolved), c:'#56d364' },
-              { l:'XP', v:`+${lastReport.pointsEarned}`, c:'#56d364' },
-              { l:'Breaks', v:String(lastReport.breakCount||0), c:'#58a6ff' },
-            ].map(s => (
-              <div key={s.l} className="bg-black/20 border border-[#0f0f0f] rounded-[4px] p-3">
-                <div className="font-mono text-[8px] uppercase tracking-[2px] text-[#333] mb-1">{s.l}</div>
-                <div className="font-mono text-xl font-black" style={{color:s.c}}>{s.v}</div>
+
+          <div className="mt-4 space-y-2 text-left">
+            {tasks.filter(t => !t.done).map(t => (
+              <div key={t.id} className="flex items-center gap-3 p-3 rounded-lg border border-l-4 transition-colors hover:border-gray-500" style={{ background: 'rgba(0,0,0,0.1)', borderColor: theme.sh, borderLeftColor: t.priority==='high' ? theme.stop : theme.sh }}>
+                <input type="checkbox" onChange={() => saveTasks(tasks.map(x => x.id === t.id ? {...x, done: true} : x))} className="w-4 h-4 cursor-pointer accent-[#b8bb26]" />
+                <span className="text-sm font-medium flex-1">{t.text}</span>
+                {t.estMins && <span className="text-[10px] font-mono px-2 py-1 rounded" style={{ background: 'rgba(255,255,255,0.05)', color: theme.muted }}>~{t.estMins}m</span>}
+                <div className="flex gap-2">
+                  <button onClick={() => saveTasks(tasks.map(x => ({...x, pinned: x.id === t.id ? !x.pinned : false})))} className="text-xs bg-transparent border-none cursor-pointer" style={{ color: t.pinned ? theme.accent : theme.muted }}>{t.pinned ? '📌' : '📍'}</button>
+                  <button onClick={() => saveTasks(tasks.filter(x => x.id !== t.id))} className="text-xs bg-transparent border-none cursor-pointer hover:text-red-500" style={{ color: theme.muted }}>✕</button>
+                </div>
               </div>
             ))}
           </div>
-          {lastReport.intent && (
-            <div className="font-mono text-[9px] text-[#2a2a2a] border-l-2 border-[#111] pl-3 mb-4 italic">
-              Mission: "{lastReport.intent}"
-              {lastReport.plannedMins && (
-                <span className="ml-2 not-italic text-[#1a1a1a]">— Planned {lastReport.plannedMins}m · Actual {lastReport.workMins}m</span>
-              )}
+          
+          <div className="mt-6 text-right">
+            <button onClick={() => setShowTmrModal(true)} className="text-[11px] font-bold uppercase tracking-[1px] px-4 py-2 border rounded cursor-pointer transition-colors hover:bg-white/5" style={{ borderColor: theme.sh, color: theme.muted }}>📋 Plan Tomorrow</button>
+          </div>
+        </div>
+      </div>
+
+      {/* STATS GRID */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[
+          { l: 'Total Focus', v: `${(totalMins/60).toFixed(1)}h` },
+          { l: 'Today', v: `${(todayMins/60).toFixed(1)}h`, c: todayMins > 0 ? theme.ok : undefined },
+          { l: 'Streak', v: `${streak} days`, c: streak > 2 ? theme.stop : undefined },
+          { l: 'Daily Avg', v: `${history.length > 0 ? Math.round(totalMins / new Set(history.map(h=>h.date)).size) : 0}m` }
+        ].map(s => (
+          <div key={s.l} className="rounded-xl p-6 text-center transition-transform hover:-translate-y-1 border-t-4" style={{ background: 'rgba(0,0,0,0.15)', border: `1px solid ${theme.sh}`, borderTopColor: theme.sh }}>
+            <div className="text-3xl font-black font-mono mb-2" style={{ color: s.c || theme.text }}>{s.v}</div>
+            <div className="font-bold text-[10px] uppercase tracking-[2px]" style={{ color: theme.muted }}>{s.l}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* WEEKLY TARGET */}
+        <div className="rounded-xl p-8" style={{ background: 'rgba(0,0,0,0.15)', border: `1px solid ${theme.sh}` }}>
+          <div className="text-[11px] font-bold uppercase tracking-[3px] mb-6 flex items-center justify-between" style={{ color: theme.muted }}>
+            Weekly Target
+            <span className="font-mono text-xs" style={{ color: theme.text }}>{(weekSecs/3600).toFixed(1)}h / {targetHrs}h</span>
+          </div>
+          <div className="w-full h-3 rounded-full overflow-hidden" style={{ background: theme.sh }}>
+            <div className="h-full transition-all duration-1000" style={{ background: theme.accent, width: `${Math.min(100, (weekSecs / (targetHrs * 3600)) * 100)}%` }} />
+          </div>
+        </div>
+
+        {/* PEAK HOURS */}
+        <div className="rounded-xl p-8" style={{ background: 'rgba(0,0,0,0.15)', border: `1px solid ${theme.sh}` }}>
+          <div className="text-[11px] font-bold uppercase tracking-[3px] mb-6" style={{ color: theme.muted }}>Peak Execution Hours</div>
+          <div className="grid grid-cols-24 gap-1 h-14 items-end">
+            {peakGrid.map((level, i) => (
+              <div key={i} className="w-full rounded-sm transition-all" 
+                title={`${i}:00`}
+                style={{ 
+                  height: level === 0 ? '4px' : `${level * 20}%`, 
+                  background: level === 0 ? '#111' : theme.accent,
+                  opacity: level === 0 ? 1 : 0.3 + (level * 0.14)
+                }} />
+            ))}
+          </div>
+          <div className="grid grid-cols-24 gap-1 mt-2">
+            {peakGrid.map((_, i) => (
+              <div key={i} className="text-[9px] font-mono text-center" style={{ color: theme.muted }}>{i%4===0 ? i : ''}</div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* WEEKLY REVIEW */}
+      <div className="rounded-xl p-8" style={{ background: 'rgba(0,0,0,0.15)', border: `1px solid ${theme.sh}` }}>
+        <div className="text-[11px] font-bold uppercase tracking-[3px] mb-6" style={{ color: theme.muted }}>Campaign Review</div>
+        <div className="flex gap-2 mb-6 border-b pb-4 overflow-x-auto" style={{ borderColor: theme.sh }}>
+          {weeklyReviews.map((w, i) => (
+            <button key={i} onClick={() => setWrActiveTab(i)} className="px-4 py-2 rounded text-[11px] font-bold uppercase tracking-wider transition-colors cursor-pointer border-none whitespace-nowrap" style={{ background: wrActiveTab === i ? theme.surface : 'transparent', color: wrActiveTab === i ? theme.accent : theme.muted }}>{w.label}</button>
+          ))}
+        </div>
+        {weeklyReviews[wrActiveTab] && (
+          <div className="grid grid-cols-3 gap-6 text-center">
+             <div>
+               <div className="text-3xl font-black font-mono mb-1" style={{ color: theme.text }}>{(weeklyReviews[wrActiveTab].total/60).toFixed(1)}h</div>
+               <div className="text-[10px] font-bold uppercase tracking-[2px]" style={{ color: theme.muted }}>Total Focus</div>
+             </div>
+             <div>
+               <div className="text-3xl font-black font-mono mb-1" style={{ color: theme.ok }}>{weeklyReviews[wrActiveTab].acs}</div>
+               <div className="text-[10px] font-bold uppercase tracking-[2px]" style={{ color: theme.muted }}>ACs Secured</div>
+             </div>
+             <div>
+               <div className="text-3xl font-black font-mono mb-1" style={{ color: theme.text }}>{(weeklyReviews[wrActiveTab].maxD/60).toFixed(1)}h</div>
+               <div className="text-[10px] font-bold uppercase tracking-[2px]" style={{ color: theme.muted }}>Peak Day</div>
+             </div>
+          </div>
+        )}
+      </div>
+
+      {/* MODALS */}
+
+      {/* Tomorrow Plan Modal */}
+      {showTmrModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[10000] flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-2xl shadow-2xl p-8 border" style={{ background: theme.surface, borderColor: theme.sh }}>
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-lg font-bold">📋 Tomorrow's Top 3</h3>
+              <button onClick={() => setShowTmrModal(false)} className="text-2xl cursor-pointer bg-transparent border-none" style={{ color: theme.muted }}>×</button>
             </div>
-          )}
-          {lastReport.details.length > 0 && (
-            <div className="space-y-1.5 mt-2">
-              <div className="font-mono text-[8px] uppercase tracking-[2px] text-[#333] mb-2">Kill Feed</div>
-              {lastReport.details.map((d,i) => (
-                <div key={i} className="flex justify-between items-center font-mono text-sm border-b border-[#0a0a0a] pb-1.5">
-                  <span className="text-[#c9d1d9]">{d.name}</span>
-                  <div className="flex items-center gap-3">
-                    <span className="text-[#333] text-xs">{d.rating}</span>
-                    <span className="text-[#e3b341]">{fmt(d.timeTakenSecs)}</span>
-                  </div>
+            <p className="text-sm mb-6 leading-relaxed" style={{ color: theme.muted }}>Set up to 3 priorities for tomorrow. They'll appear as pinned intentions when you start your next session.</p>
+            
+            <div className="space-y-3 mb-6">
+              {tmrPlan.map((t, i) => (
+                <div key={t.id} className="flex items-center gap-3 p-3 rounded border" style={{ background: 'rgba(0,0,0,0.2)', borderColor: theme.sh }}>
+                  <span className="font-mono text-xs font-bold" style={{ color: theme.accent }}>{i+1}</span>
+                  <span className="flex-1 text-sm">{t.text}</span>
+                  <button onClick={() => saveTmrPlan(tmrPlan.filter(x => x.id !== t.id))} className="text-red-400 bg-transparent border-none cursor-pointer">✕</button>
                 </div>
               ))}
             </div>
-          )}
-          {lastReport.flowRating ? (
-            <div className="mt-3 font-mono text-[9px] text-[#333] flex items-center gap-2">
-              Flow: <span className="text-[#e3b341]">{'★'.repeat(lastReport.flowRating)}{'☆'.repeat(5-lastReport.flowRating)}</span>
-            </div>
-          ) : null}
+
+            {tmrPlan.length < 3 && (
+              <div className="flex gap-2">
+                <input value={newTmr} onChange={e => setNewTmr(e.target.value)} onKeyDown={e => { if(e.key==='Enter' && newTmr.trim()) { saveTmrPlan([...tmrPlan, {id: Date.now(), text: newTmr.trim()}]); setNewTmr(''); } }} placeholder="Add a priority..." className="flex-1 px-4 py-3 rounded text-sm outline-none" style={{ background: 'rgba(0,0,0,0.2)', border: `1px solid ${theme.sh}`, color: theme.text }} autoFocus />
+                <button onClick={() => { if(newTmr.trim()) { saveTmrPlan([...tmrPlan, {id: Date.now(), text: newTmr.trim()}]); setNewTmr(''); } }} className="px-6 py-3 rounded font-bold text-sm cursor-pointer" style={{ background: theme.sh, color: theme.text, border: 'none' }}>Add</button>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
-      {/* Task queue */}
-      <div className="bg-[#050505] border border-[#111] rounded-[4px] p-5">
-        <div className="flex items-center justify-between mb-4">
-          <div className="font-mono text-[9px] uppercase tracking-[3px] text-[#333]">Task Queue</div>
-          <span className="font-mono text-[8px] text-[#1a1a1a]">
-            {pending.length + (pinned?1:0)} pending · {done.length} done
-          </span>
-        </div>
-        <div className="flex gap-2 mb-4">
-          <button onClick={() => setNewPri(p => p==='high'?'normal':'high')}
-            className={`w-8 h-8 rounded-[4px] border font-mono text-sm font-black transition-all bg-transparent cursor-pointer shrink-0 ${newPri==='high' ? 'border-[#f85149] text-[#f85149]' : 'border-[#111] text-[#222]'}`}>!</button>
-          <input value={newTask} onChange={e => setNewTask(e.target.value)}
-            onKeyDown={e => e.key==='Enter' && addTask()}
-            placeholder="Add task to queue… (Enter)"
-            className="flex-1 bg-transparent border border-[#111] focus:border-[#333] text-white font-mono text-sm px-3 py-2 rounded-[4px] outline-none placeholder:text-[#111] transition-colors" />
-          <button onClick={addTask} className="px-4 bg-[#111] hover:bg-[#1a1a1a] text-[#444] hover:text-white font-mono text-sm rounded-[4px] transition-all border border-[#1a1a1a] cursor-pointer">Add</button>
-        </div>
-
-        {tasks.length === 0 ? (
-          <div className="text-[#111] font-mono text-[10px] text-center py-5 border border-dashed border-[#0f0f0f] rounded-[4px]">
-            // Queue empty — load tasks before engaging
-          </div>
-        ) : (
-          <div className="space-y-1.5 max-h-64 overflow-y-auto">
-            {pinned && (
-              <div className="flex items-center gap-2 px-3 py-2 rounded-[4px] bg-[rgba(248,81,73,0.03)] border border-[#f85149]/10 group">
-                <input type="checkbox" onChange={() => toggleTask(pinned.id)} className="w-3.5 h-3.5 accent-[#56d364] cursor-pointer shrink-0" />
-                <span className="text-[9px] text-[#f85149] font-mono shrink-0">📌</span>
-                {editingTask?.id===pinned.id ? (
-                  <input value={editText} onChange={e=>setEditText(e.target.value)}
-                    onKeyDown={e=>{ if(e.key==='Enter')saveEdit(); if(e.key==='Escape')setEditingTask(null); }}
-                    className="flex-1 bg-transparent border-b border-[#58a6ff] text-white text-sm outline-none font-mono" autoFocus />
-                ) : (
-                  <span className="text-white font-mono text-sm flex-1 truncate">{pinned.text}</span>
-                )}
-                <div className="hidden group-hover:flex gap-1 shrink-0">
-                  <button onClick={()=>{setEditingTask(pinned);setEditText(pinned.text);}} className="text-[8px] text-[#333] hover:text-[#58a6ff] bg-transparent border-none cursor-pointer">✎</button>
-                  <button onClick={()=>pinTask(pinned.id)} className="text-[8px] text-[#444] hover:text-[#e3b341] bg-transparent border-none cursor-pointer">unpin</button>
-                  <button onClick={()=>deleteTask(pinned.id)} className="text-[8px] text-[#333] hover:text-[#f85149] bg-transparent border-none cursor-pointer">✕</button>
+      {/* Settings & Ledger Modal */}
+      {showSettings && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[10000] flex items-center justify-center p-4">
+          <div className="w-full max-w-4xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh] border" style={{ background: theme.surface, borderColor: theme.sh }}>
+            <div className="p-8 border-b flex justify-between items-center" style={{ borderColor: theme.sh }}>
+              <h3 className="text-xl font-bold" style={{ color: theme.text }}>⚙ Configuration & Data</h3>
+              <button onClick={() => setShowSettings(false)} className="text-3xl cursor-pointer hover:text-red-400 transition-colors bg-transparent border-none" style={{ color: theme.muted }}>×</button>
+            </div>
+            
+            <div className="p-8 overflow-y-auto custom-scrollbar flex-1 space-y-10">
+              
+              {/* Weekly Target Setting */}
+              <div>
+                <h4 className="text-[11px] font-bold uppercase tracking-[2px] mb-4" style={{ color: theme.muted }}>Weekly Target</h4>
+                <div className="flex items-center gap-4">
+                  <input type="number" value={targetHrs} onChange={e => { setTargetHrs(Number(e.target.value)); localStorage.setItem('cf_grind_target', e.target.value); }} className="w-32 px-4 py-3 rounded text-sm outline-none font-mono" style={{ background: 'rgba(0,0,0,0.2)', border: `1px solid ${theme.sh}`, color: theme.text }} />
+                  <span className="text-sm" style={{ color: theme.muted }}>Hours per week</span>
                 </div>
               </div>
-            )}
-            {pending.map(t => (
-              <div key={t.id} className={`flex items-center gap-2 px-3 py-2 rounded-[4px] group transition-colors hover:bg-[#080808] ${t.priority==='high'?'border-l-2 border-[#f85149]/40':''}`}>
-                <input type="checkbox" onChange={() => toggleTask(t.id)} className="w-3.5 h-3.5 accent-[#56d364] cursor-pointer shrink-0" />
-                {editingTask?.id===t.id ? (
-                  <input value={editText} onChange={e=>setEditText(e.target.value)}
-                    onKeyDown={e=>{ if(e.key==='Enter')saveEdit(); if(e.key==='Escape')setEditingTask(null); }}
-                    className="flex-1 bg-transparent border-b border-[#58a6ff] text-white text-sm outline-none font-mono" autoFocus />
-                ) : (
-                  <span className={`font-mono text-sm flex-1 truncate ${t.priority==='high'?'text-[#f85149]':'text-[#555]'}`}>{t.text}</span>
-                )}
-                <div className="hidden group-hover:flex gap-1 shrink-0">
-                  <button onClick={()=>pinTask(t.id)} className="text-[8px] text-[#333] hover:text-[#e3b341] bg-transparent border-none cursor-pointer">📌</button>
-                  <button onClick={()=>{setEditingTask(t);setEditText(t.text);}} className="text-[8px] text-[#333] hover:text-[#58a6ff] bg-transparent border-none cursor-pointer">✎</button>
-                  <button onClick={()=>deleteTask(t.id)} className="text-[8px] text-[#333] hover:text-[#f85149] bg-transparent border-none cursor-pointer">✕</button>
+
+              {/* Session Ledger */}
+              <div>
+                <h4 className="text-[11px] font-bold uppercase tracking-[2px] mb-4" style={{ color: theme.muted }}>Session Ledger (Raw Data)</h4>
+                <div className="rounded-xl overflow-hidden border" style={{ borderColor: theme.sh }}>
+                  <table className="w-full text-left text-sm">
+                    <thead style={{ background: 'rgba(0,0,0,0.2)' }}>
+                      <tr>
+                        <th className="p-4 font-normal" style={{ color: theme.muted }}>Date</th>
+                        <th className="p-4 font-normal" style={{ color: theme.muted }}>Intent</th>
+                        <th className="p-4 font-normal w-24 text-center" style={{ color: theme.muted }}>Mins</th>
+                        <th className="p-4 font-normal w-24 text-center" style={{ color: theme.muted }}>Rating</th>
+                        <th className="p-4 font-normal w-20 text-center" style={{ color: theme.muted }}>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {history.length === 0 ? <tr><td colSpan={5} className="p-8 text-center italic" style={{ color: theme.muted }}>No sessions recorded.</td></tr> : history.map(h => (
+                        <tr key={h.id} className="border-t transition-colors hover:bg-white/5" style={{ borderColor: theme.sh }}>
+                          <td className="p-4 font-mono text-xs">{new Date(h.startTs * 1000).toLocaleString('en-GB', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'})}</td>
+                          <td className="p-4 truncate max-w-[200px]">{h.intent || '—'}</td>
+                          <td className="p-4 text-center">
+                            <input type="number" value={h.workMins} onChange={e => {
+                              const v = Number(e.target.value);
+                              setHistory(prev => { const next = prev.map(x => x.id === h.id ? {...x, workMins: v} : x); localStorage.setItem('cf_grind_v4', JSON.stringify(next)); return next; });
+                            }} className="w-16 px-2 py-1 rounded outline-none font-mono text-center bg-black/40 border-none" style={{ color: theme.text }} />
+                          </td>
+                          <td className="p-4 text-center">
+                            <input type="number" min="0" max="5" value={h.flowRating || 0} onChange={e => {
+                              const v = Number(e.target.value);
+                              setHistory(prev => { const next = prev.map(x => x.id === h.id ? {...x, flowRating: v} : x); localStorage.setItem('cf_grind_v4', JSON.stringify(next)); return next; });
+                            }} className="w-12 px-2 py-1 rounded outline-none font-mono text-center bg-black/40 border-none" style={{ color: theme.text }} />
+                          </td>
+                          <td className="p-4 text-center">
+                            <button onClick={() => {
+                              if(confirm('Delete this session?')) {
+                                setHistory(prev => { const next = prev.filter(x => x.id !== h.id); localStorage.setItem('cf_grind_v4', JSON.stringify(next)); return next; });
+                              }
+                            }} className="px-3 py-1 rounded text-xs font-bold cursor-pointer transition-colors" style={{ background: 'rgba(251,73,52,0.1)', color: theme.stop, border: 'none' }}>Del</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
-            ))}
-            {done.length > 0 && (
-              <div className="pt-2 mt-1 border-t border-[#0a0a0a]">
-                <div className="font-mono text-[7px] text-[#1a1a1a] uppercase tracking-[2px] mb-1">{done.length} completed</div>
-                {done.map(t => (
-                  <div key={t.id} className="flex items-center gap-2 px-3 py-1.5 opacity-25 group">
-                    <input type="checkbox" checked onChange={() => toggleTask(t.id)} className="w-3.5 h-3.5 accent-[#56d364] cursor-pointer shrink-0" />
-                    <span className="font-mono text-sm flex-1 truncate text-[#333] line-through">{t.text}</span>
-                    <button onClick={()=>deleteTask(t.id)} className="hidden group-hover:block text-[8px] text-[#222] hover:text-[#f85149] bg-transparent border-none cursor-pointer">✕</button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Weekly activity bars */}
-      <div className="bg-[#050505] border border-[#111] rounded-[4px] p-5">
-        <div className="flex items-center justify-between mb-4">
-          <div className="font-mono text-[9px] uppercase tracking-[3px] text-[#333]">7-Day Activity</div>
-          <div className="font-mono text-[8px] text-[#1a1a1a]">
-            {fmtMins(weekBars.reduce((a,b)=>a+b.sec,0))} this week
+            </div>
           </div>
         </div>
-        <div className="flex gap-2 items-end" style={{ height: '60px' }}>
-          {weekBars.map(d => (
-            <div key={d.key} className="flex-1 flex flex-col items-center gap-1">
-              <div className="text-[7px] font-mono" style={{ color: d.sec > 0 ? '#333' : 'transparent' }}>
-                {fmtMins(d.sec)}
-              </div>
-              <div className="w-full relative rounded-[2px]" style={{ height:'36px', background:'#080808' }}>
-                <div className="absolute bottom-0 left-0 right-0 rounded-[2px] transition-all duration-700"
-                  style={{
-                    height: `${Math.max(d.pct, d.sec>0?6:0)}%`,
-                    background: d.isToday ? '#f85149' : '#e3b341',
-                    opacity: d.isToday ? 1 : 0.4,
-                    boxShadow: d.isToday ? '0 0 8px rgba(248,81,73,0.4)' : 'none',
-                  }} />
-              </div>
-              <div className="font-mono text-[7px]" style={{ color: d.isToday ? '#f85149' : '#222' }}>{d.day}</div>
-            </div>
-          ))}
-        </div>
-        <div className="grid grid-cols-3 gap-3 mt-4 pt-4 border-t border-[#0a0a0a]">
-          {[
-            { l:'All-time Focus', v: fmtMins(totalMins*60) },
-            { l:'All-time ACs', v: String(totalACs) },
-            { l:'All-time XP', v: `+${totalXP}` },
-          ].map(s => (
-            <div key={s.l} className="text-center">
-              <div className="font-mono text-[7px] uppercase tracking-[2px] text-[#1a1a1a] mb-1">{s.l}</div>
-              <div className="font-mono text-base font-black text-[#333]">{s.v}</div>
-            </div>
-          ))}
-        </div>
-      </div>
+      )}
 
-      {/* History table */}
-      <div className="bg-[#050505] border border-[#111] rounded-[4px] p-5">
-        <div className="flex items-center justify-between mb-3">
-          <div className="font-mono text-[9px] uppercase tracking-[3px] text-[#333]">Session Logs</div>
-          <button onClick={() => setShowHistory(s=>!s)}
-            className="font-mono text-[8px] uppercase tracking-[2px] text-[#222] hover:text-[#444] bg-transparent border-none cursor-pointer transition-colors">
-            {showHistory ? 'Collapse ↑' : `Expand (${history.length}) ↓`}
-          </button>
-        </div>
-        {showHistory && (
-          history.length === 0 ? (
-            <div className="text-[#111] font-mono text-[10px] text-center py-4">// No records found.</div>
-          ) : (
-            <div className="max-h-80 overflow-y-auto space-y-1">
-              {history.map((h,i) => (
-                <div key={h.id||i} className="flex items-center gap-3 font-mono text-xs border-b border-[#080808] pb-2 px-2 hover:bg-[#080808] rounded-[4px] transition-colors">
-                  <span className="text-[#58a6ff] text-[10px] shrink-0">{new Date(h.date).toLocaleDateString('en-GB',{day:'numeric',month:'short'})}</span>
-                  <span className="text-[#222] text-[8px] uppercase flex-1 truncate">{h.type.split(' (')[0]}</span>
-                  <span className="text-[#555]">{h.workMins}m</span>
-                  <span className="text-[#e3b341] shrink-0">{fmt(h.avgTimeSecs||0)}/avg</span>
-                  <span className="text-[#56d364] shrink-0">{h.problemsSolved}AC</span>
-                  <span className="text-[#e3b341] font-bold shrink-0">+{h.pointsEarned}</span>
-                  {h.flowRating ? <span className="text-[#e3b341] shrink-0">{'★'.repeat(h.flowRating)}</span> : null}
-                </div>
-              ))}
-            </div>
-          )
-        )}
-      </div>
     </div>
   );
 }
