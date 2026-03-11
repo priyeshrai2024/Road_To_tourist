@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 
 interface Problem {
   contestId: number;
@@ -65,6 +65,7 @@ const STATE_STYLES: Record<ProblemState | "NA", string> = {
 };
 
 const PROBLEM_COLS = ["A", "B", "C", "D", "E", "F", "G", "H"];
+const CACHE_KEY = "cf_contest_archive_v2";
 
 export default function ContestTracker({
   handle,
@@ -75,7 +76,9 @@ export default function ContestTracker({
 }) {
   const [contests, setContests] = useState<ContestRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [error, setError] = useState("");
+  
   const [divFilter, setDivFilter] = useState("ALL");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -91,57 +94,84 @@ export default function ContestTracker({
       if (s.verdict === "OK") solved.add(pid);
       else if (s.verdict !== "COMPILATION_ERROR") attempted.add(pid);
     });
-    // Remove from attempted if solved
     solved.forEach(pid => attempted.delete(pid));
     return { solvedSet: solved, attemptedSet: attempted };
   }, [rawSubs]);
 
-  useEffect(() => {
-    const fetchContests = async () => {
-      setLoading(true);
-      setError("");
-      try {
-        // Fetch contest list
-        const contestRes = await fetch("https://codeforces.com/api/contest.list?gym=false");
-        const contestData = await contestRes.json();
-        if (contestData.status !== "OK") throw new Error("Contest list fetch failed");
+  // ─── API SYNCHRONIZATION WITH CACHING ─────────────────────────────────
+  const fetchContestArchive = useCallback(async (isBackground = false) => {
+    if (!isBackground) setLoading(true);
+    else setIsSyncing(true);
+    setError("");
 
-        // Only finished contests
-        const finished: Contest[] = contestData.result.filter(
-          (c: Contest) => c.phase === "FINISHED" && c.type === "CF"
-        );
+    try {
+      const contestRes = await fetch("https://codeforces.com/api/contest.list?gym=false");
+      const contestData = await contestRes.json();
+      if (contestData.status !== "OK") throw new Error("Contest list fetch failed");
 
-        // Fetch problemset (all problems with contestId)
-        const probRes = await fetch("https://codeforces.com/api/problemset.problems");
-        const probData = await probRes.json();
-        if (probData.status !== "OK") throw new Error("Problemset fetch failed");
+      const finished: Contest[] = contestData.result.filter(
+        (c: any) => c.phase === "FINISHED" && c.type === "CF"
+      );
 
-        // Group problems by contestId
-        const probsByContest: Record<number, Problem[]> = {};
-        probData.result.problems.forEach((p: Problem) => {
-          if (!p.contestId) return;
-          if (!probsByContest[p.contestId]) probsByContest[p.contestId] = [];
-          probsByContest[p.contestId].push(p);
+      const probRes = await fetch("https://codeforces.com/api/problemset.problems");
+      const probData = await probRes.json();
+      if (probData.status !== "OK") throw new Error("Problemset fetch failed");
+
+      const probsByContest: Record<number, Problem[]> = {};
+      
+      // Optimization: Only extract problems that match our columns to drastically reduce localStorage size
+      probData.result.problems.forEach((p: any) => {
+        if (!p.contestId || !PROBLEM_COLS.includes(p.index)) return;
+        if (!probsByContest[p.contestId]) probsByContest[p.contestId] = [];
+        probsByContest[p.contestId].push({
+          contestId: p.contestId,
+          index: p.index,
+          name: p.name,
+          rating: p.rating
         });
+      });
 
-        // Sort problems within each contest by index
-        Object.values(probsByContest).forEach(probs =>
-          probs.sort((a, b) => a.index.localeCompare(b.index))
-        );
+      Object.values(probsByContest).forEach(probs =>
+        probs.sort((a, b) => a.index.localeCompare(b.index))
+      );
 
-        // Build rows — only contests that have problems
-        const rows: ContestRow[] = finished
-          .filter(c => probsByContest[c.id] && probsByContest[c.id].length > 0)
-          .map(c => ({ contest: c, problems: probsByContest[c.id] }));
+      const rows: ContestRow[] = finished
+        .filter(c => probsByContest[c.id] && probsByContest[c.id].length > 0)
+        .map(c => ({
+          contest: { id: c.id, name: c.name, type: c.type, phase: c.phase, durationSeconds: c.durationSeconds, startTimeSeconds: c.startTimeSeconds },
+          problems: probsByContest[c.id]
+        }));
 
-        setContests(rows);
-      } catch (e: any) {
-        setError(e.message || "Failed to load contests");
-      }
+      setContests(rows);
+      
+      // Cache the highly compressed row data
+      try { localStorage.setItem(CACHE_KEY, JSON.stringify({ timestamp: Date.now(), rows })); } catch (e) {}
+
+    } catch (e: any) {
+      if (!isBackground) setError(e.message || "Failed to sync archive");
+    } finally {
       setLoading(false);
-    };
-    fetchContests();
+      setIsSyncing(false);
+    }
   }, []);
+
+  // ─── OFFLINE-FIRST BOOT SEQUENCE ──────────────────────────────────────
+  useEffect(() => {
+    const cached = localStorage.getItem(CACHE_KEY);
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        if (parsed.rows && parsed.rows.length > 0) {
+          setContests(parsed.rows);
+          setLoading(false); // Instantly bypass loading screen
+          fetchContestArchive(true); // Trigger background sync
+          return;
+        }
+      } catch (e) {}
+    }
+    // If no valid cache, force a hard load
+    fetchContestArchive(false);
+  }, [fetchContestArchive]);
 
   const filtered = useMemo(() => {
     let rows = contests;
@@ -159,18 +189,6 @@ export default function ContestTracker({
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
 
-  // Stats
-  const stats = useMemo(() => {
-    let totalProblems = 0, solved = 0, attempted = 0;
-    contests.forEach(r => r.problems.forEach(p => {
-      const pid = `${p.contestId}-${p.index}`;
-      totalProblems++;
-      if (solvedSet.has(pid)) solved++;
-      else if (attemptedSet.has(pid)) attempted++;
-    }));
-    return { totalProblems, solved, attempted, unsolved: totalProblems - solved - attempted };
-  }, [contests, solvedSet, attemptedSet]);
-
   if (loading) return (
     <div className="flex flex-col items-center justify-center py-32 gap-4">
       <div className="text-[#e3b341] font-mono text-sm animate-pulse tracking-widest">LOADING CONTEST ARCHIVE...</div>
@@ -178,7 +196,7 @@ export default function ContestTracker({
     </div>
   );
 
-  if (error) return (
+  if (error && contests.length === 0) return (
     <div className="text-center py-20 text-[#f85149] font-mono text-sm">[ERROR] {error}</div>
   );
 
@@ -187,14 +205,24 @@ export default function ContestTracker({
 
       {/* Controls */}
       <div className="flex flex-col gap-3">
-        {/* Search */}
-        <input
-          type="text"
-          value={search}
-          onChange={e => { setSearch(e.target.value); setPage(1); }}
-          placeholder="Search by contest name or ID..."
-          className="w-full bg-[#050505] border border-[#1a1a1a] text-[#e0e6ed] font-mono text-sm px-4 py-2.5 rounded-lg focus:outline-none focus:border-[#e3b341] placeholder:text-[#333]"
-        />
+        {/* Search & Manual Sync */}
+        <div className="flex items-center gap-3">
+          <input
+            type="text"
+            value={search}
+            onChange={e => { setSearch(e.target.value); setPage(1); }}
+            placeholder="Search by contest name or ID..."
+            className="flex-1 bg-[#050505] border border-[#1a1a1a] text-[#e0e6ed] font-mono text-sm px-4 py-2.5 rounded-lg focus:outline-none focus:border-[#e3b341] placeholder:text-[#333]"
+          />
+          <button 
+            onClick={() => fetchContestArchive(true)} 
+            disabled={isSyncing}
+            className={`px-6 py-2.5 rounded-lg font-mono text-xs font-bold uppercase tracking-widest border transition-all ${isSyncing ? 'bg-[#1a1a1a] border-[#333] text-[#555] cursor-not-allowed' : 'bg-[#050505] border-[#58a6ff]/30 text-[#58a6ff] hover:bg-[#58a6ff]/10 cursor-pointer'}`}
+          >
+            {isSyncing ? '↻ SYNCING...' : '↻ FORCE SYNC'}
+          </button>
+        </div>
+
         {/* Division filters */}
         <div className="flex flex-wrap gap-2">
           {DIVISION_FILTERS.map(div => (
@@ -212,8 +240,9 @@ export default function ContestTracker({
               {div}
             </button>
           ))}
-          <div className="ml-auto font-mono text-[0.6rem] text-[#333] self-center">
-            {filtered.length} contests
+          <div className="ml-auto font-mono text-[0.6rem] text-[#555] self-center flex items-center gap-3">
+            {error && <span className="text-[#f85149] animate-pulse">API Error</span>}
+            <span>{filtered.length} contests</span>
           </div>
         </div>
       </div>
@@ -235,13 +264,13 @@ export default function ContestTracker({
 
       {/* Table */}
       <div className="overflow-x-auto rounded-xl border border-[#1a1a1a]">
-        <table className="w-full font-mono text-xs border-collapse">
+        <table className="w-full font-mono text-xs border-collapse min-w-[1000px]">
           <thead>
             <tr className="border-b border-[#1a1a1a] bg-[#050505]">
-              <th className="px-3 py-3 text-left text-[#444] font-normal w-10">#</th>
+              <th className="px-3 py-3 text-left text-[#444] font-normal w-12">#</th>
               <th className="px-3 py-3 text-left text-[#444] font-normal w-48">Contest</th>
               {PROBLEM_COLS.map(col => (
-                <th key={col} className="px-2 py-3 text-center text-[#444] font-normal w-36">{col}</th>
+                <th key={col} className="px-2 py-3 text-center text-[#444] font-normal">{col}</th>
               ))}
             </tr>
           </thead>
@@ -249,7 +278,7 @@ export default function ContestTracker({
             {paginated.map((row, i) => {
               const div = getDivision(row.contest.name);
               const divColor = DIV_COLOR[div] || "#555";
-              // Pad problems to always show 8 cols
+              
               const problemSlots: (Problem | null)[] = PROBLEM_COLS.map((col) =>
                 row.problems.find(p => p.index === col) || null
               );
@@ -272,14 +301,14 @@ export default function ContestTracker({
                     >
                       CF {row.contest.id}
                     </a>
-                    <div className="text-[#555] text-[0.6rem] mt-0.5 max-w-[170px] truncate">{row.contest.name}</div>
+                    <div className="text-[#555] text-[0.6rem] mt-0.5 max-w-[190px] truncate">{row.contest.name}</div>
                     <div className="text-[0.55rem] mt-0.5" style={{ color: divColor }}>{div}</div>
                   </td>
 
                   {/* Problem cells */}
                   {problemSlots.map((prob, ci) => {
                     if (!prob) return (
-                      <td key={ci} className="px-2 py-2">
+                      <td key={ci} className="px-1 py-2">
                         <div className={`rounded border px-2 py-1.5 text-center ${STATE_STYLES.NA}`}>
                           <div className="text-[0.6rem]">—</div>
                         </div>
@@ -291,13 +320,13 @@ export default function ContestTracker({
                     const style = STATE_STYLES[state];
 
                     return (
-                      <td key={ci} className="px-2 py-2">
+                      <td key={ci} className="px-1 py-2">
                         <a
                           href={`https://codeforces.com/contest/${prob.contestId}/problem/${prob.index}`}
                           target="_blank"
                           className={`block rounded border px-2 py-1.5 transition-all hover:brightness-125 no-underline ${style}`}
                         >
-                          <div className="text-[0.65rem] font-bold truncate max-w-[130px]">{prob.name}</div>
+                          <div className="text-[0.65rem] font-bold truncate max-w-[120px]">{prob.name}</div>
                           <div className="text-[0.6rem] mt-0.5 opacity-70">{prob.rating ?? "N/A"}</div>
                         </a>
                       </td>
@@ -312,7 +341,7 @@ export default function ContestTracker({
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-3 font-mono text-xs">
+        <div className="flex items-center justify-center gap-3 font-mono text-xs mt-2">
           <button
             onClick={() => setPage(p => Math.max(1, p - 1))}
             disabled={page === 1}
