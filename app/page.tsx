@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import WarMap, { T_NODES } from "@/components/WarMap";
 import SettingsModal from "@/components/SettingsModal";
 import Armory, { BadgeDef } from "@/components/Armory";
 import GrindMode from "@/components/GrindMode";
@@ -19,7 +18,6 @@ import type { CFSubmission, CFInfo, CFRating, ProcessedMetrics, SquadMemberData 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const TABS = [
   { id: "COMMAND",   icon: "⚡" },
-  { id: "WAR MAP",   icon: "🗺️" },
   { id: "ARMORY",    icon: "🏆" },
   { id: "SQUAD OPS", icon: "👥" },
   { id: "NEMESIS",   icon: "⚔️" },
@@ -96,50 +94,6 @@ function processMetrics(subs: CFSubmission[]): ProcessedMetrics {
 
   return { score, weeklyScore, monthlyScore, unique: solved.size, acc, upsolveRate, verdictsDist, tagsDist, ratingsDist, weaknessRatios, timeToSolveDist, tagResourceStress, rawSubsList };
 }
-
-const evaluateMapMetrics = (subs: CFSubmission[]) => {
-  let metrics = { conquered: 0, citadel: 0, rebellion: 0, occupied: 0, decaying: 0, scouted: 0 };
-  const state: Record<string, any> = {};
-  const nodeSolvedPids: Record<string, Set<string>> = {};
-  const nodeFailedPids: Record<string, Set<string>> = {};
-  const now = Date.now() / 1000;
-  Object.values(T_NODES).forEach(n => {
-    state[n.id] = { ac: 0, fail: 0, maxR: 0, lastAC: 0 };
-    nodeSolvedPids[n.id] = new Set();
-    nodeFailedPids[n.id] = new Set();
-  });
-  subs.forEach(s => {
-    if (!s.problem || !s.problem.tags) return;
-    const isAC = s.verdict === 'OK'; const r = s.problem.rating || 800;
-    const pid = `${s.problem.contestId}-${s.problem.index}`;
-    Object.values(T_NODES).forEach(n => {
-      if (s.problem.tags!.includes(n.tag)) {
-        if (isAC) {
-          if (!nodeSolvedPids[n.id].has(pid)) {
-            nodeSolvedPids[n.id].add(pid);
-            state[n.id].ac++;
-            if (r > state[n.id].maxR) state[n.id].maxR = r;
-            if (s.creationTimeSeconds > state[n.id].lastAC) state[n.id].lastAC = s.creationTimeSeconds;
-          }
-        } else if (s.verdict !== 'COMPILATION_ERROR') {
-          if (!nodeFailedPids[n.id].has(pid)) {
-            nodeFailedPids[n.id].add(pid);
-            state[n.id].fail++;
-          }
-        }
-      }
-    });
-  });
-  Object.values(T_NODES).forEach(n => {
-    let m = state[n.id];
-    if (m.ac === 0) metrics.scouted++;
-    if (m.ac >= 25) metrics.conquered++; else if (m.ac >= 1) metrics.occupied++;
-    if (m.ac > 0 && m.maxR >= 2200) metrics.citadel++;
-    if (m.ac > 0 && m.fail / m.ac > 2.0) metrics.rebellion++;
-    if (m.ac > 0 && (now - m.lastAC) / 86400 > 30) metrics.decaying++;
-  });
-  return metrics;
-};
 
 // ─── ROOT COMPONENT ───────────────────────────────────────────────────────────
 export default function Home() {
@@ -219,7 +173,7 @@ export default function Home() {
 
     try {
       const infoResult = await fetchCF(`https://codeforces.com/api/user.info?handles=${allHandles.join(';')}`);
-      if (infoResult) allHandles.forEach(h => {
+      if (infoResult) allHandles.forEach((h: string) => {
         const info = infoResult.find((u: any) => u.handle.toLowerCase() === h.toLowerCase());
         if (info) newSquadData[h] = { handle: h, info, rawSubs: [], history: [] };
       });
@@ -309,8 +263,9 @@ export default function Home() {
     });
 
     const reconMetrics = processMetrics(getFilteredSubs(squadData[config.main].rawSubs));
-    const mapMetrics = evaluateMapMetrics(squadData[config.main].rawSubs);
-    const badges: BadgeDef[] = computeBadges(allPlayers, sMatrix, bMatrix, reconMetrics, mapMetrics, config.main, Date.now() / 1000);
+    
+    // Evaluate badges without the map metrics
+    const badges: BadgeDef[] = computeBadges(allPlayers, sMatrix, bMatrix, reconMetrics, config.main, Date.now() / 1000);
 
     return { mainMetrics, squadMatrix: sMatrix, bounties: uniqueBounties.slice(0, 30), computedBadges: badges, absoluteMySolves: absSolves };
   }, [squadData, config, contextFilter, timeFilter]);
@@ -533,7 +488,6 @@ export default function Home() {
             )}
 
             {activeTab === "COMMAND"   && <CommandTab metrics={mainMetrics} info={squadData[config.main].info} filter={contextFilter} config={config} squadData={squadData} />}
-            {activeTab === "WAR MAP"   && <WarMap subs={mainMetrics.rawSubsList} />}
             {activeTab === "ARMORY"    && <div className="animate-in fade-in"><Armory badges={computedBadges} mainHandle={config.main} variant="full" players={[config.main, ...config.squad].filter(h => squadData[h])} /></div>}
             {activeTab === "SQUAD OPS" && <SquadOpsTab squadMatrix={squadMatrix} config={config} squadCharts={squadCharts} bounties={bounties} />}
             {activeTab === "NEMESIS"   && (

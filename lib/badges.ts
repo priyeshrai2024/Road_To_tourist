@@ -6,16 +6,12 @@ import type { CFSubmission, SquadMemberData } from "@/lib/types";
 interface BMatrix {
   [player: string]: { active: string[]; resurrected: number; solvedSet: Set<string>; snipes: number; };
 }
-interface MapMetrics {
-  conquered: number; citadel: number; rebellion: number; occupied: number; decaying: number; scouted: number;
-}
 
 export function computeBadges(
   allPlayers: string[],
   sMatrix: Record<string, SquadMemberData>,
   bMatrix: BMatrix,
   reconMetrics: { unique: number },
-  mapMetrics: MapMetrics,
   mainHandle: string,
   now: number
 ): BadgeDef[] {
@@ -33,9 +29,6 @@ export function computeBadges(
   const distinctTags = (p: string, d: number) => { const t = new Set<string>(); ac(p, d).forEach((s: any) => s.problem.tags?.forEach((x: string) => t.add(x))); return t.size; };
 
   // ── FIX #2: shared ISO date key — zero-padded YYYY-MM-DD ─────────────────
-  // Previously streak() used `${year}-${month}-${date}` (month 0-indexed, no padding)
-  // and longestStreak() used millisecond timestamps — two completely different formats.
-  // Both now use this single helper for consistency and correctness.
   const toDateKey = (ts: number): string => {
     const d = new Date(ts * 1000);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -55,7 +48,6 @@ export function computeBadges(
   };
 
   const longestStreak = (p: string) => {
-    // Collect unique YYYY-MM-DD strings — ISO format sorts lexicographically correctly
     const days = [...new Set(allAc(p).map((s: CFSubmission) => toDateKey(s.creationTimeSeconds)))].sort();
     let best = 0, cur = 0;
     for (let i = 0; i < days.length; i++) {
@@ -98,6 +90,7 @@ export function computeBadges(
     allPlayers.forEach(p => { const v = fn(p); if (v < bestVal && v <= max) { bestVal = v; best = p; } });
     return best;
   };
+  
   // personal achievement — only awarded to mainHandle if condition met
   const personal = (cond: boolean): string | null => cond ? mainHandle : null;
 
@@ -169,44 +162,38 @@ export function computeBadges(
     { id:'lt_library',  icon:'📚',  name:'The Library',       desc:'Most unique problems ever solved (all time)',      owner: fw(p => uniqueSolved(p), 100) },
 
     // ══════════════════════════════════════════════════════
-    // ACHIEVEMENTS / MAP (15 badges)
+    // ACHIEVEMENTS / NEW LONG-TERM GOALS (15 badges)
     // ══════════════════════════════════════════════════════
-    { id:'a_emperor',    icon:'🏰', name:'The Emperor',       desc:'Built 5+ Citadels on the War Map',                 owner: personal(mapMetrics.citadel >= 5) },
-    { id:'a_warlord',    icon:'⚔️', name:'The Warlord',       desc:'Conquered 10+ territories on the War Map',        owner: personal(mapMetrics.conquered >= 10) },
-    { id:'a_tactician',  icon:'♟️', name:'Grand Tactician',   desc:'Zero rebellions on the War Map',                  owner: personal(mapMetrics.rebellion===0 && mapMetrics.occupied > 0) },
-    { id:'a_preserver',  icon:'🛡️', name:'The Preservationist',desc:'Zero decaying nodes with 10+ occupied',          owner: personal(mapMetrics.decaying===0 && mapMetrics.occupied >= 10) },
-    { id:'a_pathfinder', icon:'🗺️', name:'Pathfinder',        desc:'10+ scouted but unrevealed nodes',                owner: personal(mapMetrics.scouted >= 10) },
-    { id:'a_pyro',       icon:'🔥', name:'The Pyromancer',    desc:'[NEGATIVE] 3+ rebellions on the War Map',         owner: personal(mapMetrics.rebellion >= 3), isNegative: true },
-    { id:'a_ruined',     icon:'🏚️', name:'Fallen Kingdom',    desc:'[NEGATIVE] 5+ ruins on the War Map',             owner: personal(mapMetrics.decaying >= 5), isNegative: true },
-    { id:'a_recon',      icon:'🥷', name:'Recon Ghost',       desc:'5+ ACs on problems rated 200+ above your rating', owner: personal(reconMetrics.unique >= 5) },
-    { id:'a_century',    icon:'💯', name:'Centurion',         desc:'Solved 100+ unique problems all time',            owner: personal(uniqueSolved(mainHandle) >= 100) },
-    { id:'a_hardboiled', icon:'🥚', name:'Hard Boiled',       desc:'Solved a problem rated 2000+',                   owner: personal(hardestProblem(mainHandle) >= 2000) },
-    { id:'a_diversified',icon:'🌈', name:'Diversified',       desc:'Solved problems in 15+ distinct tags',            owner: personal(distinctTags(mainHandle, 36500) >= 15) },
-    { id:'a_sniper500',  icon:'🎖️', name:'Sniper 500',        desc:'Solved 500+ unique problems',                    owner: personal(uniqueSolved(mainHandle) >= 500) },
-    { id:'a_streak30',   icon:'📅', name:'Month Warrior',     desc:'30-day consecutive AC streak',                   owner: personal(longestStreak(mainHandle) >= 30) },
-    { id:'a_nighter',    icon:'🌙', name:'Night Owl',         desc:'50+ ACs solved between midnight and 4AM ever',   owner: personal(hour(mainHandle, 36500, 0, 4) >= 50) },
-    { id:'a_speedster',  icon:'🏎️', name:'Speedster',         desc:'50+ first-try solves in 180 days',               owner: personal((() => { let c=0; subs(mainHandle,180).forEach((s:any)=>{ const pid=`${s.problem.contestId}-${s.problem.index}`; const first = !subs(mainHandle,180).some((x:any)=>`${x.problem.contestId}-${x.problem.index}`===pid && x.creationTimeSeconds < s.creationTimeSeconds); if(first && s.verdict==='OK') c++; }); return c; })() >= 50) },
+    { id:'a_polyglot',   icon:'🗣️', name:'Polyglot',          desc:'Solved problems using 3+ different languages',     owner: personal(new Set(allAc(mainHandle).map((s:any) => s.programmingLanguage)).size >= 3) },
+    { id:'a_unyielding', icon:'⚒️', name:'Unyielding',        desc:'Solved a problem after 10+ failed attempts',       owner: personal((() => { const fails=new Map<string,number>(); subs(mainHandle,36500).forEach((s:any)=>{ const pid=`${s.problem.contestId}-${s.problem.index}`; if(s.verdict!=='OK') fails.set(pid,(fails.get(pid)||0)+1); }); return ac(mainHandle,36500).some((s:any)=>fails.get(`${s.problem.contestId}-${s.problem.index}`)>=10); })()) },
+    { id:'a_weekend',    icon:'🏖️', name:'Weekend Warrior',   desc:'50+ ACs solved on weekends all time',              owner: personal(allAc(mainHandle).filter((s:any)=>{ const d=new Date(s.creationTimeSeconds*1000).getDay(); return d===0||d===6; }).length >= 50) },
+    { id:'a_grinder100', icon:'📅', name:'Centurion Grinder', desc:'100+ active days on record all time',              owner: personal(activeDays(mainHandle, 36500) >= 100) },
+    { id:'a_precision',  icon:'🎯', name:'Precision Strike',  desc:'80%+ all-time accuracy (min 50 subs)',             owner: personal(subs(mainHandle, 36500).length >= 50 && acc(mainHandle, 36500) >= 0.8) },
+    { id:'a_masochist',  icon:'🩸', name:'Masochist',         desc:'[NEGATIVE] 50+ total TLEs all time',               owner: personal(subs(mainHandle, 36500).filter((s:any)=>s.verdict==='TIME_LIMIT_EXCEEDED').length >= 50), isNegative: true },
+    { id:'a_blind',      icon:'🙈', name:'Blind Submission',  desc:'[NEGATIVE] 50+ total Compilation Errors all time', owner: personal(subs(mainHandle, 36500).filter((s:any)=>s.verdict==='COMPILATION_ERROR').length >= 50), isNegative: true },
+    { id:'a_recon',      icon:'🥷', name:'Recon Ghost',       desc:'5+ ACs on problems rated 200+ above your rating',  owner: personal(reconMetrics.unique >= 5) },
+    { id:'a_century',    icon:'💯', name:'Centurion',         desc:'Solved 100+ unique problems all time',             owner: personal(uniqueSolved(mainHandle) >= 100) },
+    { id:'a_hardboiled', icon:'🥚', name:'Hard Boiled',       desc:'Solved a problem rated 2000+',                    owner: personal(hardestProblem(mainHandle) >= 2000) },
+    { id:'a_diversified',icon:'🌈', name:'Diversified',       desc:'Solved problems in 15+ distinct tags',             owner: personal(distinctTags(mainHandle, 36500) >= 15) },
+    { id:'a_sniper500',  icon:'🎖️', name:'Sniper 500',        desc:'Solved 500+ unique problems',                     owner: personal(uniqueSolved(mainHandle) >= 500) },
+    { id:'a_streak30',   icon:'🔗', name:'Month Warrior',     desc:'30-day consecutive AC streak',                    owner: personal(longestStreak(mainHandle) >= 30) },
+    { id:'a_nighter',    icon:'🌙', name:'Night Owl',         desc:'50+ ACs solved between midnight and 4AM ever',    owner: personal(hour(mainHandle, 36500, 0, 4) >= 50) },
+    { id:'a_speedster',  icon:'🏎️', name:'Speedster',         desc:'50+ first-try solves in 180 days',                owner: personal((() => { let c=0; subs(mainHandle,180).forEach((s:any)=>{ const pid=`${s.problem.contestId}-${s.problem.index}`; const first = !subs(mainHandle,180).some((x:any)=>`${x.problem.contestId}-${x.problem.index}`===pid && x.creationTimeSeconds < s.creationTimeSeconds); if(first && s.verdict==='OK') c++; }); return c; })() >= 50) },
 
     // ══════════════════════════════════════════════════════
     // COMPETITIVE / OTHER (35 badges — squad-based, interesting, non-repetitive)
     // ══════════════════════════════════════════════════════
-    // Rating bracket dominance
     { id:'c_div4king',   icon:'🟢', name:'Div.4 King',        desc:'Most ACs rated 800–1200 this month',              owner: fw(p => ratingBucket(p,30,800,1200), 5) },
     { id:'c_div3king',   icon:'🔵', name:'Div.3 King',        desc:'Most ACs rated 1300–1600 this month',             owner: fw(p => ratingBucket(p,30,1300,1600), 3) },
     { id:'c_div2king',   icon:'🟣', name:'Div.2 King',        desc:'Most ACs rated 1600–1900 this month',             owner: fw(p => ratingBucket(p,30,1600,1900), 2) },
     { id:'c_div1king',   icon:'🔴', name:'Div.1 King',        desc:'Most ACs rated 1900+ this month',                 owner: fw(p => ratingBucket(p,30,1900,9999), 1) },
-    // Consistency
     { id:'c_metronome',  icon:'🎵', name:'Metronome',         desc:'Solved at least 1 problem every day for 14 days', owner: fw(p => streak(p) >= 14 ? streak(p) : 0, 14) },
     { id:'c_clockwork',  icon:'⚙️', name:'Clockwork',         desc:'Active in all 7 days of this week',               owner: fw(p => activeDays(p,7) >= 7 ? 1 : 0, 1) },
-    // Efficiency
     { id:'c_surgeon',    icon:'🔬', name:'The Surgeon',       desc:'90%+ accuracy this week (min 10 subs)',           owner: fw(p => subs(p,7).length >= 10 && acc(p,7) >= 0.9 ? acc(p,7)*1000 : 0, 900) },
     { id:'c_onebullet',  icon:'🎯', name:'One Bullet',        desc:'Most problems solved first try this week',        owner: fw(p => { let c=0; const seen=new Set<string>(); subs(p,7).forEach((s:any)=>{ const pid=`${s.problem.contestId}-${s.problem.index}`; if(!seen.has(pid)){seen.add(pid);if(s.verdict==='OK')c++;} }); return c; }, 3) },
-    // Speed
     { id:'c_speedrun',   icon:'⚡', name:'Speed Run',         desc:'Most ACs solved within 5 mins of first attempt this week', owner: fw(p => { const map=new Map<string,number>(); subs(p,7).forEach((s:any)=>{ const pid=`${s.problem.contestId}-${s.problem.index}`; if(!map.has(pid)) map.set(pid,s.creationTimeSeconds); }); return ac(p,7).filter((s:any)=>{ const pid=`${s.problem.contestId}-${s.problem.index}`; return (s.creationTimeSeconds-(map.get(pid)||0)) <= 300; }).length; }, 2) },
-    // Variety
     { id:'c_allrounder', icon:'🌀', name:'All-Rounder',       desc:'ACs in 5+ different tags in a single day this week', owner: fw(p => { let best=0; ac(p,7).reduce((map:any,s:any)=>{ const day=new Date(s.creationTimeSeconds*1000).toDateString(); if(!map[day]) map[day]=new Set(); s.problem.tags?.forEach((t:string)=>map[day].add(t)); best=Math.max(best,map[day].size); return map; },{}); return best; }, 5) },
     { id:'c_newblood',   icon:'🧪', name:'New Blood',         desc:'Tried a tag never solved before this week',       owner: fw(p => { const old=new Set<string>(); allAc(p).forEach((s:any)=>{ if((now-s.creationTimeSeconds)/86400 > 7) s.problem.tags?.forEach((t:string)=>old.add(t)); }); let n=0; ac(p,7).forEach((s:any)=>{ s.problem.tags?.forEach((t:string)=>{ if(!old.has(t)){n++;old.add(t);} }); }); return n; }, 1) },
-    // Punishment / chaos
     { id:'c_roulette',   icon:'🎰', name:'Russian Roulette',  desc:'[NEGATIVE] 3+ different verdicts in a single day', owner: fw(p => { let worst=0; subs(p,7).reduce((map:any,s:any)=>{ const day=new Date(s.creationTimeSeconds*1000).toDateString(); if(!map[day]) map[day]=new Set(); map[day].add(s.verdict); worst=Math.max(worst,map[day].size); return map; },{}); return worst>=3?worst:0; }, 3), isNegative: true },
     { id:'c_ghost',      icon:'👻', name:'Ghost Protocol',    desc:'[NEGATIVE] Not a single submission in 48h',       owner: fw(p => { const last=subs(p,36500); if(!last.length) return 1; return (now-last[last.length-1].creationTimeSeconds)/3600 >= 48 ? 1 : 0; }, 1), isNegative: true },
     { id:'c_obsessed',   icon:'😤', name:'Obsessed',          desc:'[NEGATIVE] Submitted the same problem 5+ times without solving', owner: fw(p => { const attempts=new Map<string,number>(); subs(p,7).filter((s:any)=>s.verdict!=='OK').forEach((s:any)=>{ const pid=`${s.problem.contestId}-${s.problem.index}`; if(!new Set(ac(p,7).map((x:any)=>`${x.problem.contestId}-${x.problem.index}`)).has(pid)) attempts.set(pid,(attempts.get(pid)||0)+1); }); return Math.max(0,...attempts.values()); }, 5), isNegative: true },
