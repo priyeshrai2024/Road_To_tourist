@@ -5,12 +5,24 @@ import { CF_SCORE_MAP } from "@/lib/constants";
 import { STORAGE_KEYS } from "@/lib/storage-keys";
 
 // ── Types ────────────────────────────────────────────────────────────────────
-interface ProbDetail { pid: string; name: string; timeTakenSecs: number; rating: number; }
+interface ProbDetail { 
+  pid: string; 
+  name: string; 
+  rating: number; 
+  attempts: number; 
+  solved: boolean; 
+  timeTakenSecs?: number; 
+}
+
 interface SessionLog {
   id: string; date: string; startTs: number; endTs: number; workMins: number;
   problemsSolved: number; pointsEarned: number; type: string; avgTimeSecs: number;
   details: ProbDetail[]; flowRating?: number; intent?: string; breakCount: number;
   plannedMins?: number;
+  totalSubmissions: number;
+  accuracyPct: number;
+  sprintScore: number;
+  hardestAC: number;
 }
 interface GrindTask { id: number; text: string; done: boolean; pinned: boolean; priority: 'high' | 'normal'; estMins?: number; }
 interface TmrPlan { id: number; text: string; }
@@ -90,8 +102,13 @@ export default function GrindMode({ handle }: { handle: string }) {
   const [targetHrs, setTargetHrs] = useState(15);
   const [showSettings, setShowSettings] = useState(false);
   const [rogueACs, setRogueACs] = useState<any[]>([]);
+  const [rogueMins, setRogueMins] = useState(0);
 
+  // Use refs to power the absolute timer and avoid dependency loops
   const timerRef = useRef<NodeJS.Timeout|null>(null);
+  const lastTickRef = useRef<number>(Date.now());
+  const historyRef = useRef<SessionLog[]>([]);
+
   const [wrActiveTab, setWrActiveTab] = useState(0);
 
   // ── Init ──────────────────────────────────────────────────────────────────
@@ -102,25 +119,38 @@ export default function GrindMode({ handle }: { handle: string }) {
     try { const tg = localStorage.getItem(STORAGE_KEYS.GRIND_TARGET_HRS); if (tg) setTargetHrs(parseInt(tg)); } catch {}
   }, []);
 
+  // Update history ref for detached callbacks
+  useEffect(() => { historyRef.current = history; }, [history]);
+
+  // Clean up intervals on unmount (Memory Leak Fix)
+  useEffect(() => {
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, []);
+
   // ── Rogue AC Detection ────────────────────────────────────────────────────
   useEffect(() => {
     if (!handle || phase !== 'IDLE') return;
     const checkForRogues = async () => {
       try {
-        const res = await fetch(`https://codeforces.com/api/user.status?handle=${handle}&from=1&count=50`);
+        const targetUrl = encodeURIComponent(`https://codeforces.com/api/user.status?handle=${handle}&from=1&count=50`);
+        const res = await fetch(`/api/cf?url=${targetUrl}`);
         const data = await res.json();
+        
         if (data.status === 'OK') {
           const now = Date.now() / 1000;
           const recent = data.result.filter((s:any) => s.verdict === 'OK' && s.author.participantType === 'PRACTICE' && (now - s.creationTimeSeconds) < 86400 * 2);
+          
           const missing = recent.filter((s:any) => {
-            return !history.some(h => s.creationTimeSeconds >= h.startTs && s.creationTimeSeconds <= h.endTs);
+            return !historyRef.current.some(h => s.creationTimeSeconds >= h.startTs && s.creationTimeSeconds <= h.endTs);
           });
+          
           setRogueACs(missing);
+          if (missing.length > 0) setRogueMins(missing.length * 20); // Set default estimate
         }
       } catch (e) {}
     };
     checkForRogues();
-  }, [handle, phase, history]);
+  }, [handle, phase]); // Removed 'history' to prevent infinite loop spamming Codeforces
 
   useEffect(() => {
     const style = document.createElement('style');
@@ -133,12 +163,20 @@ export default function GrindMode({ handle }: { handle: string }) {
   const saveHistory = useCallback((h: SessionLog[]) => { setHistory(h); try { localStorage.setItem(STORAGE_KEYS.GRIND_SESSIONS, JSON.stringify(h)); } catch {} }, []);
   const saveTmrPlan = useCallback((tp: TmrPlan[]) => { setTmrPlan(tp); try { localStorage.setItem(STORAGE_KEYS.GRIND_TMR_PLAN, JSON.stringify(tp)); } catch {} }, []);
 
-  // ── Timer ─────────────────────────────────────────────────────────────────
+  // ── Absolute Timer (Fixes browser throttling glitch) ──────────────────────
   const startTick = useCallback((field: 'work'|'rest') => {
     if (timerRef.current) clearInterval(timerRef.current);
+    lastTickRef.current = Date.now();
+    
     timerRef.current = setInterval(() => {
-      if (field === 'work') setWorkSecs(p => p + 1);
-      else setRestSecs(p => p + 1);
+      const now = Date.now();
+      const deltaSecs = Math.floor((now - lastTickRef.current) / 1000);
+      
+      if (deltaSecs > 0) {
+        if (field === 'work') setWorkSecs(p => p + deltaSecs);
+        else setRestSecs(p => p + deltaSecs);
+        lastTickRef.current += deltaSecs * 1000;
+      }
     }, 1000);
   }, []);
 
@@ -162,78 +200,116 @@ export default function GrindMode({ handle }: { handle: string }) {
 
   const resumeFlow = useCallback(() => { setPhase('FLOW'); startTick('work'); }, [startTick]);
 
-  // ── Terminate & extract ───────────────────────────────────────────────────
+  // ── Deep Data Extraction Protocol ─────────────────────────────────────────
   const terminate = useCallback(async () => {
     if (timerRef.current) clearInterval(timerRef.current);
     setPhase('RATE');
     setSyncing(true);
 
-    let points = 0, type = 'PRACTICE GRIND';
-    const details: ProbDetail[] = [];
+    let points = 0;
+    let totalSubs = 0;
+    let acCount = 0;
+    let hardestAC = 0;
+    const detailsMap = new Map<string, ProbDetail>();
 
     try {
       if (sessionStartTS && handle) {
-        const res = await fetch(`https://codeforces.com/api/user.status?handle=${handle}&from=1&count=100`);
+        const targetUrl = encodeURIComponent(`https://codeforces.com/api/user.status?handle=${handle}&from=1&count=100`);
+        const res = await fetch(`/api/cf?url=${targetUrl}`);
         const data = await res.json();
+        
         if (data.status === 'OK') {
+          // Get all subs chronologically
           const subs = data.result.filter((s:any) => s.creationTimeSeconds >= sessionStartTS).reverse();
-          let mark = sessionStartTS;
-          const seen = new Set<string>();
+          totalSubs = subs.length;
+          
           subs.forEach((s:any) => {
-            if (s.verdict === 'OK' && s.problem && s.author.participantType === 'PRACTICE') {
-              const pid = `${s.problem.contestId}-${s.problem.index}`;
-              if (!seen.has(pid)) {
-                seen.add(pid);
-                const r = s.problem.rating ? Math.floor(s.problem.rating/100)*100 : 800;
-                points += CF_SCORE_MAP[r > 2400 ? 2400 : r] || 10;
-                details.push({ pid, name: s.problem.name, timeTakenSecs: s.creationTimeSeconds - mark, rating: s.problem.rating || 800 });
-                mark = s.creationTimeSeconds;
+            if (s.author.participantType !== 'PRACTICE' || !s.problem) return;
+            
+            const pid = `${s.problem.contestId}-${s.problem.index}`;
+            const rating = s.problem.rating ? Math.floor(s.problem.rating/100)*100 : 800;
+            const ratingCapped = rating > 2400 ? 2400 : rating;
+
+            if (!detailsMap.has(pid)) {
+              detailsMap.set(pid, { pid, name: s.problem.name, rating: ratingCapped, attempts: 0, solved: false });
+            }
+
+            const pData = detailsMap.get(pid)!;
+
+            if (!pData.solved) {
+              pData.attempts++;
+              
+              if (s.verdict === 'OK') {
+                pData.solved = true;
+                pData.timeTakenSecs = s.creationTimeSeconds - sessionStartTS;
+                acCount++;
+                hardestAC = Math.max(hardestAC, ratingCapped);
+                points += CF_SCORE_MAP[ratingCapped] || 10;
               }
             }
           });
         }
       }
-    } catch {}
+    } catch (e) {
+      console.error("Extraction failed:", e);
+    }
 
-    const avg = details.length > 0 ? Math.round(details.reduce((a,p) => a + p.timeTakenSecs, 0) / details.length) : 0;
+    const details = Array.from(detailsMap.values());
+    const actualWorkMins = Math.max(1, parseFloat((workSecs / 60).toFixed(1))); // Protect against 0
+    const avg = acCount > 0 ? Math.round(workSecs / acCount) : 0;
+    
+    // Advanced Metrics
+    const accuracyPct = totalSubs > 0 ? Math.round((acCount / totalSubs) * 100) : 0;
+    const sprintScore = Math.round((points / actualWorkMins) * 10) / 10;
 
     const report: SessionLog = {
       id: Date.now().toString(), date: new Date().toISOString(),
       startTs: sessionStartTS || (Date.now()/1000 - workSecs), endTs: Date.now()/1000,
-      workMins: parseFloat((workSecs / 60).toFixed(1)),
-      problemsSolved: details.length, pointsEarned: points, type,
+      workMins: actualWorkMins,
+      problemsSolved: acCount, pointsEarned: points, type: 'PRACTICE GRIND',
       avgTimeSecs: avg, details, flowRating: 0,
       intent: intent || undefined,
       plannedMins: parseInt(plannedMins) || undefined,
       breakCount,
+      totalSubmissions: totalSubs,
+      accuracyPct,
+      sprintScore,
+      hardestAC
     };
+
     setLastReport(report);
+    // Push temporary report to history so stats reflect it immediately
+    saveHistory([report, ...historyRef.current]); 
     setSyncing(false);
     setFlowRating(0);
     setWorkSecs(0); setRestSecs(0); setTargetRest(0); setSessionStartTS(null); setBreakCount(0);
-    saveHistory([report, ...history]);
-  }, [sessionStartTS, handle, workSecs, intent, plannedMins, breakCount, history, saveHistory]);
+  }, [sessionStartTS, handle, workSecs, intent, plannedMins, breakCount, saveHistory]);
 
   const confirmRate = useCallback(() => {
     if (!lastReport) { setPhase('IDLE'); return; }
     const updated = { ...lastReport, flowRating };
-    saveHistory([updated, ...history.slice(1)]);
+    // Update the temporary report we pushed earlier
+    saveHistory([updated, ...historyRef.current.slice(1)]);
     setLastReport(updated);
     setPhase('IDLE'); setIntent(''); setPlannedMins('');
-  }, [lastReport, flowRating, history, saveHistory]);
+  }, [lastReport, flowRating, saveHistory]);
 
   const logRogueACs = () => {
     if (rogueACs.length === 0) return;
     const pts = rogueACs.reduce((sum, s) => sum + (CF_SCORE_MAP[s.problem?.rating ? Math.min(2400, Math.floor(s.problem.rating/100)*100) : 800] || 10), 0);
-    const details = rogueACs.map(s => ({ pid: `${s.problem.contestId}-${s.problem.index}`, name: s.problem.name, timeTakenSecs: 0, rating: s.problem.rating || 800 }));
-    const assumedMins = rogueACs.length * 20;
-    const ts = rogueACs[rogueACs.length-1].creationTimeSeconds;
+    const details = rogueACs.map(s => ({ pid: `${s.problem.contestId}-${s.problem.index}`, name: s.problem.name, timeTakenSecs: 0, rating: s.problem.rating || 800, attempts: 1, solved: true }));
+    
+    const assumedMins = Math.max(1, rogueMins);
+    // Fixed Time Travel Bug: Using index 0 targets the most recent submission.
+    const ts = rogueACs[0].creationTimeSeconds; 
+    
     const report: SessionLog = {
       id: Date.now().toString(), date: new Date(ts*1000).toISOString(), startTs: ts - (assumedMins*60), endTs: ts,
       workMins: assumedMins, problemsSolved: rogueACs.length, pointsEarned: pts, type: 'RETROACTIVE RECON',
-      avgTimeSecs: 0, details, flowRating: 3, intent: 'Logged retroactively', breakCount: 0
+      avgTimeSecs: Math.round((assumedMins*60) / rogueACs.length), details, flowRating: 3, intent: 'Logged retroactively', breakCount: 0,
+      totalSubmissions: rogueACs.length, accuracyPct: 100, sprintScore: Math.round((pts / assumedMins) * 10) / 10, hardestAC: Math.max(...rogueACs.map(s => s.problem?.rating || 800))
     };
-    saveHistory([report, ...history].sort((a,b) => b.endTs - a.endTs));
+    saveHistory([report, ...historyRef.current].sort((a,b) => b.endTs - a.endTs));
     setRogueACs([]);
   };
 
@@ -382,16 +458,46 @@ export default function GrindMode({ handle }: { handle: string }) {
           <>
             <div className="text-[11px] font-bold uppercase tracking-[4px]" style={{ color: theme.ok }}>// Extraction Complete</div>
             <h2 className="text-4xl font-black" style={{ color: theme.text }}>Rate your flow</h2>
+            
+            {/* NEW: Gamified Stat Board */}
             {lastReport && (
-              <div className="grid grid-cols-3 gap-3">
-                {[{ l:'Focus', v:`${lastReport.workMins}m`, c:theme.accent }, { l:'ACs', v:String(lastReport.problemsSolved), c:theme.ok }, { l:'XP', v:`+${lastReport.pointsEarned}`, c:'#58a6ff' }].map(s => (
-                  <div key={s.l} className="rounded-xl p-4 text-center" style={{ background: theme.surface, border: `1px solid ${theme.sh}` }}>
-                    <div className="text-[9px] font-bold uppercase tracking-[2px] mb-1" style={{ color: theme.muted }}>{s.l}</div>
-                    <div className="font-black text-2xl font-mono" style={{ color: s.c }}>{s.v}</div>
+              <div className="grid grid-cols-2 gap-3 mb-6">
+                <div className="rounded-xl p-3 text-center border col-span-2 flex justify-around" style={{ background: 'rgba(0,0,0,0.2)', borderColor: theme.sh }}>
+                   <div>
+                     <div className="text-[9px] font-bold uppercase tracking-[2px]" style={{ color: theme.muted }}>Focus</div>
+                     <div className="font-black text-xl font-mono" style={{ color: theme.accent }}>{lastReport.workMins}m</div>
+                   </div>
+                   <div>
+                     <div className="text-[9px] font-bold uppercase tracking-[2px]" style={{ color: theme.muted }}>Earned XP</div>
+                     <div className="font-black text-xl font-mono" style={{ color: '#58a6ff' }}>+{lastReport.pointsEarned}</div>
+                   </div>
+                   <div>
+                     <div className="text-[9px] font-bold uppercase tracking-[2px]" style={{ color: theme.muted }}>Problems AC</div>
+                     <div className="font-black text-xl font-mono" style={{ color: theme.ok }}>{lastReport.problemsSolved}</div>
+                   </div>
+                </div>
+
+                <div className="rounded-xl p-3 text-center border" style={{ background: theme.surface, borderColor: theme.sh }}>
+                  <div className="text-[9px] font-bold uppercase tracking-[2px] mb-1" style={{ color: theme.muted }}>Accuracy</div>
+                  <div className="font-black text-lg font-mono" style={{ color: (lastReport.accuracyPct||0) > 70 ? theme.ok : theme.stop }}>
+                    {lastReport.accuracyPct || 0}% <span className="text-xs text-gray-500">({lastReport.totalSubmissions || 0} subs)</span>
                   </div>
-                ))}
+                </div>
+                
+                <div className="rounded-xl p-3 text-center border" style={{ background: theme.surface, borderColor: theme.sh }}>
+                  <div className="text-[9px] font-bold uppercase tracking-[2px] mb-1" style={{ color: theme.muted }}>Sprint Score</div>
+                  <div className="font-black text-lg font-mono" style={{ color: '#d2a8ff' }}>{lastReport.sprintScore || 0} <span className="text-xs text-gray-500">pts/m</span></div>
+                </div>
+
+                {(lastReport.hardestAC || 0) > 0 && (
+                  <div className="rounded-xl p-3 text-center border col-span-2" style={{ background: theme.surface, borderColor: theme.sh }}>
+                    <div className="text-[9px] font-bold uppercase tracking-[2px] mb-1" style={{ color: theme.muted }}>Peak Difficulty Cleared</div>
+                    <div className="font-black text-lg font-mono" style={{ color: theme.stop }}>{lastReport.hardestAC} Rated</div>
+                  </div>
+                )}
               </div>
             )}
+
             <div className="flex justify-center gap-4 py-4">
               {[1,2,3,4,5].map(n => (
                 <button key={n} onClick={() => setFlowRating(n)} className="text-4xl transition-all bg-transparent border-none cursor-pointer hover:scale-125" style={{ filter: n<=flowRating ? `drop-shadow(0 0 10px ${theme.accent})` : 'none', opacity: n<=flowRating ? 1 : 0.2 }}>★</button>
@@ -410,16 +516,21 @@ export default function GrindMode({ handle }: { handle: string }) {
   return (
     <div className="animate-in fade-in duration-400 space-y-6 max-w-4xl mx-auto pb-20 font-sans" style={{ color: theme.text }}>
 
-      {/* ROGUE AC BANNER */}
+      {/* ROGUE AC BANNER (Upgraded w/ custom minutes input) */}
       {rogueACs.length > 0 && (
-        <div className="rounded-xl p-5 flex items-center justify-between" style={{ background: 'rgba(251,73,52,0.1)', border: `1px solid rgba(251,73,52,0.3)` }}>
+        <div className="rounded-xl p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4" style={{ background: 'rgba(251,73,52,0.1)', border: `1px solid rgba(251,73,52,0.3)` }}>
           <div>
             <div className="font-bold text-[11px] uppercase tracking-[2px] mb-1 flex items-center gap-2" style={{ color: theme.stop }}><span className="w-2 h-2 rounded-full animate-pulse" style={{ background: theme.stop }} /> Rogue Activity Detected</div>
             <div className="text-sm font-medium">You solved <span className="font-bold" style={{ color: theme.stop }}>{rogueACs.length} problems</span> outside of Grind Mode recently.</div>
           </div>
-          <div className="flex gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2 bg-black/20 px-3 py-1.5 rounded border border-red-500/20">
+              <span className="text-xs text-red-400 font-bold uppercase tracking-[1px]">Est. Time:</span>
+              <input type="number" value={rogueMins} onChange={e => setRogueMins(Math.max(1, Number(e.target.value)||1))} className="w-16 bg-transparent outline-none text-white font-mono text-sm" />
+              <span className="text-xs text-red-400">mins</span>
+            </div>
             <button onClick={() => setRogueACs([])} className="text-xs font-bold uppercase transition-colors bg-transparent border-none cursor-pointer" style={{ color: theme.muted }}>Dismiss</button>
-            <button onClick={logRogueACs} className="font-bold text-xs uppercase px-4 py-2 rounded transition-colors cursor-pointer" style={{ background: theme.stop, color: theme.text, border: 'none' }}>Log as Session</button>
+            <button onClick={logRogueACs} className="font-bold text-xs uppercase px-4 py-2 rounded transition-colors cursor-pointer whitespace-nowrap" style={{ background: theme.stop, color: theme.text, border: 'none' }}>Log as Session</button>
           </div>
         </div>
       )}
@@ -492,14 +603,14 @@ export default function GrindMode({ handle }: { handle: string }) {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* WEEKLY TARGET */}
+        {/* WEEKLY TARGET (Fixed Zero Crash) */}
         <div className="rounded-xl p-8" style={{ background: 'rgba(0,0,0,0.15)', border: `1px solid ${theme.sh}` }}>
           <div className="text-[11px] font-bold uppercase tracking-[3px] mb-6 flex items-center justify-between" style={{ color: theme.muted }}>
             Weekly Target
             <span className="font-mono text-xs" style={{ color: theme.text }}>{(weekSecs/3600).toFixed(1)}h / {targetHrs}h</span>
           </div>
           <div className="w-full h-3 rounded-full overflow-hidden" style={{ background: theme.sh }}>
-            <div className="h-full transition-all duration-1000" style={{ background: theme.accent, width: `${Math.min(100, (weekSecs / (targetHrs * 3600)) * 100)}%` }} />
+            <div className="h-full transition-all duration-1000" style={{ background: theme.accent, width: `${Math.min(100, (weekSecs / (Math.max(1, targetHrs) * 3600)) * 100)}%` }} />
           </div>
         </div>
 
@@ -591,12 +702,12 @@ export default function GrindMode({ handle }: { handle: string }) {
               <div>
                 <h4 className="text-[11px] font-bold uppercase tracking-[2px] mb-4" style={{ color: theme.muted }}>Weekly Target</h4>
                 <div className="flex items-center gap-4">
-                  <input type="number" value={targetHrs} onChange={e => { setTargetHrs(Number(e.target.value)); localStorage.setItem(STORAGE_KEYS.GRIND_TARGET_HRS, e.target.value); }} className="w-32 px-4 py-3 rounded text-sm outline-none font-mono" style={{ background: 'rgba(0,0,0,0.2)', border: `1px solid ${theme.sh}`, color: theme.text }} />
+                  <input type="number" value={targetHrs} onChange={e => { setTargetHrs(Math.max(0, Number(e.target.value)||0)); localStorage.setItem(STORAGE_KEYS.GRIND_TARGET_HRS, e.target.value); }} className="w-32 px-4 py-3 rounded text-sm outline-none font-mono" style={{ background: 'rgba(0,0,0,0.2)', border: `1px solid ${theme.sh}`, color: theme.text }} />
                   <span className="text-sm" style={{ color: theme.muted }}>Hours per week</span>
                 </div>
               </div>
 
-              {/* Session Ledger */}
+              {/* Session Ledger (Fixed NaN issue) */}
               <div>
                 <h4 className="text-[11px] font-bold uppercase tracking-[2px] mb-4" style={{ color: theme.muted }}>Session Ledger (Raw Data)</h4>
                 <div className="rounded-xl overflow-hidden border" style={{ borderColor: theme.sh }}>
@@ -619,13 +730,13 @@ export default function GrindMode({ handle }: { handle: string }) {
                           <td className="p-4 truncate max-w-[200px]">{h.intent || '—'}</td>
                           <td className="p-4 text-center">
                             <input type="number" value={h.workMins} onChange={e => {
-                              const v = Number(e.target.value);
+                              const v = Math.max(0, Number(e.target.value) || 0);
                               setHistory(prev => { const next = prev.map(x => x.id === h.id ? {...x, workMins: v} : x); localStorage.setItem(STORAGE_KEYS.GRIND_SESSIONS, JSON.stringify(next)); return next; });
                             }} className="w-16 px-2 py-1 rounded outline-none font-mono text-center bg-black/40 border-none" style={{ color: theme.text }} />
                           </td>
                           <td className="p-4 text-center">
                             <input type="number" min="0" max="5" value={h.flowRating || 0} onChange={e => {
-                              const v = Number(e.target.value);
+                              const v = Math.max(0, Number(e.target.value) || 0);
                               setHistory(prev => { const next = prev.map(x => x.id === h.id ? {...x, flowRating: v} : x); localStorage.setItem(STORAGE_KEYS.GRIND_SESSIONS, JSON.stringify(next)); return next; });
                             }} className="w-12 px-2 py-1 rounded outline-none font-mono text-center bg-black/40 border-none" style={{ color: theme.text }} />
                           </td>

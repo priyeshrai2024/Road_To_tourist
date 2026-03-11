@@ -52,21 +52,31 @@ export default function ContestTracker({ handle, rawSubs }: { handle: string; ra
     if (!isBackground) setLoading(true); else setIsSyncing(true);
     setError("");
     try {
-      const contestRes = await fetch("https://codeforces.com/api/contest.list?gym=false");
+      // PROXY FIX: Routing contest list through middleman
+      const contestUrl = encodeURIComponent("https://codeforces.com/api/contest.list?gym=false");
+      const contestRes = await fetch(`/api/cf?url=${contestUrl}`);
       const contestData = await contestRes.json();
+      
       if (contestData.status !== "OK") throw new Error("Contest list fetch failed");
       const finished: Contest[] = contestData.result.filter((c: any) => c.phase === "FINISHED" && c.type === "CF");
-      const probRes = await fetch("https://codeforces.com/api/problemset.problems");
+      
+      // PROXY FIX: Routing problemset through middleman
+      const probUrl = encodeURIComponent("https://codeforces.com/api/problemset.problems");
+      const probRes = await fetch(`/api/cf?url=${probUrl}`);
       const probData = await probRes.json();
+      
       if (probData.status !== "OK") throw new Error("Problemset fetch failed");
+      
       const probsByContest: Record<number, Problem[]> = {};
       probData.result.problems.forEach((p: any) => {
         if (!p.contestId || !PROBLEM_COLS.includes(p.index)) return;
         if (!probsByContest[p.contestId]) probsByContest[p.contestId] = [];
         probsByContest[p.contestId].push({ contestId: p.contestId, index: p.index, name: p.name, rating: p.rating });
       });
+      
       Object.values(probsByContest).forEach(probs => probs.sort((a, b) => a.index.localeCompare(b.index)));
       const rows: ContestRow[] = finished.filter(c => probsByContest[c.id]?.length > 0).map(c => ({ contest: { id: c.id, name: c.name, type: c.type, phase: c.phase, durationSeconds: c.durationSeconds, startTimeSeconds: c.startTimeSeconds }, problems: probsByContest[c.id] }));
+      
       setContests(rows);
       try { localStorage.setItem(CACHE_KEY, JSON.stringify({ timestamp: Date.now(), rows })); } catch {}
     } catch (e: any) {
