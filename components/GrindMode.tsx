@@ -18,10 +18,12 @@ type Phase = 'IDLE' | 'INTENT' | 'FLOW' | 'REST' | 'RATE';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function fmt(s: number) {
-  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sc = s % 60;
+  const rs = Math.round(s);
+  const h = Math.floor(rs / 3600), m = Math.floor((rs % 3600) / 60), sc = rs % 60;
   if (h > 0) return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${sc.toString().padStart(2, '0')}`;
   return `${m.toString().padStart(2, '0')}:${sc.toString().padStart(2, '0')}`;
 }
+
 function getWeekMonday(d: Date) { const day = new Date(d), dow = day.getDay(), diff = dow === 0 ? -6 : 1 - dow; day.setDate(day.getDate() + diff); day.setHours(0, 0, 0, 0); return day; }
 
 // ── Theme ────────────────────────────────────────────────────────────────────
@@ -34,8 +36,9 @@ const T = {
 };
 
 function fmtSecs(s: number) {
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60), sc = s % 60;
+  const rs = Math.round(s);
+  if (rs < 60) return `${rs}s`;
+  const m = Math.floor(rs / 60), sc = rs % 60;
   return sc > 0 ? `${m}m ${sc}s` : `${m}m`;
 }
 
@@ -183,8 +186,8 @@ export default function GrindMode({ handle }: { handle: string }) {
   const [intent, setIntent] = useState('');
   const [plannedMins, setPlannedMins] = useState('');
   const [flowRating, setFlowRating] = useState(0);
-  const [hoverRating, setHoverRating] = useState(0); // Interactive stars state
-  const [hoverBucket, setHoverBucket] = useState<string | null>(null); // Rating distribution tooltip
+  const [hoverRating, setHoverRating] = useState(0);
+  const [hoverBucket, setHoverBucket] = useState<string | null>(null);
   const [breakCount, setBreakCount] = useState(0);
   const [tasks, setTasks] = useState<GrindTask[]>([]);
   const [newTask, setNewTask] = useState('');
@@ -424,7 +427,7 @@ export default function GrindMode({ handle }: { handle: string }) {
     const planAccuracy = plannedM > 0 ? Math.min(200, Math.round((focusMins / plannedM) * 100)) : null;
 
     const ratingBuckets: Record<number, number> = {};
-    ratedProblems.forEach(d => { const bucket = Math.floor(d.rating / 200) * 200; ratingBuckets[bucket] = (ratingBuckets[bucket] || 0) + 1; });
+    ratedProblems.forEach(d => { const bucket = Math.floor(d.rating / 100) * 100; ratingBuckets[bucket] = (ratingBuckets[bucket] || 0) + 1; });
     const bucketEntries = Object.entries(ratingBuckets).sort((a, b) => Number(a[0]) - Number(b[0]));
     const maxBucketCount = Math.max(1, ...Object.values(ratingBuckets), 1);
     const ratingColor = (rt: number) => rt >= 2400 ? '#ff0000' : rt >= 2100 ? '#ff8c00' : rt >= 1900 ? '#aa00aa' : rt >= 1600 ? '#0000ff' : rt >= 1400 ? '#03a89e' : rt >= 1200 ? T.green : T.muted;
