@@ -24,6 +24,7 @@ interface SessionLog {
   sprintScore: number;
   hardestAC: number;
 }
+
 interface GrindTask { id: number; text: string; done: boolean; pinned: boolean; priority: 'high' | 'normal'; estMins?: number; }
 interface TmrPlan { id: number; text: string; }
 type Phase = 'IDLE' | 'INTENT' | 'FLOW' | 'REST' | 'RATE';
@@ -34,7 +35,6 @@ function fmt(s: number) {
   if (h > 0) return `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}:${sc.toString().padStart(2,'0')}`;
   return `${m.toString().padStart(2,'0')}:${sc.toString().padStart(2,'0')}`;
 }
-function fmtMins(s: number) { const h = Math.floor(s/3600), m = Math.floor((s%3600)/60); return h > 0 ? `${h}h ${m}m` : `${m}m`; }
 function getWeekMonday(d: Date) { const day=new Date(d), dow=day.getDay(), diff=dow===0?-6:1-dow; day.setDate(day.getDate()+diff); day.setHours(0,0,0,0); return day; }
 
 // ── Theme Colors (CSS custom properties) ────────────────────────────────────
@@ -102,7 +102,11 @@ export default function GrindMode({ handle }: { handle: string }) {
   const [targetHrs, setTargetHrs] = useState(15);
   const [showSettings, setShowSettings] = useState(false);
   const [rogueACs, setRogueACs] = useState<any[]>([]);
-  const [rogueMins, setRogueMins] = useState(0);
+  const [rogueMins, setRogueMins] = useState(20);
+
+  // Archive Modal State
+  const [showArchive, setShowArchive] = useState(false);
+  const [expandedSession, setExpandedSession] = useState<string | null>(null);
 
   // Use refs to power the absolute timer and avoid dependency loops
   const timerRef = useRef<NodeJS.Timeout|null>(null);
@@ -145,12 +149,12 @@ export default function GrindMode({ handle }: { handle: string }) {
           });
           
           setRogueACs(missing);
-          if (missing.length > 0) setRogueMins(missing.length * 20); // Set default estimate
+          if (missing.length > 0) setRogueMins(missing.length * 20); // Default estimate
         }
       } catch (e) {}
     };
     checkForRogues();
-  }, [handle, phase]); // Removed 'history' to prevent infinite loop spamming Codeforces
+  }, [handle, phase]);
 
   useEffect(() => {
     const style = document.createElement('style');
@@ -219,7 +223,6 @@ export default function GrindMode({ handle }: { handle: string }) {
         const data = await res.json();
         
         if (data.status === 'OK') {
-          // Get all subs chronologically
           const subs = data.result.filter((s:any) => s.creationTimeSeconds >= sessionStartTS).reverse();
           totalSubs = subs.length;
           
@@ -238,7 +241,6 @@ export default function GrindMode({ handle }: { handle: string }) {
 
             if (!pData.solved) {
               pData.attempts++;
-              
               if (s.verdict === 'OK') {
                 pData.solved = true;
                 pData.timeTakenSecs = s.creationTimeSeconds - sessionStartTS;
@@ -255,30 +257,22 @@ export default function GrindMode({ handle }: { handle: string }) {
     }
 
     const details = Array.from(detailsMap.values());
-    const actualWorkMins = Math.max(1, parseFloat((workSecs / 60).toFixed(1))); // Protect against 0
+    const actualWorkMins = Math.max(1, parseFloat((workSecs / 60).toFixed(1))); 
     const avg = acCount > 0 ? Math.round(workSecs / acCount) : 0;
     
-    // Advanced Metrics
     const accuracyPct = totalSubs > 0 ? Math.round((acCount / totalSubs) * 100) : 0;
     const sprintScore = Math.round((points / actualWorkMins) * 10) / 10;
 
     const report: SessionLog = {
       id: Date.now().toString(), date: new Date().toISOString(),
       startTs: sessionStartTS || (Date.now()/1000 - workSecs), endTs: Date.now()/1000,
-      workMins: actualWorkMins,
-      problemsSolved: acCount, pointsEarned: points, type: 'PRACTICE GRIND',
-      avgTimeSecs: avg, details, flowRating: 0,
-      intent: intent || undefined,
-      plannedMins: parseInt(plannedMins) || undefined,
-      breakCount,
-      totalSubmissions: totalSubs,
-      accuracyPct,
-      sprintScore,
-      hardestAC
+      workMins: actualWorkMins, problemsSolved: acCount, pointsEarned: points, type: 'PRACTICE GRIND',
+      avgTimeSecs: avg, details, flowRating: 0, intent: intent || undefined,
+      plannedMins: parseInt(plannedMins) || undefined, breakCount,
+      totalSubmissions: totalSubs, accuracyPct, sprintScore, hardestAC
     };
 
     setLastReport(report);
-    // Push temporary report to history so stats reflect it immediately
     saveHistory([report, ...historyRef.current]); 
     setSyncing(false);
     setFlowRating(0);
@@ -288,7 +282,6 @@ export default function GrindMode({ handle }: { handle: string }) {
   const confirmRate = useCallback(() => {
     if (!lastReport) { setPhase('IDLE'); return; }
     const updated = { ...lastReport, flowRating };
-    // Update the temporary report we pushed earlier
     saveHistory([updated, ...historyRef.current.slice(1)]);
     setLastReport(updated);
     setPhase('IDLE'); setIntent(''); setPlannedMins('');
@@ -300,8 +293,7 @@ export default function GrindMode({ handle }: { handle: string }) {
     const details = rogueACs.map(s => ({ pid: `${s.problem.contestId}-${s.problem.index}`, name: s.problem.name, timeTakenSecs: 0, rating: s.problem.rating || 800, attempts: 1, solved: true }));
     
     const assumedMins = Math.max(1, rogueMins);
-    // Fixed Time Travel Bug: Using index 0 targets the most recent submission.
-    const ts = rogueACs[0].creationTimeSeconds; 
+    const ts = rogueACs[0].creationTimeSeconds; // Corrected timestamp targeting
     
     const report: SessionLog = {
       id: Date.now().toString(), date: new Date(ts*1000).toISOString(), startTs: ts - (assumedMins*60), endTs: ts,
@@ -459,7 +451,6 @@ export default function GrindMode({ handle }: { handle: string }) {
             <div className="text-[11px] font-bold uppercase tracking-[4px]" style={{ color: theme.ok }}>// Extraction Complete</div>
             <h2 className="text-4xl font-black" style={{ color: theme.text }}>Rate your flow</h2>
             
-            {/* NEW: Gamified Stat Board */}
             {lastReport && (
               <div className="grid grid-cols-2 gap-3 mb-6">
                 <div className="rounded-xl p-3 text-center border col-span-2 flex justify-around" style={{ background: 'rgba(0,0,0,0.2)', borderColor: theme.sh }}>
@@ -468,11 +459,11 @@ export default function GrindMode({ handle }: { handle: string }) {
                      <div className="font-black text-xl font-mono" style={{ color: theme.accent }}>{lastReport.workMins}m</div>
                    </div>
                    <div>
-                     <div className="text-[9px] font-bold uppercase tracking-[2px]" style={{ color: theme.muted }}>Earned XP</div>
+                     <div className="text-[9px] font-bold uppercase tracking-[2px]" style={{ color: theme.muted }}>XP</div>
                      <div className="font-black text-xl font-mono" style={{ color: '#58a6ff' }}>+{lastReport.pointsEarned}</div>
                    </div>
                    <div>
-                     <div className="text-[9px] font-bold uppercase tracking-[2px]" style={{ color: theme.muted }}>Problems AC</div>
+                     <div className="text-[9px] font-bold uppercase tracking-[2px]" style={{ color: theme.muted }}>ACs</div>
                      <div className="font-black text-xl font-mono" style={{ color: theme.ok }}>{lastReport.problemsSolved}</div>
                    </div>
                 </div>
@@ -516,7 +507,7 @@ export default function GrindMode({ handle }: { handle: string }) {
   return (
     <div className="animate-in fade-in duration-400 space-y-6 max-w-4xl mx-auto pb-20 font-sans" style={{ color: theme.text }}>
 
-      {/* ROGUE AC BANNER (Upgraded w/ custom minutes input) */}
+      {/* ROGUE AC BANNER */}
       {rogueACs.length > 0 && (
         <div className="rounded-xl p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4" style={{ background: 'rgba(251,73,52,0.1)', border: `1px solid rgba(251,73,52,0.3)` }}>
           <div>
@@ -603,7 +594,7 @@ export default function GrindMode({ handle }: { handle: string }) {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* WEEKLY TARGET (Fixed Zero Crash) */}
+        {/* WEEKLY TARGET */}
         <div className="rounded-xl p-8" style={{ background: 'rgba(0,0,0,0.15)', border: `1px solid ${theme.sh}` }}>
           <div className="text-[11px] font-bold uppercase tracking-[3px] mb-6 flex items-center justify-between" style={{ color: theme.muted }}>
             Weekly Target
@@ -660,6 +651,19 @@ export default function GrindMode({ handle }: { handle: string }) {
         })()}
       </div>
 
+      {/* COMBAT ARCHIVE LAUNCHER */}
+      <div className="rounded-xl p-8 flex flex-col md:flex-row items-center justify-between gap-6" style={{ background: 'rgba(0,0,0,0.15)', border: `1px solid ${theme.sh}` }}>
+        <div>
+          <h3 className="text-lg font-black uppercase tracking-widest text-white mb-1">The Combat Archive</h3>
+          <p className="text-xs font-medium" style={{ color: theme.muted }}>
+            Lifetime Record: <span style={{ color: theme.accent }}>{history.length} Sessions</span> logged.
+          </p>
+        </div>
+        <button onClick={() => setShowArchive(true)} className="px-8 py-3 rounded font-black uppercase tracking-widest text-sm transition-transform hover:-translate-y-1 cursor-pointer shadow-lg border-none" style={{ background: theme.accent, color: theme.bg }}>
+          Open Full Archive
+        </button>
+      </div>
+
       {/* TOMORROW PLAN MODAL */}
       {showTmrModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[10000] flex items-center justify-center p-4">
@@ -688,7 +692,7 @@ export default function GrindMode({ handle }: { handle: string }) {
         </div>
       )}
 
-      {/* SETTINGS & LEDGER MODAL */}
+      {/* SETTINGS MODAL */}
       {showSettings && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[10000] flex items-center justify-center p-4">
           <div className="w-full max-w-4xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh] border" style={{ background: theme.surface, borderColor: theme.sh }}>
@@ -707,7 +711,7 @@ export default function GrindMode({ handle }: { handle: string }) {
                 </div>
               </div>
 
-              {/* Session Ledger (Fixed NaN issue) */}
+              {/* Session Ledger */}
               <div>
                 <h4 className="text-[11px] font-bold uppercase tracking-[2px] mb-4" style={{ color: theme.muted }}>Session Ledger (Raw Data)</h4>
                 <div className="rounded-xl overflow-hidden border" style={{ borderColor: theme.sh }}>
@@ -749,6 +753,95 @@ export default function GrindMode({ handle }: { handle: string }) {
                   </table>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DEEP COMBAT ARCHIVE MODAL */}
+      {showArchive && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-[10000] flex items-center justify-center p-4 overflow-hidden">
+          <div className="w-full max-w-5xl h-[90vh] rounded-2xl shadow-2xl flex flex-col border" style={{ background: theme.surface, borderColor: theme.sh }}>
+            
+            {/* Archive Header */}
+            <div className="p-6 border-b flex justify-between items-center" style={{ borderColor: theme.sh, background: 'rgba(0,0,0,0.2)' }}>
+              <div>
+                <h3 className="text-2xl font-black uppercase tracking-widest text-white">Combat Archive</h3>
+                <p className="text-xs font-mono mt-1" style={{ color: theme.muted }}>Complete telemetry of all recorded grind sessions.</p>
+              </div>
+              <button onClick={() => setShowArchive(false)} className="text-3xl cursor-pointer transition-colors bg-transparent border-none hover:text-red-400" style={{ color: theme.muted }}>×</button>
+            </div>
+
+            {/* Scrollable Archive List */}
+            <div className="p-6 overflow-y-auto flex-1 space-y-4">
+              {history.length === 0 ? (
+                <div className="text-center py-20 font-mono" style={{ color: theme.muted }}>No sessions recorded yet. Get to grinding.</div>
+              ) : (
+                history.map(h => {
+                  const isExpanded = expandedSession === h.id;
+                  return (
+                    <div key={h.id} className="rounded-xl border overflow-hidden transition-all" style={{ background: isExpanded ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.1)', borderColor: isExpanded ? theme.accent : theme.sh }}>
+                      
+                      {/* Session Summary Bar (Clickable) */}
+                      <div onClick={() => setExpandedSession(isExpanded ? null : h.id)} className="p-5 flex flex-wrap lg:flex-nowrap items-center justify-between gap-4 cursor-pointer hover:bg-white/5 transition-colors">
+                        <div className="min-w-[200px]">
+                          <div className="flex items-center gap-3 mb-1">
+                            <span className="font-mono text-sm font-bold" style={{ color: theme.accent }}>
+                              {new Date(h.startTs * 1000).toLocaleString('en-GB', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })}
+                            </span>
+                            <span className="text-[9px] px-2 py-0.5 rounded font-bold uppercase tracking-[2px]" style={{ background: 'rgba(255,255,255,0.05)', color: theme.muted }}>{h.type}</span>
+                          </div>
+                          <div className="text-sm font-medium text-white truncate">{h.intent || 'Unspecified focus session'}</div>
+                        </div>
+
+                        {/* Top Level Stats */}
+                        <div className="flex flex-wrap gap-6 text-center">
+                          <div><div className="text-[9px] font-bold uppercase tracking-[1px]" style={{ color: theme.muted }}>Focus</div><div className="font-mono text-base font-bold text-white">{h.workMins}m</div></div>
+                          <div><div className="text-[9px] font-bold uppercase tracking-[1px]" style={{ color: theme.muted }}>XP</div><div className="font-mono text-base font-bold" style={{ color: '#58a6ff' }}>+{h.pointsEarned}</div></div>
+                          <div><div className="text-[9px] font-bold uppercase tracking-[1px]" style={{ color: theme.muted }}>ACs</div><div className="font-mono text-base font-bold" style={{ color: theme.ok }}>{h.problemsSolved}</div></div>
+                          <div><div className="text-[9px] font-bold uppercase tracking-[1px]" style={{ color: theme.muted }}>Acc</div><div className="font-mono text-base font-bold" style={{ color: (h.accuracyPct||0) >= 70 ? theme.ok : theme.stop }}>{h.accuracyPct || 0}%</div></div>
+                        </div>
+                        
+                        <div className="text-xs font-mono font-bold" style={{ color: theme.muted }}>{isExpanded ? '▼' : '▶'}</div>
+                      </div>
+
+                      {/* Expanded Deep Stats & Problem Breakdown */}
+                      {isExpanded && (
+                        <div className="p-5 border-t bg-black/20" style={{ borderColor: theme.sh }}>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                            <div className="p-3 rounded border" style={{ borderColor: theme.sh, background: theme.surface }}><div className="text-[9px] uppercase text-gray-500 mb-1">Sprint Score</div><div className="font-mono font-bold text-[#d2a8ff]">{h.sprintScore || 0} pts/m</div></div>
+                            <div className="p-3 rounded border" style={{ borderColor: theme.sh, background: theme.surface }}><div className="text-[9px] uppercase text-gray-500 mb-1">Total Subs</div><div className="font-mono font-bold text-white">{h.totalSubmissions || 0}</div></div>
+                            <div className="p-3 rounded border" style={{ borderColor: theme.sh, background: theme.surface }}><div className="text-[9px] uppercase text-gray-500 mb-1">Peak Cleared</div><div className="font-mono font-bold text-red-400">{h.hardestAC || 'None'} Rated</div></div>
+                            <div className="p-3 rounded border" style={{ borderColor: theme.sh, background: theme.surface }}><div className="text-[9px] uppercase text-gray-500 mb-1">Flow Rating</div><div className="font-mono font-bold text-yellow-400">{h.flowRating ? '★'.repeat(h.flowRating) : 'Unrated'}</div></div>
+                          </div>
+
+                          {/* Individual Problem Breakdown */}
+                          <h4 className="text-[10px] font-bold uppercase tracking-[2px] mb-3" style={{ color: theme.muted }}>Problem Telemetry</h4>
+                          <div className="space-y-2">
+                            {h.details && h.details.length > 0 ? (
+                              h.details.map((p, idx) => (
+                                <a key={idx} href={`https://codeforces.com/contest/${p.pid.split('-')[0]}/problem/${p.pid.split('-')[1]}`} target="_blank" className="flex items-center justify-between p-3 rounded border transition-colors no-underline hover:border-gray-500" style={{ borderColor: theme.sh, background: 'rgba(0,0,0,0.4)' }}>
+                                  <div className="flex items-center gap-3">
+                                    <span className="font-mono text-xs font-bold" style={{ color: p.solved ? theme.ok : theme.stop }}>{p.pid}</span>
+                                    <span className="text-sm font-medium text-gray-300 truncate max-w-[200px] md:max-w-md">{p.name}</span>
+                                    <span className="text-[10px] px-2 py-0.5 rounded font-mono" style={{ background: 'rgba(255,255,255,0.05)', color: theme.accent }}>{p.rating}</span>
+                                  </div>
+                                  <div className="flex gap-4 text-xs font-mono text-right shrink-0">
+                                    <span style={{ color: (p.attempts || 1) > 1 ? theme.stop : theme.ok }}>{p.attempts || 1} Tries</span>
+                                    <span className="w-16 text-gray-500">{p.timeTakenSecs ? `${Math.floor(p.timeTakenSecs / 60)}m` : '—'}</span>
+                                  </div>
+                                </a>
+                              ))
+                            ) : (
+                              <div className="text-xs font-mono italic text-gray-600">No specific problem data captured for this session.</div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
         </div>
