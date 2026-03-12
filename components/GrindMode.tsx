@@ -1,30 +1,17 @@
 "use client";
 
+import React from 'react';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { CF_SCORE_MAP } from "@/lib/constants";
-import { STORAGE_KEYS } from "@/lib/storage-keys";
 
 // ── Types ────────────────────────────────────────────────────────────────────
-interface ProbDetail { 
-  pid: string; 
-  name: string; 
-  rating: number; 
-  attempts: number; 
-  solved: boolean; 
-  timeTakenSecs?: number; 
-}
-
+interface ProbDetail { pid: string; name: string; timeTakenSecs: number; rating: number; }
 interface SessionLog {
   id: string; date: string; startTs: number; endTs: number; workMins: number;
   problemsSolved: number; pointsEarned: number; type: string; avgTimeSecs: number;
   details: ProbDetail[]; flowRating?: number; intent?: string; breakCount: number;
   plannedMins?: number;
-  totalSubmissions: number;
-  accuracyPct: number;
-  sprintScore: number;
-  hardestAC: number;
 }
-
 interface GrindTask { id: number; text: string; done: boolean; pinned: boolean; priority: 'high' | 'normal'; estMins?: number; }
 interface TmrPlan { id: number; text: string; }
 type Phase = 'IDLE' | 'INTENT' | 'FLOW' | 'REST' | 'RATE';
@@ -32,103 +19,276 @@ type Phase = 'IDLE' | 'INTENT' | 'FLOW' | 'REST' | 'RATE';
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function fmt(s: number) {
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sc = s % 60;
-  if (h > 0) return `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}:${sc.toString().padStart(2,'0')}`;
-  return `${m.toString().padStart(2,'0')}:${sc.toString().padStart(2,'0')}`;
+  if (h > 0) return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${sc.toString().padStart(2, '0')}`;
+  return `${m.toString().padStart(2, '0')}:${sc.toString().padStart(2, '0')}`;
 }
-function getWeekMonday(d: Date) { const day=new Date(d), dow=day.getDay(), diff=dow===0?-6:1-dow; day.setDate(day.getDate()+diff); day.setHours(0,0,0,0); return day; }
+function fmtMins(s: number) { const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60); return h > 0 ? `${h}h ${m}m` : `${m}m`; }
+function getWeekMonday(d: Date) { const day = new Date(d), dow = day.getDay(), diff = dow === 0 ? -6 : 1 - dow; day.setDate(day.getDate() + diff); day.setHours(0, 0, 0, 0); return day; }
 
-// ── Theme Colors (CSS custom properties) ────────────────────────────────────
-const theme = {
-  bg:      'var(--bg-base)',
-  surface: 'var(--bg-card)',
-  sh:      'var(--border)',
-  text:    'var(--text-main)',
-  muted:   'var(--text-muted)',
-  accent:  'var(--accent)',
-  stop:    'var(--status-wa)',
-  ok:      'var(--status-ac)',
+// ── Theme ────────────────────────────────────────────────────────────────────
+const T = {
+  bg: '#161718',
+  surface: '#1e2022',
+  card: '#242628',
+  border: '#2e3133',
+  borderHi: '#3d4245',
+  text: '#e8dcc8',
+  muted: '#7c7468',
+  dim: '#4a4540',
+  accent: '#fabd2f',
+  accentDim: 'rgba(250,189,47,0.12)',
+  accentGlow: 'rgba(250,189,47,0.25)',
+  red: '#fb4934',
+  redDim: 'rgba(251,73,52,0.12)',
+  green: '#b8bb26',
+  greenDim: 'rgba(184,187,38,0.12)',
+  blue: '#83a598',
+  blueDim: 'rgba(131,165,152,0.12)',
+  purple: '#d3869b',
 };
 
-// ── Animated flow ring ───────────────────────────────────────────────────────
+// ── Extra helpers ─────────────────────────────────────────────────────────────
+function fmtSecs(s: number) {
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60), sc = s % 60;
+  return sc > 0 ? `${m}m ${sc}s` : `${m}m`;
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', color: T.muted, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div style={{ flex: 1, height: 1, background: T.border }} />
+      <span>{children}</span>
+      <div style={{ flex: 1, height: 1, background: T.border }} />
+    </div>
+  );
+}
+
+function MiniStatCard({ label, value, sub, color, icon }: { label: string; value: string; sub?: string; color?: string; icon?: string }) {
+  return (
+    <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, padding: '12px 14px', position: 'relative', overflow: 'hidden' }}>
+      {color && <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: color }} />}
+      <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: T.dim, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 4 }}>
+        {icon && <span>{icon}</span>}{label}
+      </div>
+      <div style={{ fontSize: 20, fontWeight: 900, fontFamily: 'monospace', color: color || T.text, lineHeight: 1 }}>{value}</div>
+      {sub && <div style={{ fontSize: 9, color: T.dim, marginTop: 4 }}>{sub}</div>}
+    </div>
+  );
+}
+
+// ── MiniBar component ─────────────────────────────────────────────────────────
+function MiniBar({ value, max, color }: { value: number; max: number; color: string }) {
+  const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0;
+  return (
+    <div style={{ width: '100%', height: 3, background: T.border, borderRadius: 2, overflow: 'hidden' }}>
+      <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 2, transition: 'width 0.6s ease' }} />
+    </div>
+  );
+}
+
+// ── Animated Flow Ring ────────────────────────────────────────────────────────
 function FlowRing({ phase, targetRest, restSecs }: { phase: Phase; targetRest: number; restSecs: number }) {
-  const r = 118, c = 2 * Math.PI * r;
+  const r = 110, c = 2 * Math.PI * r;
   const pct = phase === 'REST' && targetRest > 0 ? Math.min(restSecs / targetRest, 1) : 0;
   return (
     <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 280 280">
+      {/* Background track */}
+      <circle cx="140" cy="140" r={r} fill="none" stroke={T.border} strokeWidth="1" />
       {phase === 'FLOW' && (
-        <circle cx="140" cy="140" r={r} fill="none" stroke={theme.accent} strokeWidth="2"
-          strokeDasharray="4 16" strokeLinecap="round"
-          style={{ transformOrigin:'center', animation:'grindRingSpin 45s linear infinite', opacity: 0.5 }} />
+        <>
+          <circle cx="140" cy="140" r={r} fill="none" stroke={T.accent} strokeWidth="1"
+            strokeDasharray="3 22" strokeLinecap="round"
+            style={{ transformOrigin: 'center', animation: 'grindRingSpin 60s linear infinite', opacity: 0.4 }} />
+          <circle cx="140" cy="140" r={r - 8} fill="none" stroke={T.accent} strokeWidth="0.5"
+            strokeDasharray="1 30" strokeLinecap="round"
+            style={{ transformOrigin: 'center', animation: 'grindRingSpin 35s linear infinite reverse', opacity: 0.2 }} />
+        </>
       )}
       {phase === 'REST' && (
         <>
-          <circle cx="140" cy="140" r={r} fill="none" stroke={theme.sh} strokeWidth="3" />
-          <circle cx="140" cy="140" r={r} fill="none" stroke="#58a6ff" strokeWidth="3" strokeLinecap="round"
+          <circle cx="140" cy="140" r={r} fill="none" stroke={T.border} strokeWidth="3" />
+          <circle cx="140" cy="140" r={r} fill="none" stroke={T.blue} strokeWidth="3" strokeLinecap="round"
             strokeDasharray={`${c * pct} ${c * (1 - pct)}`}
-            style={{ transform:'rotate(-90deg)', transformOrigin:'center', transition:'stroke-dasharray 1s ease' }} />
+            style={{ transform: 'rotate(-90deg)', transformOrigin: 'center', transition: 'stroke-dasharray 1s ease', filter: `drop-shadow(0 0 6px ${T.blue})` }} />
+          {/* Tick markers */}
+          {[0, 25, 50, 75].map(p => {
+            const angle = (p / 100) * 360 - 90;
+            const rad = angle * Math.PI / 180;
+            const x1 = 140 + (r - 6) * Math.cos(rad), y1 = 140 + (r - 6) * Math.sin(rad);
+            const x2 = 140 + (r + 6) * Math.cos(rad), y2 = 140 + (r + 6) * Math.sin(rad);
+            return <line key={p} x1={x1} y1={y1} x2={x2} y2={y2} stroke={T.border} strokeWidth="1.5" />;
+          })}
         </>
       )}
     </svg>
   );
 }
 
-// ── Component ────────────────────────────────────────────────────────────────
+// ── Stat Card ─────────────────────────────────────────────────────────────────
+function StatCard({ label, value, sub, color, icon }: { label: string; value: string; sub?: string; color?: string; icon?: string }) {
+  return (
+    <div style={{
+      background: T.card, border: `1px solid ${T.border}`, borderRadius: 12,
+      padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 6, position: 'relative', overflow: 'hidden'
+    }}>
+      {color && <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: color, borderRadius: '12px 12px 0 0' }} />}
+      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: T.muted, display: 'flex', alignItems: 'center', gap: 5 }}>
+        {icon && <span>{icon}</span>}{label}
+      </div>
+      <div style={{ fontSize: 26, fontWeight: 900, fontFamily: 'monospace', color: color || T.text, lineHeight: 1 }}>{value}</div>
+      {sub && <div style={{ fontSize: 10, color: T.muted }}>{sub}</div>}
+    </div>
+  );
+}
+
+// ── Heatmap Hour Grid ─────────────────────────────────────────────────────────
+function HourHeatmap({ grid }: { grid: number[] }) {
+  const labels = ['12a', '3a', '6a', '9a', '12p', '3p', '6p', '9p'];
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 3, alignItems: 'flex-end', height: 36 }}>
+        {grid.map((v, i) => (
+          <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+            <div style={{
+              width: '100%', borderRadius: 2,
+              height: v === 0 ? 3 : 4 + v * 6,
+              background: v === 0 ? T.border : v <= 2 ? `${T.accent}60` : v <= 4 ? `${T.accent}99` : T.accent,
+              transition: 'height 0.4s ease',
+            }} />
+          </div>
+        ))}
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+        {labels.map(l => <span key={l} style={{ fontSize: 9, color: T.dim, fontFamily: 'monospace' }}>{l}</span>)}
+      </div>
+    </div>
+  );
+}
+
+// ── Weekly bar chart ──────────────────────────────────────────────────────────
+function WeekBars({ history }: { history: SessionLog[] }) {
+  const days = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+  const mon = getWeekMonday(new Date());
+  const dMap: Record<string, number> = {};
+  history.forEach(h => {
+    const d = new Date(h.date).toLocaleDateString();
+    dMap[d] = (dMap[d] || 0) + h.workMins;
+  });
+  const vals = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(mon); d.setDate(d.getDate() + i);
+    return dMap[d.toLocaleDateString()] || 0;
+  });
+  const max = Math.max(1, ...vals);
+  const todayIdx = new Date().getDay() === 0 ? 6 : new Date().getDay() - 1;
+  return (
+    <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end', height: 60 }}>
+      {vals.map((v, i) => (
+        <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+          <div style={{
+            width: '100%', borderRadius: 3,
+            height: v === 0 ? 3 : Math.max(4, (v / max) * 48),
+            background: i === todayIdx ? T.accent : v > 0 ? `${T.accent}55` : T.border,
+            boxShadow: i === todayIdx && v > 0 ? `0 0 8px ${T.accentGlow}` : 'none',
+            transition: 'height 0.5s ease',
+          }} />
+          <span style={{ fontSize: 9, color: i === todayIdx ? T.accent : T.dim, fontFamily: 'monospace', fontWeight: i === todayIdx ? 700 : 400 }}>{days[i]}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Session row ───────────────────────────────────────────────────────────────
+function SessionRow({ log }: { log: SessionLog }) {
+  const [open, setOpen] = useState(false);
+  const date = new Date(log.startTs * 1000);
+  const stars = log.flowRating || 0;
+  return (
+    <div style={{ borderBottom: `1px solid ${T.border}` }}>
+      <div
+        onClick={() => setOpen(o => !o)}
+        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', cursor: 'pointer', transition: 'background 0.15s' }}
+        onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.03)')}
+        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+      >
+        <div style={{ width: 3, height: 32, borderRadius: 2, background: log.type === 'RETROACTIVE RECON' ? T.purple : T.accent, flexShrink: 0 }} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{log.intent || 'Free Grind'}</div>
+          <div style={{ fontSize: 10, color: T.muted, fontFamily: 'monospace', marginTop: 2 }}>{date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} · {date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</div>
+        </div>
+        <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexShrink: 0 }}>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 13, fontWeight: 700, fontFamily: 'monospace', color: T.accent }}>{Math.round(log.workMins)}m</div>
+            <div style={{ fontSize: 10, color: T.muted }}>{log.problemsSolved} ACs</div>
+          </div>
+          {stars > 0 && (
+            <div style={{ display: 'flex', gap: 1 }}>
+              {[1, 2, 3, 4, 5].map(n => (
+                <span key={n} style={{ fontSize: 9, color: n <= stars ? T.accent : T.dim }}>★</span>
+              ))}
+            </div>
+          )}
+          <span style={{ fontSize: 10, color: T.dim, transform: open ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 0.2s' }}>▼</span>
+        </div>
+      </div>
+      {open && log.details.length > 0 && (
+        <div style={{ padding: '0 16px 12px 32px', display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {log.details.map(d => (
+            <div key={d.pid} style={{
+              fontSize: 10, fontFamily: 'monospace', padding: '3px 8px', borderRadius: 4,
+              background: T.card, border: `1px solid ${T.border}`, color: T.muted,
+              display: 'flex', gap: 6, alignItems: 'center'
+            }}>
+              <span style={{ color: T.accent }}>{d.pid}</span>
+              <span style={{ color: T.text }}>{d.name.length > 20 ? d.name.slice(0, 20) + '…' : d.name}</span>
+              {d.rating > 0 && <span style={{ color: T.dim }}>·{d.rating}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Main Component ────────────────────────────────────────────────────────────
 export default function GrindMode({ handle }: { handle: string }) {
   const [phase, setPhase] = useState<Phase>('IDLE');
   const [workSecs, setWorkSecs] = useState(0);
   const [restSecs, setRestSecs] = useState(0);
   const [targetRest, setTargetRest] = useState(0);
-
   const [intent, setIntent] = useState('');
   const [plannedMins, setPlannedMins] = useState('');
-
   const [flowRating, setFlowRating] = useState(0);
   const [breakCount, setBreakCount] = useState(0);
-
   const [tasks, setTasks] = useState<GrindTask[]>([]);
   const [newTask, setNewTask] = useState('');
-  const [newPri, setNewPri] = useState<'normal'|'high'>('normal');
+  const [newPri, setNewPri] = useState<'normal' | 'high'>('normal');
   const [newEst, setNewEst] = useState('');
-
   const [tmrPlan, setTmrPlan] = useState<TmrPlan[]>([]);
   const [newTmr, setNewTmr] = useState('');
   const [showTmrModal, setShowTmrModal] = useState(false);
-
-  const [sessionStartTS, setSessionStartTS] = useState<number|null>(null);
+  const [sessionStartTS, setSessionStartTS] = useState<number | null>(null);
   const [syncing, setSyncing] = useState(false);
-  const [lastReport, setLastReport] = useState<SessionLog|null>(null);
+  const [lastReport, setLastReport] = useState<SessionLog | null>(null);
   const [history, setHistory] = useState<SessionLog[]>([]);
-
   const [targetHrs, setTargetHrs] = useState(15);
   const [showSettings, setShowSettings] = useState(false);
   const [rogueACs, setRogueACs] = useState<any[]>([]);
-  const [rogueMins, setRogueMins] = useState(20);
-
-  // Archive Modal State
-  const [showArchive, setShowArchive] = useState(false);
-  const [expandedSession, setExpandedSession] = useState<string | null>(null);
-
-  // Use refs to power the absolute timer and avoid dependency loops
-  const timerRef = useRef<NodeJS.Timeout|null>(null);
-  const lastTickRef = useRef<number>(Date.now());
-  const historyRef = useRef<SessionLog[]>([]);
-
   const [wrActiveTab, setWrActiveTab] = useState(0);
+  const [activeIdleTab, setActiveIdleTab] = useState<'tasks' | 'history'>('tasks');
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   // ── Init ──────────────────────────────────────────────────────────────────
   useEffect(() => {
-    try { const h = localStorage.getItem(STORAGE_KEYS.GRIND_SESSIONS); if (h) setHistory(JSON.parse(h)); } catch {}
-    try { const t = localStorage.getItem(STORAGE_KEYS.GRIND_TASKS); if (t) setTasks(JSON.parse(t)); } catch {}
-    try { const tp = localStorage.getItem(STORAGE_KEYS.GRIND_TMR_PLAN); if (tp) setTmrPlan(JSON.parse(tp)); } catch {}
-    try { const tg = localStorage.getItem(STORAGE_KEYS.GRIND_TARGET_HRS); if (tg) setTargetHrs(parseInt(tg)); } catch {}
-  }, []);
-
-  // Update history ref for detached callbacks
-  useEffect(() => { historyRef.current = history; }, [history]);
-
-  // Clean up intervals on unmount (Memory Leak Fix)
-  useEffect(() => {
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+    try { const h = localStorage.getItem('cf_grind_v4'); if (h) setHistory(JSON.parse(h)); } catch {}
+    try { const t = localStorage.getItem('cf_grind_tasks_v4'); if (t) setTasks(JSON.parse(t)); } catch {}
+    try { const tp = localStorage.getItem('cf_grind_tmr'); if (tp) setTmrPlan(JSON.parse(tp)); } catch {}
+    try { const tg = localStorage.getItem('cf_grind_target'); if (tg) setTargetHrs(parseInt(tg)); } catch {}
+    const style = document.createElement('style');
+    style.id = 'grind-ring-css';
+    style.textContent = `@keyframes grindRingSpin { 100% { transform: rotate(360deg); } } @keyframes fadeSlideUp { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } } @keyframes pulse-dot { 0%,100%{opacity:1;} 50%{opacity:0.3;} }`;
+    if (!document.getElementById('grind-ring-css')) document.head.appendChild(style);
   }, []);
 
   // ── Rogue AC Detection ────────────────────────────────────────────────────
@@ -136,51 +296,29 @@ export default function GrindMode({ handle }: { handle: string }) {
     if (!handle || phase !== 'IDLE') return;
     const checkForRogues = async () => {
       try {
-        const targetUrl = encodeURIComponent(`https://codeforces.com/api/user.status?handle=${handle}&from=1&count=50`);
-        const res = await fetch(`/api/cf?url=${targetUrl}`);
+        const res = await fetch(`https://codeforces.com/api/user.status?handle=${handle}&from=1&count=50`);
         const data = await res.json();
-        
         if (data.status === 'OK') {
           const now = Date.now() / 1000;
-          const recent = data.result.filter((s:any) => s.verdict === 'OK' && s.author.participantType === 'PRACTICE' && (now - s.creationTimeSeconds) < 86400 * 2);
-          
-          const missing = recent.filter((s:any) => {
-            return !historyRef.current.some(h => s.creationTimeSeconds >= h.startTs && s.creationTimeSeconds <= h.endTs);
-          });
-          
+          const recent = data.result.filter((s: any) => s.verdict === 'OK' && s.author.participantType === 'PRACTICE' && (now - s.creationTimeSeconds) < 86400 * 2);
+          const missing = recent.filter((s: any) => !history.some(h => s.creationTimeSeconds >= h.startTs && s.creationTimeSeconds <= h.endTs));
           setRogueACs(missing);
-          if (missing.length > 0) setRogueMins(missing.length * 20); // Default estimate
         }
-      } catch (e) {}
+      } catch {}
     };
     checkForRogues();
-  }, [handle, phase]);
+  }, [handle, phase, history]);
 
-  useEffect(() => {
-    const style = document.createElement('style');
-    style.id = 'grind-ring-css';
-    style.textContent = `@keyframes grindRingSpin { 100% { transform: rotate(360deg); } }`;
-    if (!document.getElementById('grind-ring-css')) document.head.appendChild(style);
-  }, []);
+  const saveTasks = useCallback((t: GrindTask[]) => { setTasks(t); try { localStorage.setItem('cf_grind_tasks_v4', JSON.stringify(t)); } catch {} }, []);
+  const saveHistory = useCallback((h: SessionLog[]) => { setHistory(h); try { localStorage.setItem('cf_grind_v4', JSON.stringify(h)); } catch {} }, []);
+  const saveTmrPlan = useCallback((tp: TmrPlan[]) => { setTmrPlan(tp); try { localStorage.setItem('cf_grind_tmr', JSON.stringify(tp)); } catch {} }, []);
 
-  const saveTasks = useCallback((t: GrindTask[]) => { setTasks(t); try { localStorage.setItem(STORAGE_KEYS.GRIND_TASKS, JSON.stringify(t)); } catch {} }, []);
-  const saveHistory = useCallback((h: SessionLog[]) => { setHistory(h); try { localStorage.setItem(STORAGE_KEYS.GRIND_SESSIONS, JSON.stringify(h)); } catch {} }, []);
-  const saveTmrPlan = useCallback((tp: TmrPlan[]) => { setTmrPlan(tp); try { localStorage.setItem(STORAGE_KEYS.GRIND_TMR_PLAN, JSON.stringify(tp)); } catch {} }, []);
-
-  // ── Absolute Timer (Fixes browser throttling glitch) ──────────────────────
-  const startTick = useCallback((field: 'work'|'rest') => {
+  // ── Timer ─────────────────────────────────────────────────────────────────
+  const startTick = useCallback((field: 'work' | 'rest') => {
     if (timerRef.current) clearInterval(timerRef.current);
-    lastTickRef.current = Date.now();
-    
     timerRef.current = setInterval(() => {
-      const now = Date.now();
-      const deltaSecs = Math.floor((now - lastTickRef.current) / 1000);
-      
-      if (deltaSecs > 0) {
-        if (field === 'work') setWorkSecs(p => p + deltaSecs);
-        else setRestSecs(p => p + deltaSecs);
-        lastTickRef.current += deltaSecs * 1000;
-      }
+      if (field === 'work') setWorkSecs(p => p + 1);
+      else setRestSecs(p => p + 1);
     }, 1000);
   }, []);
 
@@ -189,132 +327,87 @@ export default function GrindMode({ handle }: { handle: string }) {
       setSessionStartTS(Date.now() / 1000);
       setWorkSecs(0); setBreakCount(0);
     }
-    setPhase('FLOW');
-    startTick('work');
+    setPhase('FLOW'); startTick('work');
   }, [phase, startTick]);
 
   const initiateRest = useCallback(() => {
     const rec = Math.max(60, Math.floor(workSecs / 5));
-    setTargetRest(rec);
-    setRestSecs(0);
-    setBreakCount(b => b + 1);
-    setPhase('REST');
-    startTick('rest');
+    setTargetRest(rec); setRestSecs(0);
+    setBreakCount(b => b + 1); setPhase('REST'); startTick('rest');
   }, [workSecs, startTick]);
 
   const resumeFlow = useCallback(() => { setPhase('FLOW'); startTick('work'); }, [startTick]);
 
-  // ── Deep Data Extraction Protocol ─────────────────────────────────────────
   const terminate = useCallback(async () => {
     if (timerRef.current) clearInterval(timerRef.current);
-    setPhase('RATE');
-    setSyncing(true);
-
-    let points = 0;
-    let totalSubs = 0;
-    let acCount = 0;
-    let hardestAC = 0;
-    const detailsMap = new Map<string, ProbDetail>();
-
+    setPhase('RATE'); setSyncing(true);
+    let points = 0, type = 'PRACTICE GRIND';
+    const details: ProbDetail[] = [];
     try {
       if (sessionStartTS && handle) {
-        const targetUrl = encodeURIComponent(`https://codeforces.com/api/user.status?handle=${handle}&from=1&count=100`);
-        const res = await fetch(`/api/cf?url=${targetUrl}`);
+        const res = await fetch(`https://codeforces.com/api/user.status?handle=${handle}&from=1&count=100`);
         const data = await res.json();
-        
         if (data.status === 'OK') {
-          const subs = data.result.filter((s:any) => s.creationTimeSeconds >= sessionStartTS).reverse();
-          totalSubs = subs.length;
-          
-          subs.forEach((s:any) => {
-            if (s.author.participantType !== 'PRACTICE' || !s.problem) return;
-            
-            const pid = `${s.problem.contestId}-${s.problem.index}`;
-            const rating = s.problem.rating ? Math.floor(s.problem.rating/100)*100 : 800;
-            const ratingCapped = rating > 2400 ? 2400 : rating;
-
-            if (!detailsMap.has(pid)) {
-              detailsMap.set(pid, { pid, name: s.problem.name, rating: ratingCapped, attempts: 0, solved: false });
-            }
-
-            const pData = detailsMap.get(pid)!;
-
-            if (!pData.solved) {
-              pData.attempts++;
-              if (s.verdict === 'OK') {
-                pData.solved = true;
-                pData.timeTakenSecs = s.creationTimeSeconds - sessionStartTS;
-                acCount++;
-                hardestAC = Math.max(hardestAC, ratingCapped);
-                points += CF_SCORE_MAP[ratingCapped] || 10;
+          const subs = data.result.filter((s: any) => s.creationTimeSeconds >= sessionStartTS).reverse();
+          let mark = sessionStartTS;
+          const seen = new Set<string>();
+          subs.forEach((s: any) => {
+            if (s.verdict === 'OK' && s.problem && s.author.participantType === 'PRACTICE') {
+              const pid = `${s.problem.contestId}-${s.problem.index}`;
+              if (!seen.has(pid)) {
+                seen.add(pid);
+                const r = s.problem.rating ? Math.floor(s.problem.rating / 100) * 100 : 800;
+                points += CF_SCORE_MAP[r > 2400 ? 2400 : r] || 10;
+                details.push({ pid, name: s.problem.name, timeTakenSecs: s.creationTimeSeconds - mark, rating: s.problem.rating || 800 });
+                mark = s.creationTimeSeconds;
               }
             }
           });
         }
       }
-    } catch (e) {
-      console.error("Extraction failed:", e);
-    }
-
-    const details = Array.from(detailsMap.values());
-    const actualWorkMins = Math.max(1, parseFloat((workSecs / 60).toFixed(1))); 
-    const avg = acCount > 0 ? Math.round(workSecs / acCount) : 0;
-    
-    const accuracyPct = totalSubs > 0 ? Math.round((acCount / totalSubs) * 100) : 0;
-    const sprintScore = Math.round((points / actualWorkMins) * 10) / 10;
-
+    } catch {}
+    const avg = details.length > 0 ? Math.round(details.reduce((a, p) => a + p.timeTakenSecs, 0) / details.length) : 0;
     const report: SessionLog = {
       id: Date.now().toString(), date: new Date().toISOString(),
-      startTs: sessionStartTS || (Date.now()/1000 - workSecs), endTs: Date.now()/1000,
-      workMins: actualWorkMins, problemsSolved: acCount, pointsEarned: points, type: 'PRACTICE GRIND',
-      avgTimeSecs: avg, details, flowRating: 0, intent: intent || undefined,
-      plannedMins: parseInt(plannedMins) || undefined, breakCount,
-      totalSubmissions: totalSubs, accuracyPct, sprintScore, hardestAC
+      startTs: sessionStartTS || (Date.now() / 1000 - workSecs), endTs: Date.now() / 1000,
+      workMins: parseFloat((workSecs / 60).toFixed(1)),
+      problemsSolved: details.length, pointsEarned: points, type,
+      avgTimeSecs: avg, details, flowRating: 0,
+      intent: intent || undefined, plannedMins: parseInt(plannedMins) || undefined, breakCount,
     };
-
-    setLastReport(report);
-    saveHistory([report, ...historyRef.current]); 
-    setSyncing(false);
-    setFlowRating(0);
+    setLastReport(report); setSyncing(false); setFlowRating(0);
     setWorkSecs(0); setRestSecs(0); setTargetRest(0); setSessionStartTS(null); setBreakCount(0);
-  }, [sessionStartTS, handle, workSecs, intent, plannedMins, breakCount, saveHistory]);
+    saveHistory([report, ...history]);
+  }, [sessionStartTS, handle, workSecs, intent, plannedMins, breakCount, history, saveHistory]);
 
   const confirmRate = useCallback(() => {
     if (!lastReport) { setPhase('IDLE'); return; }
     const updated = { ...lastReport, flowRating };
-    saveHistory([updated, ...historyRef.current.slice(1)]);
-    setLastReport(updated);
-    setPhase('IDLE'); setIntent(''); setPlannedMins('');
-  }, [lastReport, flowRating, saveHistory]);
+    saveHistory([updated, ...history.slice(1)]);
+    setLastReport(updated); setPhase('IDLE'); setIntent(''); setPlannedMins('');
+  }, [lastReport, flowRating, history, saveHistory]);
 
   const logRogueACs = () => {
     if (rogueACs.length === 0) return;
-    const pts = rogueACs.reduce((sum, s) => sum + (CF_SCORE_MAP[s.problem?.rating ? Math.min(2400, Math.floor(s.problem.rating/100)*100) : 800] || 10), 0);
-    const details = rogueACs.map(s => ({ pid: `${s.problem.contestId}-${s.problem.index}`, name: s.problem.name, timeTakenSecs: 0, rating: s.problem.rating || 800, attempts: 1, solved: true }));
-    
-    const assumedMins = Math.max(1, rogueMins);
-    const ts = rogueACs[0].creationTimeSeconds; // Corrected timestamp targeting
-    
+    const pts = rogueACs.reduce((sum, s) => sum + (CF_SCORE_MAP[s.problem?.rating ? Math.floor(s.problem.rating / 100) * 100 : 800] || 10), 0);
+    const details = rogueACs.map(s => ({ pid: `${s.problem.contestId}-${s.problem.index}`, name: s.problem.name, timeTakenSecs: 0, rating: s.problem.rating || 800 }));
+    const assumedMins = rogueACs.length * 20;
+    const ts = rogueACs[rogueACs.length - 1].creationTimeSeconds;
     const report: SessionLog = {
-      id: Date.now().toString(), date: new Date(ts*1000).toISOString(), startTs: ts - (assumedMins*60), endTs: ts,
+      id: Date.now().toString(), date: new Date(ts * 1000).toISOString(), startTs: ts - (assumedMins * 60), endTs: ts,
       workMins: assumedMins, problemsSolved: rogueACs.length, pointsEarned: pts, type: 'RETROACTIVE RECON',
-      avgTimeSecs: Math.round((assumedMins*60) / rogueACs.length), details, flowRating: 3, intent: 'Logged retroactively', breakCount: 0,
-      totalSubmissions: rogueACs.length, accuracyPct: 100, sprintScore: Math.round((pts / assumedMins) * 10) / 10, hardestAC: Math.max(...rogueACs.map(s => s.problem?.rating || 800))
+      avgTimeSecs: 0, details, flowRating: 3, intent: 'Logged retroactively', breakCount: 0,
     };
-    saveHistory([report, ...historyRef.current].sort((a,b) => b.endTs - a.endTs));
+    saveHistory([report, ...history].sort((a, b) => b.endTs - a.endTs));
     setRogueACs([]);
   };
 
-  // ── Stats Calculations ──────────────────────────────────────────────────────
+  // ── Stats ─────────────────────────────────────────────────────────────────
   const { totalMins, todayMins, streak, weekSecs, peakGrid, weeklyReviews } = useMemo(() => {
     let tMins = 0, tdyMins = 0;
     const dMap: Record<string, number> = {};
     const hSecs = new Array(24).fill(0);
-
-    const now = new Date();
-    const todayStr = now.toLocaleDateString();
-    const mon = getWeekMonday(now);
-
+    const now = new Date(), todayStr = now.toLocaleDateString(), mon = getWeekMonday(now);
     history.forEach(h => {
       tMins += h.workMins;
       const dStr = new Date(h.date).toLocaleDateString();
@@ -323,65 +416,127 @@ export default function GrindMode({ handle }: { handle: string }) {
       const hour = new Date(h.startTs * 1000).getHours();
       hSecs[hour] += h.workMins;
     });
-
     let s = 0; let c = new Date();
     while (true) {
       if (dMap[c.toLocaleDateString()] > 0) s++;
       else if (c.toLocaleDateString() !== todayStr) break;
       c.setDate(c.getDate() - 1);
     }
-
     let wSecs = 0;
-    for(let i=0; i<7; i++) {
-      const d = new Date(mon); d.setDate(d.getDate() + i);
-      wSecs += (dMap[d.toLocaleDateString()] || 0) * 60;
-    }
-
+    for (let i = 0; i < 7; i++) { const d = new Date(mon); d.setDate(d.getDate() + i); wSecs += (dMap[d.toLocaleDateString()] || 0) * 60; }
     const reviews = [];
-    for(let w=0; w<4; w++) {
-      const wMon = new Date(mon); wMon.setDate(wMon.getDate() - (w * 7));
+    for (let w = 0; w < 4; w++) {
+      const wMon = new Date(mon); wMon.setDate(wMon.getDate() - w * 7);
       const wSun = new Date(wMon); wSun.setDate(wSun.getDate() + 6);
       let wTotal = 0, wAcs = 0, maxD = 0, activeD = 0;
-      for(let i=0; i<7; i++) {
-        const d = new Date(wMon); d.setDate(d.getDate() + i);
-        const dStr = d.toLocaleDateString();
-        if (dMap[dStr] > 0) { wTotal += dMap[dStr]; activeD++; if (dMap[dStr] > maxD) maxD = dMap[dStr]; }
-      }
-      history.filter(h => {
-        const d = new Date(h.date); return d >= wMon && d <= wSun;
-      }).forEach(h => wAcs += h.problemsSolved);
-      reviews.push({ label: w === 0 ? 'This Week' : `${wMon.getDate()}/${wMon.getMonth()+1} - ${wSun.getDate()}/${wSun.getMonth()+1}`, total: wTotal, acs: wAcs, maxD, activeD });
+      for (let i = 0; i < 7; i++) { const d = new Date(wMon); d.setDate(d.getDate() + i); const dStr = d.toLocaleDateString(); if (dMap[dStr] > 0) { wTotal += dMap[dStr]; activeD++; if (dMap[dStr] > maxD) maxD = dMap[dStr]; } }
+      history.filter(h => { const d = new Date(h.date); return d >= wMon && d <= wSun; }).forEach(h => wAcs += h.problemsSolved);
+      reviews.push({ label: w === 0 ? 'This Week' : `${wMon.getDate()}/${wMon.getMonth() + 1}`, total: wTotal, acs: wAcs, maxD, activeD });
     }
-
     const maxH = Math.max(1, ...hSecs);
     const pGrid = hSecs.map(sec => sec === 0 ? 0 : Math.ceil((sec / maxH) * 5));
-
     return { totalMins: tMins, todayMins: tdyMins, streak: s, weekSecs: wSecs, peakGrid: pGrid, weeklyReviews: reviews };
   }, [history]);
+
+  const weekPct = Math.min(100, Math.round((weekSecs / (targetHrs * 3600)) * 100));
 
   // ════════════════════════════════════════════════════════════════════════════
   // PHASE: INTENT
   // ════════════════════════════════════════════════════════════════════════════
   if (phase === 'INTENT') return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center font-sans p-8" style={{ background: 'rgba(29, 32, 33, 0.95)' }}>
-      <div className="w-full max-w-md space-y-6 p-8 rounded-2xl shadow-2xl" style={{ background: theme.surface, border: `1px solid ${theme.sh}` }}>
-        <div className="text-[11px] uppercase tracking-[3px] font-bold" style={{ color: theme.accent }}>// Pre-Flight Briefing</div>
-        <h2 className="text-3xl font-black leading-tight tracking-tight" style={{ color: theme.text }}>What is the<br/>target?</h2>
-        <div className="space-y-2">
-          <div className="text-[11px] uppercase tracking-[2px] font-semibold" style={{ color: theme.muted }}>Session intent</div>
-          <input value={intent} onChange={e => setIntent(e.target.value)} onKeyDown={e => { if (e.key==='Enter') startFlow(); if (e.key==='Escape') setPhase('IDLE'); }}
-            placeholder="e.g. Clear 3 Div2 D's..." className="w-full text-sm px-4 py-3 rounded outline-none transition-colors"
-            style={{ background: 'rgba(0,0,0,0.2)', border: `1px solid ${theme.sh}`, color: theme.text }} autoFocus />
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: 'rgba(16,17,18,0.96)', backdropFilter: 'blur(12px)', padding: 24, fontFamily: 'sans-serif'
+    }}>
+      <div style={{
+        width: '100%', maxWidth: 460, background: T.surface, border: `1px solid ${T.border}`,
+        borderRadius: 20, padding: 36, boxShadow: `0 32px 80px rgba(0,0,0,0.6), 0 0 0 1px ${T.border}`,
+        animation: 'fadeSlideUp 0.3s ease'
+      }}>
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 28 }}>
+          <div style={{ width: 32, height: 32, borderRadius: 8, background: T.accentDim, border: `1px solid ${T.accent}40`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>⚡</div>
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', color: T.accent }}>Pre-Session Brief</div>
+            <div style={{ fontSize: 18, fontWeight: 900, color: T.text, marginTop: 1 }}>Set your target</div>
+          </div>
         </div>
-        <div className="space-y-2">
-          <div className="text-[11px] uppercase tracking-[2px] font-semibold" style={{ color: theme.muted }}>Approx. duration (mins)</div>
-          <input type="number" min="10" max="600" value={plannedMins} onChange={e => setPlannedMins(e.target.value)} placeholder="90"
-            className="w-full text-sm px-4 py-3 rounded outline-none transition-colors"
-            style={{ background: 'rgba(0,0,0,0.2)', border: `1px solid ${theme.sh}`, color: theme.text }} />
+
+        {/* Intent input */}
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: T.muted, display: 'block', marginBottom: 8 }}>Session intent</label>
+          <input
+            value={intent} onChange={e => setIntent(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') startFlow(); if (e.key === 'Escape') setPhase('IDLE'); }}
+            placeholder="e.g. Clear 3 Div2 D's…"
+            autoFocus
+            style={{
+              width: '100%', padding: '12px 14px', borderRadius: 10, fontSize: 14, color: T.text,
+              background: 'rgba(0,0,0,0.3)', border: `1px solid ${T.borderHi}`, outline: 'none',
+              boxSizing: 'border-box', transition: 'border-color 0.15s',
+            }}
+            onFocus={e => e.target.style.borderColor = T.accent}
+            onBlur={e => e.target.style.borderColor = T.borderHi}
+          />
         </div>
-        <div className="flex gap-3 pt-2">
-          <button onClick={() => setPhase('IDLE')} className="flex-1 py-3 rounded transition-all uppercase tracking-wider text-xs font-bold cursor-pointer" style={{ background: 'transparent', border: `1px solid ${theme.sh}`, color: theme.muted }}>Abort</button>
-          <button onClick={startFlow} className="flex-[2] font-black text-sm py-3 rounded transition-all uppercase tracking-widest cursor-pointer" style={{ background: theme.accent, color: theme.bg, boxShadow: `0 4px 15px rgba(250,189,47,0.2)` }}>Engage Protocol</button>
+
+        {/* Duration */}
+        <div style={{ marginBottom: 28 }}>
+          <label style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: T.muted, display: 'block', marginBottom: 8 }}>Planned duration</label>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {[60, 90, 120].map(m => (
+              <button key={m}
+                onClick={() => setPlannedMins(String(m))}
+                style={{
+                  flex: 1, padding: '10px 0', borderRadius: 8, fontSize: 13, fontWeight: 700,
+                  cursor: 'pointer', transition: 'all 0.15s',
+                  background: plannedMins === String(m) ? T.accentDim : 'rgba(0,0,0,0.2)',
+                  border: `1px solid ${plannedMins === String(m) ? T.accent : T.border}`,
+                  color: plannedMins === String(m) ? T.accent : T.muted,
+                }}
+              >{m}m</button>
+            ))}
+            <input
+              type="number" placeholder="custom" value={[60, 90, 120].includes(Number(plannedMins)) ? '' : plannedMins}
+              onChange={e => setPlannedMins(e.target.value)}
+              style={{
+                flex: 1, padding: '10px 8px', borderRadius: 8, fontSize: 12, textAlign: 'center',
+                background: 'rgba(0,0,0,0.2)', border: `1px solid ${T.border}`, color: T.text, outline: 'none',
+              }}
+            />
+          </div>
+        </div>
+
+        {/* Today's plan preview */}
+        {tmrPlan.length > 0 && (
+          <div style={{ marginBottom: 24, padding: '12px 14px', borderRadius: 10, background: T.card, border: `1px solid ${T.border}` }}>
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: T.muted, marginBottom: 8 }}>Today's priorities</div>
+            {tmrPlan.map((t, i) => (
+              <div key={t.id} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginBottom: 4 }}>
+                <span style={{ fontSize: 10, fontFamily: 'monospace', color: T.accent, minWidth: 14 }}>{i + 1}.</span>
+                <span style={{ fontSize: 12, color: T.text }}>{t.text}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Buttons */}
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button onClick={() => setPhase('IDLE')} style={{
+            padding: '13px 20px', borderRadius: 10, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+            background: 'transparent', border: `1px solid ${T.border}`, color: T.muted, transition: 'all 0.15s', letterSpacing: '1px', textTransform: 'uppercase',
+          }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = T.borderHi; e.currentTarget.style.color = T.text; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.color = T.muted; }}
+          >Abort</button>
+          <button onClick={startFlow} style={{
+            flex: 1, padding: '13px 0', borderRadius: 10, fontSize: 13, fontWeight: 900, cursor: 'pointer',
+            background: T.accent, border: 'none', color: T.bg, letterSpacing: '2px', textTransform: 'uppercase',
+            boxShadow: `0 4px 20px ${T.accentGlow}`, transition: 'all 0.15s',
+          }}
+            onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = `0 6px 24px ${T.accentGlow}`; }}
+            onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = `0 4px 20px ${T.accentGlow}`; }}
+          >⚡ Engage</button>
         </div>
       </div>
     </div>
@@ -392,360 +547,839 @@ export default function GrindMode({ handle }: { handle: string }) {
   // ════════════════════════════════════════════════════════════════════════════
   if (phase === 'FLOW' || phase === 'REST') {
     const isFlow = phase === 'FLOW';
-    const accent = isFlow ? theme.accent : '#58a6ff';
-    const restPct = targetRest > 0 ? Math.min(100, Math.round(restSecs/targetRest*100)) : 0;
+    const accent = isFlow ? T.accent : T.blue;
+    const restPct = targetRest > 0 ? Math.min(100, Math.round(restSecs / targetRest * 100)) : 0;
     const pinned = tasks.find(t => t.pinned && !t.done);
+    const todayACs = history.filter(h => new Date(h.date).toLocaleDateString() === new Date().toLocaleDateString()).reduce((a, h) => a + h.problemsSolved, 0);
 
     return (
-      <div className="fixed inset-0 z-[9999] flex flex-col font-sans overflow-hidden select-none" style={{ background: '#050505' }}>
-        <div className="flex items-center justify-between px-8 pt-8 text-[11px] font-bold uppercase tracking-[3px]">
-          <span style={{ color: accent }}>{isFlow ? '⚡ FLOW STATE ACTIVE' : '⏸ MANDATORY REST'}</span>
-          <div className="flex items-center gap-5 text-[#888]">
-            {intent && <span className="max-w-xs truncate">↳ {intent}</span>}
-            {breakCount > 0 && <span>Breaks: {breakCount}</span>}
+      <div style={{
+        position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', flexDirection: 'column',
+        background: '#0c0d0e', fontFamily: 'sans-serif', overflow: 'hidden', userSelect: 'none',
+      }}>
+        {/* Top bar */}
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '16px 28px', borderBottom: `1px solid ${T.border}`,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ width: 6, height: 6, borderRadius: '50%', background: accent, animation: 'pulse-dot 2s ease-in-out infinite' }} />
+            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '2.5px', textTransform: 'uppercase', color: accent }}>
+              {isFlow ? 'Flow State Active' : 'Recovery Protocol'}
+            </span>
           </div>
-        </div>
-
-        <div className="flex-1 flex flex-col items-center justify-center gap-6">
-          <div className="relative w-[340px] h-[340px] flex items-center justify-center">
-            <FlowRing phase={phase} targetRest={targetRest} restSecs={restSecs} />
-            <div className="z-10 text-center">
-              <div className="font-mono font-light tracking-tighter leading-none transition-colors duration-700" style={{ fontSize:'6.5rem', color: accent, textShadow:`0 0 40px ${accent}40` }}>
-                {isFlow ? fmt(workSecs) : fmt(restSecs)}
+          <div style={{ display: 'flex', gap: 24, alignItems: 'center' }}>
+            {intent && <span style={{ fontSize: 11, color: T.muted, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>↳ {intent}</span>}
+            <div style={{ display: 'flex', gap: 16 }}>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: 9, letterSpacing: '1px', textTransform: 'uppercase', color: T.dim }}>breaks</div>
+                <div style={{ fontSize: 14, fontWeight: 700, fontFamily: 'monospace', color: T.muted }}>{breakCount}</div>
               </div>
-              {!isFlow && targetRest > 0 && <div className="text-xs mt-3 font-bold uppercase tracking-[2px]" style={{ color: accent }}>{restPct}% complete</div>}
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: 9, letterSpacing: '1px', textTransform: 'uppercase', color: T.dim }}>today ACs</div>
+                <div style={{ fontSize: 14, fontWeight: 700, fontFamily: 'monospace', color: T.green }}>{todayACs}</div>
+              </div>
             </div>
           </div>
         </div>
 
-        {isFlow && pinned && (
-          <div className="mx-auto w-full max-w-lg mb-8 flex items-center gap-4 px-5 py-4 rounded-xl border" style={{ borderColor: `${accent}40`, background: `${accent}10` }}>
-            <span className="text-[10px] font-bold uppercase tracking-[2px] shrink-0" style={{ color: accent }}>Locked On</span>
-            <span className="text-white text-sm font-medium flex-1 truncate">{pinned.text}</span>
-            <button onClick={() => saveTasks(tasks.map(t => t.id === pinned.id ? {...t, done: true} : t))} className="text-[10px] font-bold uppercase tracking-[2px] border px-3 py-1.5 rounded transition-all cursor-pointer hover:bg-white/10" style={{ borderColor: accent, color: accent, background: 'transparent' }}>Done ✓</button>
+        {/* Main content */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 32, padding: 24 }}>
+          {/* Timer circle */}
+          <div style={{ position: 'relative', width: 300, height: 300, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <FlowRing phase={phase} targetRest={targetRest} restSecs={restSecs} />
+            <div style={{ zIndex: 10, textAlign: 'center' }}>
+              <div style={{
+                fontSize: '5.5rem', fontFamily: 'monospace', fontWeight: 300, lineHeight: 1,
+                color: accent, letterSpacing: '-4px',
+                textShadow: `0 0 40px ${accent}50`,
+                transition: 'color 0.7s ease',
+              }}>
+                {isFlow ? fmt(workSecs) : fmt(restSecs)}
+              </div>
+              {!isFlow && targetRest > 0 && (
+                <div style={{ marginTop: 10, fontSize: 11, fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', color: accent }}>{restPct}% recovered</div>
+              )}
+              {isFlow && plannedMins && (
+                <div style={{ marginTop: 8 }}>
+                  <div style={{ fontSize: 10, color: T.dim, marginBottom: 4, letterSpacing: '1px' }}>target</div>
+                  <MiniBar value={workSecs / 60} max={Number(plannedMins)} color={T.accent} />
+                  <div style={{ fontSize: 10, color: T.muted, marginTop: 4, fontFamily: 'monospace' }}>{Math.round(workSecs / 60)}/{plannedMins}m</div>
+                </div>
+              )}
+            </div>
           </div>
-        )}
 
-        <div className="flex gap-4 justify-center px-8 pb-12 flex-wrap">
-          {isFlow ? (
-            <button onClick={initiateRest} className="px-8 py-3 bg-transparent border-2 font-bold uppercase tracking-widest transition-all text-sm rounded cursor-pointer" style={{ borderColor: '#58a6ff', color: '#58a6ff' }}>Initiate Rest</button>
-          ) : (
-            <button onClick={resumeFlow} className="px-8 py-3 bg-transparent border-2 font-bold uppercase tracking-widest transition-all text-sm rounded cursor-pointer" style={{ borderColor: theme.accent, color: theme.accent }}>Resume Execution</button>
+          {/* Pinned task */}
+          {isFlow && pinned && (
+            <div style={{
+              width: '100%', maxWidth: 520, display: 'flex', alignItems: 'center', gap: 14,
+              padding: '14px 18px', borderRadius: 12,
+              background: `${accent}0d`, border: `1px solid ${accent}30`,
+            }}>
+              <div style={{ width: 3, height: 36, borderRadius: 2, background: accent, flexShrink: 0 }} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: accent, marginBottom: 3 }}>Locked On</div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: T.text }}>{pinned.text}</div>
+                {pinned.estMins && <div style={{ fontSize: 10, color: T.muted, marginTop: 2 }}>est. {pinned.estMins}m</div>}
+              </div>
+              <button
+                onClick={() => saveTasks(tasks.map(t => t.id === pinned.id ? { ...t, done: true } : t))}
+                style={{
+                  padding: '8px 16px', borderRadius: 8, fontSize: 11, fontWeight: 700,
+                  cursor: 'pointer', background: 'transparent', border: `1px solid ${accent}`,
+                  color: accent, letterSpacing: '1px', textTransform: 'uppercase', transition: 'all 0.15s',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = `${accent}20`; }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+              >Done ✓</button>
+            </div>
           )}
-          <button onClick={terminate} className="px-6 py-3 bg-transparent border text-xs font-bold uppercase tracking-wider transition-all rounded cursor-pointer hover:text-[#f85149] hover:border-[#f85149]" style={{ borderColor: theme.sh, color: theme.muted }}>Extract</button>
+
+          {/* Rest progress bar */}
+          {!isFlow && targetRest > 0 && (
+            <div style={{ width: '100%', maxWidth: 520 }}>
+              <div style={{ height: 4, background: T.border, borderRadius: 4, overflow: 'hidden' }}>
+                <div style={{
+                  height: '100%', background: T.blue, borderRadius: 4,
+                  width: `${restPct}%`, transition: 'width 1s ease',
+                  boxShadow: `0 0 12px ${T.blue}60`,
+                }} />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 10, color: T.muted, fontFamily: 'monospace' }}>
+                <span>{fmt(restSecs)} elapsed</span>
+                <span>{fmt(targetRest)} target</span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Bottom action bar */}
+        <div style={{ padding: '20px 28px', borderTop: `1px solid ${T.border}`, display: 'flex', gap: 12, justifyContent: 'center' }}>
+          {isFlow ? (
+            <button onClick={initiateRest} style={{
+              padding: '12px 28px', borderRadius: 10, fontSize: 12, fontWeight: 700,
+              cursor: 'pointer', background: T.blueDim, border: `1px solid ${T.blue}50`,
+              color: T.blue, letterSpacing: '1.5px', textTransform: 'uppercase', transition: 'all 0.15s',
+            }}
+              onMouseEnter={e => { e.currentTarget.style.background = `${T.blue}25`; e.currentTarget.style.borderColor = T.blue; }}
+              onMouseLeave={e => { e.currentTarget.style.background = T.blueDim; e.currentTarget.style.borderColor = `${T.blue}50`; }}
+            >⏸ Rest</button>
+          ) : (
+            <button onClick={resumeFlow} style={{
+              padding: '12px 28px', borderRadius: 10, fontSize: 12, fontWeight: 700,
+              cursor: 'pointer', background: T.accentDim, border: `1px solid ${T.accent}50`,
+              color: T.accent, letterSpacing: '1.5px', textTransform: 'uppercase', transition: 'all 0.15s',
+            }}
+              onMouseEnter={e => { e.currentTarget.style.background = `${T.accent}25`; e.currentTarget.style.borderColor = T.accent; }}
+              onMouseLeave={e => { e.currentTarget.style.background = T.accentDim; e.currentTarget.style.borderColor = `${T.accent}50`; }}
+            >⚡ Resume</button>
+          )}
+          <button onClick={terminate} style={{
+            padding: '12px 24px', borderRadius: 10, fontSize: 12, fontWeight: 700,
+            cursor: 'pointer', background: 'transparent', border: `1px solid ${T.border}`,
+            color: T.muted, letterSpacing: '1.5px', textTransform: 'uppercase', transition: 'all 0.15s',
+          }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = T.red; e.currentTarget.style.color = T.red; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.color = T.muted; }}
+          >■ Extract</button>
         </div>
       </div>
     );
   }
 
   // ════════════════════════════════════════════════════════════════════════════
-  // PHASE: RATE
+  // PHASE: RATE — rich stats breakdown
   // ════════════════════════════════════════════════════════════════════════════
-  if (phase === 'RATE') return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center font-sans p-8" style={{ background: 'rgba(29, 32, 33, 0.95)' }}>
-      <div className="w-full max-w-sm text-center space-y-6">
-        {syncing ? (
-          <div className="text-sm font-bold animate-pulse uppercase tracking-[3px]" style={{ color: theme.accent }}>[ Fetching Telemetry... ]</div>
-        ) : (
-          <>
-            <div className="text-[11px] font-bold uppercase tracking-[4px]" style={{ color: theme.ok }}>// Extraction Complete</div>
-            <h2 className="text-4xl font-black" style={{ color: theme.text }}>Rate your flow</h2>
-            
-            {lastReport && (
-              <div className="grid grid-cols-2 gap-3 mb-6">
-                <div className="rounded-xl p-3 text-center border col-span-2 flex justify-around" style={{ background: 'rgba(0,0,0,0.2)', borderColor: theme.sh }}>
-                   <div>
-                     <div className="text-[9px] font-bold uppercase tracking-[2px]" style={{ color: theme.muted }}>Focus</div>
-                     <div className="font-black text-xl font-mono" style={{ color: theme.accent }}>{lastReport.workMins}m</div>
-                   </div>
-                   <div>
-                     <div className="text-[9px] font-bold uppercase tracking-[2px]" style={{ color: theme.muted }}>XP</div>
-                     <div className="font-black text-xl font-mono" style={{ color: '#58a6ff' }}>+{lastReport.pointsEarned}</div>
-                   </div>
-                   <div>
-                     <div className="text-[9px] font-bold uppercase tracking-[2px]" style={{ color: theme.muted }}>ACs</div>
-                     <div className="font-black text-xl font-mono" style={{ color: theme.ok }}>{lastReport.problemsSolved}</div>
-                   </div>
-                </div>
+  if (phase === 'RATE') {
+    // ── Derived stats from lastReport ──────────────────────────────────────
+    const r = lastReport;
+    const solvedDetails = r?.details ?? [];
+    const ratedProblems = solvedDetails.filter(d => d.rating > 0);
+    const avgRating = ratedProblems.length > 0
+      ? Math.round(ratedProblems.reduce((a, d) => a + d.rating, 0) / ratedProblems.length) : 0;
+    const maxRating = ratedProblems.length > 0 ? Math.max(...ratedProblems.map(d => d.rating)) : 0;
+    const minRating = ratedProblems.length > 0 ? Math.min(...ratedProblems.map(d => d.rating)) : 0;
+    const timedProblems = solvedDetails.filter(d => d.timeTakenSecs > 30);
+    const avgTimeSecs = timedProblems.length > 0
+      ? Math.round(timedProblems.reduce((a, d) => a + d.timeTakenSecs, 0) / timedProblems.length) : 0;
+    const maxTimeSecs = timedProblems.length > 0 ? Math.max(...timedProblems.map(d => d.timeTakenSecs)) : 0;
+    const minTimeSecs = timedProblems.length > 0 ? Math.min(...timedProblems.map(d => d.timeTakenSecs)) : 0;
+    const fastestProblem = timedProblems.find(d => d.timeTakenSecs === minTimeSecs);
+    const slowestProblem = timedProblems.find(d => d.timeTakenSecs === maxTimeSecs);
+    const focusMins = r ? Math.round(r.workMins) : 0;
+    const efficiency = r && focusMins > 0 && r.problemsSolved > 0
+      ? Math.round(focusMins / r.problemsSolved) : 0;
+    const plannedM = r?.plannedMins ?? 0;
+    const planAccuracy = plannedM > 0 ? Math.min(200, Math.round((focusMins / plannedM) * 100)) : null;
+    const xpPerHour = focusMins > 0 && r ? Math.round((r.pointsEarned / focusMins) * 60) : 0;
+    const acRate = focusMins > 0 && r ? parseFloat((r.problemsSolved / (focusMins / 60)).toFixed(1)) : 0;
 
-                <div className="rounded-xl p-3 text-center border" style={{ background: theme.surface, borderColor: theme.sh }}>
-                  <div className="text-[9px] font-bold uppercase tracking-[2px] mb-1" style={{ color: theme.muted }}>Accuracy</div>
-                  <div className="font-black text-lg font-mono" style={{ color: (lastReport.accuracyPct||0) > 70 ? theme.ok : theme.stop }}>
-                    {lastReport.accuracyPct || 0}% <span className="text-xs text-gray-500">({lastReport.totalSubmissions || 0} subs)</span>
+    // Rating distribution bucketed
+    const ratingBuckets: Record<number, number> = {};
+    ratedProblems.forEach(d => {
+      const bucket = Math.floor(d.rating / 200) * 200;
+      ratingBuckets[bucket] = (ratingBuckets[bucket] || 0) + 1;
+    });
+    const bucketEntries = Object.entries(ratingBuckets).sort((a, b) => Number(a[0]) - Number(b[0]));
+    const maxBucketCount = Math.max(1, ...Object.values(ratingBuckets));
+
+    // Rating color helper
+    const ratingColor = (r: number) => r >= 2400 ? '#ff0000' : r >= 2100 ? '#ff8c00' : r >= 1900 ? '#aa00aa' : r >= 1600 ? '#0000ff' : r >= 1400 ? '#03a89e' : r >= 1200 ? T.green : T.muted;
+
+    return (
+      <div style={{
+        position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'stretch',
+        background: '#0c0d0e', fontFamily: 'sans-serif', overflow: 'hidden',
+      }}>
+        {/* Left pane — sticky summary */}
+        <div style={{
+          width: 260, flexShrink: 0, background: T.surface, borderRight: `1px solid ${T.border}`,
+          display: 'flex', flexDirection: 'column', padding: 28,
+        }}>
+          {/* Header */}
+          <div style={{ marginBottom: 28 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              <div style={{ width: 8, height: 8, borderRadius: '50%', background: T.green, boxShadow: `0 0 8px ${T.green}` }} />
+              <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '2.5px', textTransform: 'uppercase', color: T.green }}>Extraction Complete</span>
+            </div>
+            <div style={{ fontSize: 22, fontWeight: 900, color: T.text, lineHeight: 1.2 }}>Session<br/>Debrief</div>
+            {r?.intent && <div style={{ marginTop: 8, fontSize: 11, color: T.muted, fontStyle: 'italic' }}>"{r.intent}"</div>}
+          </div>
+
+          {syncing ? (
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: 24, marginBottom: 12 }}>⚙️</div>
+                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', color: T.accent, animation: 'pulse-dot 1.2s ease-in-out infinite' }}>Syncing…</div>
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* Top 3 hero stats */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 24 }}>
+                {[
+                  { l: 'Focus Time', v: `${focusMins}m`, sub: plannedM > 0 ? `of ${plannedM}m planned` : undefined, c: T.accent },
+                  { l: 'Problems AC\'d', v: String(r?.problemsSolved ?? 0), sub: r?.problemsSolved ? `${acRate}/hr rate` : 'none this session', c: T.green },
+                  { l: 'XP Earned', v: `+${r?.pointsEarned ?? 0}`, sub: xpPerHour > 0 ? `${xpPerHour} xp/hr` : undefined, c: T.blue },
+                ].map(s => (
+                  <div key={s.l} style={{ padding: '12px 14px', borderRadius: 10, background: T.card, border: `1px solid ${T.border}` }}>
+                    <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: T.muted, marginBottom: 4 }}>{s.l}</div>
+                    <div style={{ fontSize: 26, fontWeight: 900, fontFamily: 'monospace', color: s.c, lineHeight: 1 }}>{s.v}</div>
+                    {s.sub && <div style={{ fontSize: 10, color: T.dim, marginTop: 3 }}>{s.sub}</div>}
                   </div>
-                </div>
-                
-                <div className="rounded-xl p-3 text-center border" style={{ background: theme.surface, borderColor: theme.sh }}>
-                  <div className="text-[9px] font-bold uppercase tracking-[2px] mb-1" style={{ color: theme.muted }}>Sprint Score</div>
-                  <div className="font-black text-lg font-mono" style={{ color: '#d2a8ff' }}>{lastReport.sprintScore || 0} <span className="text-xs text-gray-500">pts/m</span></div>
-                </div>
+                ))}
+              </div>
 
-                {(lastReport.hardestAC || 0) > 0 && (
-                  <div className="rounded-xl p-3 text-center border col-span-2" style={{ background: theme.surface, borderColor: theme.sh }}>
-                    <div className="text-[9px] font-bold uppercase tracking-[2px] mb-1" style={{ color: theme.muted }}>Peak Difficulty Cleared</div>
-                    <div className="font-black text-lg font-mono" style={{ color: theme.stop }}>{lastReport.hardestAC} Rated</div>
+              {/* Flow rating */}
+              <div style={{ marginBottom: 24 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: T.muted, marginBottom: 10 }}>Flow Rating</div>
+                <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
+                  {[1, 2, 3, 4, 5].map(n => (
+                    <button key={n} onClick={() => setFlowRating(n)} style={{
+                      fontSize: 24, background: 'transparent', border: 'none', cursor: 'pointer',
+                      transition: 'all 0.15s', transform: n <= flowRating ? 'scale(1.2)' : 'scale(1)',
+                      filter: n <= flowRating ? `drop-shadow(0 0 6px ${T.accent})` : 'none',
+                      opacity: n <= flowRating ? 1 : 0.2, color: T.accent, padding: 0,
+                    }}>★</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Log button */}
+              <button onClick={confirmRate} style={{
+                width: '100%', padding: '13px 0', borderRadius: 10, fontSize: 12, fontWeight: 900,
+                cursor: 'pointer', background: T.green, border: 'none', color: T.bg,
+                letterSpacing: '2px', textTransform: 'uppercase', boxShadow: `0 4px 16px ${T.greenDim}`,
+                transition: 'all 0.15s', marginTop: 'auto',
+              }}
+                onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-1px)'}
+                onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
+              >Log Session →</button>
+            </>
+          )}
+        </div>
+
+        {/* Right pane — scrollable detail stats */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: 32, display: 'flex', flexDirection: 'column', gap: 20 }}>
+          {syncing ? null : (
+            <>
+              {/* ── Row 1: Time & Pace metrics ─────────────────────────────── */}
+              <div>
+                <SectionLabel>Time & Pace</SectionLabel>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+                  <MiniStatCard label="Avg Time/Problem" value={avgTimeSecs > 0 ? fmtSecs(avgTimeSecs) : '—'} color={T.accent} icon="⏱" />
+                  <MiniStatCard label="Fastest Solve" value={minTimeSecs > 0 ? fmtSecs(minTimeSecs) : '—'} sub={fastestProblem?.name.slice(0, 14)} color={T.green} icon="⚡" />
+                  <MiniStatCard label="Slowest Solve" value={maxTimeSecs > 0 ? fmtSecs(maxTimeSecs) : '—'} sub={slowestProblem?.name.slice(0, 14)} color={T.red} icon="🐢" />
+                  <MiniStatCard label="Mins/Problem" value={efficiency > 0 ? `${efficiency}m` : '—'} sub="focus efficiency" color={T.blue} icon="📐" />
+                </div>
+              </div>
+
+              {/* ── Row 2: Rating metrics ───────────────────────────────────── */}
+              <div>
+                <SectionLabel>Rating Breakdown</SectionLabel>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 12 }}>
+                  <MiniStatCard label="Avg Rating" value={avgRating > 0 ? String(avgRating) : '—'} color={ratingColor(avgRating)} icon="★" />
+                  <MiniStatCard label="Hardest AC" value={maxRating > 0 ? String(maxRating) : '—'} color={ratingColor(maxRating)} icon="🏆" />
+                  <MiniStatCard label="Easiest AC" value={minRating > 0 ? String(minRating) : '—'} color={ratingColor(minRating)} icon="✓" />
+                  <MiniStatCard label="Rated Solved" value={`${ratedProblems.length}/${solvedDetails.length}`} color={T.muted} icon="📊" />
+                </div>
+                {/* Rating distribution bar chart */}
+                {bucketEntries.length > 0 && (
+                  <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: '16px 18px' }}>
+                    <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: T.dim, marginBottom: 12 }}>Distribution</div>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', height: 52 }}>
+                      {bucketEntries.map(([bucket, count]) => (
+                        <div key={bucket} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                          <div style={{
+                            width: '100%', borderRadius: 3,
+                            height: Math.max(4, (count / maxBucketCount) * 40),
+                            background: ratingColor(Number(bucket)),
+                            opacity: 0.85,
+                          }} />
+                          <span style={{ fontSize: 8, color: T.dim, fontFamily: 'monospace' }}>{bucket}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
-            )}
 
-            <div className="flex justify-center gap-4 py-4">
-              {[1,2,3,4,5].map(n => (
-                <button key={n} onClick={() => setFlowRating(n)} className="text-4xl transition-all bg-transparent border-none cursor-pointer hover:scale-125" style={{ filter: n<=flowRating ? `drop-shadow(0 0 10px ${theme.accent})` : 'none', opacity: n<=flowRating ? 1 : 0.2 }}>★</button>
-              ))}
-            </div>
-            <button onClick={confirmRate} className="w-full font-black uppercase tracking-widest py-4 rounded transition-all text-sm cursor-pointer shadow-lg hover:-translate-y-1" style={{ background: theme.ok, color: theme.bg }}>Log Session</button>
-          </>
-        )}
+              {/* ── Row 3: Session health ───────────────────────────────────── */}
+              <div>
+                <SectionLabel>Session Health</SectionLabel>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+                  <MiniStatCard label="Breaks Taken" value={String(r?.breakCount ?? 0)} sub={r && r.breakCount > 3 ? 'consider fewer' : 'solid focus'} color={r && (r.breakCount ?? 0) > 3 ? T.red : T.green} icon="⏸" />
+                  <MiniStatCard label="Plan Accuracy" value={planAccuracy !== null ? `${planAccuracy}%` : '—'} sub={planAccuracy !== null ? (planAccuracy > 110 ? 'overran' : planAccuracy < 80 ? 'underran' : 'on target') : 'no plan set'} color={planAccuracy !== null ? (planAccuracy >= 80 && planAccuracy <= 110 ? T.green : T.accent) : T.dim} icon="🎯" />
+                  <MiniStatCard label="XP / Hour" value={xpPerHour > 0 ? String(xpPerHour) : '—'} sub="grind intensity" color={xpPerHour > 80 ? T.green : xpPerHour > 40 ? T.accent : T.muted} icon="⚡" />
+                  <MiniStatCard label="AC Rate" value={acRate > 0 ? `${acRate}/hr` : '—'} sub="problems per hour" color={acRate >= 2 ? T.green : acRate >= 1 ? T.accent : T.muted} icon="📈" />
+                </div>
+              </div>
+
+              {/* ── Row 4: Problem-by-problem table ────────────────────────── */}
+              {solvedDetails.length > 0 && (
+                <div>
+                  <SectionLabel>Problem Log</SectionLabel>
+                  <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, overflow: 'hidden' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                      <thead>
+                        <tr style={{ borderBottom: `1px solid ${T.border}` }}>
+                          {['#', 'Problem', 'Rating', 'Time Taken', 'Speed'].map(h => (
+                            <th key={h} style={{ padding: '10px 14px', textAlign: h === '#' || h === 'Rating' || h === 'Time Taken' || h === 'Speed' ? 'center' : 'left', fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: T.dim, fontFamily: 'monospace' }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {solvedDetails.map((d, i) => {
+                          const isMax = d.timeTakenSecs === maxTimeSecs && timedProblems.length > 1;
+                          const isMin = d.timeTakenSecs === minTimeSecs && timedProblems.length > 1;
+                          const speedPct = maxTimeSecs > 0 && d.timeTakenSecs > 30 ? Math.round((1 - (d.timeTakenSecs - minTimeSecs) / (maxTimeSecs - minTimeSecs + 1)) * 100) : null;
+                          return (
+                            <tr key={d.pid} style={{ borderTop: i > 0 ? `1px solid ${T.border}` : 'none' }}>
+                              <td style={{ padding: '10px 14px', textAlign: 'center', fontFamily: 'monospace', fontSize: 11, color: T.dim }}>{i + 1}</td>
+                              <td style={{ padding: '10px 14px' }}>
+                                <a href={`https://codeforces.com/problemset/problem/${d.pid.replace('-', '/')}`} target="_blank" rel="noreferrer"
+                                  style={{ color: T.text, textDecoration: 'none', fontWeight: 600, fontSize: 12 }}
+                                  onMouseEnter={e => e.currentTarget.style.color = T.accent}
+                                  onMouseLeave={e => e.currentTarget.style.color = T.text}
+                                >{d.name}</a>
+                                <div style={{ fontSize: 10, color: T.dim, fontFamily: 'monospace', marginTop: 1 }}>{d.pid}</div>
+                              </td>
+                              <td style={{ padding: '10px 14px', textAlign: 'center' }}>
+                                {d.rating > 0
+                                  ? <span style={{ fontSize: 12, fontWeight: 700, fontFamily: 'monospace', color: ratingColor(d.rating) }}>{d.rating}</span>
+                                  : <span style={{ color: T.dim }}>—</span>
+                                }
+                              </td>
+                              <td style={{ padding: '10px 14px', textAlign: 'center', fontFamily: 'monospace', fontSize: 12 }}>
+                                {d.timeTakenSecs > 30 ? (
+                                  <span style={{ color: isMin ? T.green : isMax ? T.red : T.text }}>
+                                    {fmtSecs(d.timeTakenSecs)}
+                                    {isMin && <span style={{ marginLeft: 4, fontSize: 9, color: T.green }}>fastest</span>}
+                                    {isMax && <span style={{ marginLeft: 4, fontSize: 9, color: T.red }}>slowest</span>}
+                                  </span>
+                                ) : <span style={{ color: T.dim }}>—</span>}
+                              </td>
+                              <td style={{ padding: '10px 20px', textAlign: 'center' }}>
+                                {speedPct !== null ? (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <div style={{ flex: 1, height: 4, background: T.border, borderRadius: 2, overflow: 'hidden' }}>
+                                      <div style={{ height: '100%', width: `${speedPct}%`, background: speedPct > 60 ? T.green : speedPct > 30 ? T.accent : T.red, borderRadius: 2 }} />
+                                    </div>
+                                    <span style={{ fontSize: 9, fontFamily: 'monospace', color: T.muted, minWidth: 28 }}>{speedPct}%</span>
+                                  </div>
+                                ) : <span style={{ color: T.dim, fontSize: 11 }}>—</span>}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Row 5: Comparison vs personal bests ─────────────────────── */}
+              {history.length > 1 && r && (
+                <div>
+                  <SectionLabel>vs. Your Average</SectionLabel>
+                  <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, overflow: 'hidden' }}>
+                    {(() => {
+                      const prevSessions = history.slice(1); // exclude current (just logged)
+                      const avgFocusMins = prevSessions.reduce((a, h) => a + h.workMins, 0) / prevSessions.length;
+                      const avgACs = prevSessions.reduce((a, h) => a + h.problemsSolved, 0) / prevSessions.length;
+                      const avgXP = prevSessions.reduce((a, h) => a + h.pointsEarned, 0) / prevSessions.length;
+                      const avgRatingHist = prevSessions.flatMap(h => h.details.filter(d => d.rating > 0).map(d => d.rating));
+                      const avgRatingSess = avgRatingHist.length > 0 ? Math.round(avgRatingHist.reduce((a, b) => a + b, 0) / avgRatingHist.length) : 0;
+
+                      const rows = [
+                        { metric: 'Focus Time', current: `${focusMins}m`, avg: `${Math.round(avgFocusMins)}m`, better: focusMins >= avgFocusMins },
+                        { metric: 'Problems AC\'d', current: String(r.problemsSolved), avg: avgACs.toFixed(1), better: r.problemsSolved >= avgACs },
+                        { metric: 'XP Earned', current: String(r.pointsEarned), avg: Math.round(avgXP).toString(), better: r.pointsEarned >= avgXP },
+                        ...(avgRatingSess > 0 && avgRating > 0 ? [{ metric: 'Avg Problem Rating', current: String(avgRating), avg: String(avgRatingSess), better: avgRating >= avgRatingSess }] : []),
+                      ];
+
+                      return (
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                          <thead>
+                            <tr style={{ borderBottom: `1px solid ${T.border}` }}>
+                              {['Metric', 'This Session', 'Your Avg', 'Δ'].map(h => (
+                                <th key={h} style={{ padding: '10px 16px', textAlign: h === 'Metric' ? 'left' : 'center', fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: T.dim }}>{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {rows.map((row, i) => (
+                              <tr key={row.metric} style={{ borderTop: i > 0 ? `1px solid ${T.border}` : 'none' }}>
+                                <td style={{ padding: '10px 16px', color: T.muted, fontSize: 12 }}>{row.metric}</td>
+                                <td style={{ padding: '10px 16px', textAlign: 'center', fontFamily: 'monospace', fontWeight: 700, color: T.text }}>{row.current}</td>
+                                <td style={{ padding: '10px 16px', textAlign: 'center', fontFamily: 'monospace', color: T.dim }}>{row.avg}</td>
+                                <td style={{ padding: '10px 16px', textAlign: 'center' }}>
+                                  <span style={{ fontSize: 11, fontWeight: 700, color: row.better ? T.green : T.red }}>
+                                    {row.better ? '▲' : '▼'}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      );
+                    })()}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
       </div>
-    </div>
-  );
+    );
+  }
 
   // ════════════════════════════════════════════════════════════════════════════
   // PHASE: IDLE (DASHBOARD)
   // ════════════════════════════════════════════════════════════════════════════
   return (
-    <div className="animate-in fade-in duration-400 space-y-6 max-w-4xl mx-auto pb-20 font-sans" style={{ color: theme.text }}>
+    <div style={{ fontFamily: 'sans-serif', color: T.text, maxWidth: 860, margin: '0 auto', paddingBottom: 80, animation: 'fadeSlideUp 0.35s ease' }}>
 
-      {/* ROGUE AC BANNER */}
+      {/* ── Rogue AC Banner ─────────────────────────────────────────────────── */}
       {rogueACs.length > 0 && (
-        <div className="rounded-xl p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4" style={{ background: 'rgba(251,73,52,0.1)', border: `1px solid rgba(251,73,52,0.3)` }}>
-          <div>
-            <div className="font-bold text-[11px] uppercase tracking-[2px] mb-1 flex items-center gap-2" style={{ color: theme.stop }}><span className="w-2 h-2 rounded-full animate-pulse" style={{ background: theme.stop }} /> Rogue Activity Detected</div>
-            <div className="text-sm font-medium">You solved <span className="font-bold" style={{ color: theme.stop }}>{rogueACs.length} problems</span> outside of Grind Mode recently.</div>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-2 bg-black/20 px-3 py-1.5 rounded border border-red-500/20">
-              <span className="text-xs text-red-400 font-bold uppercase tracking-[1px]">Est. Time:</span>
-              <input type="number" value={rogueMins} onChange={e => setRogueMins(Math.max(1, Number(e.target.value)||1))} className="w-16 bg-transparent outline-none text-white font-mono text-sm" />
-              <span className="text-xs text-red-400">mins</span>
+        <div style={{
+          padding: '14px 18px', marginBottom: 16, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          background: T.redDim, border: `1px solid ${T.red}40`,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 6, height: 6, borderRadius: '50%', background: T.red, animation: 'pulse-dot 1.5s ease-in-out infinite' }} />
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', color: T.red }}>Untracked Activity</div>
+              <div style={{ fontSize: 12, color: T.text, marginTop: 2 }}>Solved <strong style={{ color: T.red }}>{rogueACs.length} problems</strong> outside Grind Mode recently</div>
             </div>
-            <button onClick={() => setRogueACs([])} className="text-xs font-bold uppercase transition-colors bg-transparent border-none cursor-pointer" style={{ color: theme.muted }}>Dismiss</button>
-            <button onClick={logRogueACs} className="font-bold text-xs uppercase px-4 py-2 rounded transition-colors cursor-pointer whitespace-nowrap" style={{ background: theme.stop, color: theme.text, border: 'none' }}>Log as Session</button>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={() => setRogueACs([])} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'transparent', border: `1px solid ${T.border}`, color: T.muted, transition: 'all 0.15s', textTransform: 'uppercase', letterSpacing: '1px' }}>Dismiss</button>
+            <button onClick={logRogueACs} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: T.red, border: 'none', color: '#fff', transition: 'all 0.15s', textTransform: 'uppercase', letterSpacing: '1px' }}>Log as Session</button>
           </div>
         </div>
       )}
 
-      {/* MAIN FOCUS CARD */}
-      <div className="p-8 md:p-10 rounded-2xl relative shadow-2xl flex flex-col items-center text-center" style={{ background: theme.surface, border: `1px solid ${theme.sh}` }}>
-        <button onClick={() => setShowSettings(true)} className="absolute top-5 right-5 text-xl transition-transform hover:rotate-45 cursor-pointer bg-transparent border-none" style={{ color: theme.muted }} title="Settings">⚙</button>
+      {/* ── TOP ROW: Hero + Quick Stats ──────────────────────────────────────── */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
 
-        <h2 className="text-[12px] font-bold uppercase tracking-[3px] mb-6" style={{ color: theme.muted }}>Focus Session</h2>
+        {/* Hero / Start Card */}
+        <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 16, padding: 28, position: 'relative', overflow: 'hidden' }}>
+          {/* Subtle grid bg */}
+          <div style={{
+            position: 'absolute', inset: 0, opacity: 0.03,
+            backgroundImage: 'linear-gradient(#fabd2f 1px, transparent 1px), linear-gradient(90deg, #fabd2f 1px, transparent 1px)',
+            backgroundSize: '24px 24px', pointerEvents: 'none',
+          }} />
+          <button onClick={() => setShowSettings(true)} style={{
+            position: 'absolute', top: 16, right: 16, width: 30, height: 30, borderRadius: 8,
+            background: 'transparent', border: `1px solid ${T.border}`, color: T.muted, cursor: 'pointer', fontSize: 14, transition: 'all 0.15s',
+          }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = T.borderHi; e.currentTarget.style.color = T.text; e.currentTarget.style.transform = 'rotate(45deg)'; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.color = T.muted; e.currentTarget.style.transform = 'rotate(0)'; }}
+          >⚙</button>
 
-        {tmrPlan.length > 0 && (
-          <div className="w-full max-w-sm mb-8 p-4 rounded-xl text-left cursor-pointer transition-colors border-l-4" style={{ background: 'rgba(0,0,0,0.2)', border: `1px solid ${theme.sh}`, borderLeftColor: theme.accent }} onClick={() => setShowTmrModal(true)}>
-            <span className="font-bold text-[10px] uppercase tracking-[1.5px] block mb-2" style={{ color: theme.accent }}>📋 Today's Intentions</span>
-            <div className="space-y-1.5">
+          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', color: T.muted, marginBottom: 8 }}>Focus Session</div>
+
+          {tmrPlan.length > 0 && (
+            <div onClick={() => setShowTmrModal(true)} style={{
+              marginBottom: 16, padding: '10px 12px', borderRadius: 10, cursor: 'pointer',
+              background: T.card, border: `1px solid ${T.border}`, borderLeft: `3px solid ${T.accent}`,
+            }}>
+              <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: T.accent, marginBottom: 6 }}>Today's Intentions</div>
               {tmrPlan.map((t, i) => (
-                <div key={t.id} className="text-sm font-medium"><span className="font-mono text-[10px] mr-2" style={{ color: theme.accent }}>{i+1}.</span>{t.text}</div>
+                <div key={t.id} style={{ fontSize: 12, color: T.text, marginBottom: 2, display: 'flex', gap: 6 }}>
+                  <span style={{ color: T.accent, fontFamily: 'monospace', fontSize: 10 }}>{i + 1}.</span>{t.text}
+                </div>
               ))}
             </div>
+          )}
+
+          <button onClick={() => setPhase('INTENT')} style={{
+            width: '100%', padding: '14px 0', borderRadius: 10, fontSize: 14, fontWeight: 900,
+            cursor: 'pointer', background: T.accent, border: 'none', color: T.bg,
+            letterSpacing: '2px', textTransform: 'uppercase', boxShadow: `0 4px 20px ${T.accentGlow}`,
+            transition: 'all 0.15s', marginTop: 8,
+          }}
+            onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = `0 8px 28px ${T.accentGlow}`; }}
+            onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = `0 4px 20px ${T.accentGlow}`; }}
+          >⚡ Start Session</button>
+
+          <button onClick={() => setShowTmrModal(true)} style={{
+            width: '100%', padding: '9px 0', borderRadius: 8, fontSize: 11, fontWeight: 700,
+            cursor: 'pointer', background: 'transparent', border: `1px solid ${T.border}`, color: T.muted,
+            letterSpacing: '1px', textTransform: 'uppercase', marginTop: 8, transition: 'all 0.15s',
+          }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = T.borderHi; e.currentTarget.style.color = T.text; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.color = T.muted; }}
+          >📋 Plan Tomorrow</button>
+        </div>
+
+        {/* Stats grid */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr 1fr', gap: 10 }}>
+          <StatCard label="Total Focus" value={`${(totalMins / 60).toFixed(1)}h`} icon="⏱" color={T.muted} />
+          <StatCard label="Today" value={`${(todayMins / 60).toFixed(1)}h`} sub={`${history.filter(h => new Date(h.date).toLocaleDateString() === new Date().toLocaleDateString()).length} sessions`} icon="☀" color={todayMins > 0 ? T.green : T.muted} />
+          <StatCard label="Streak" value={`${streak}d`} sub={streak > 2 ? '🔥 on fire' : 'keep going'} icon="⚡" color={streak > 2 ? T.red : T.muted} />
+          <StatCard label="This Week" value={`${(weekSecs / 3600).toFixed(1)}h`} sub={`${weekPct}% of ${targetHrs}h goal`} icon="📊" color={weekPct >= 100 ? T.green : T.accent} />
+        </div>
+      </div>
+
+      {/* ── SECOND ROW: Weekly Progress + Activity ───────────────────────────── */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+
+        {/* Weekly progress */}
+        <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 16, padding: 22 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: T.muted }}>This Week</div>
+            <div style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: weekPct >= 100 ? T.green : T.accent }}>{weekPct}%</div>
           </div>
-        )}
-
-        <div className="text-[6.5rem] font-mono font-light leading-none tracking-tighter mb-8">{fmt(workSecs)}</div>
-
-        <button onClick={() => setPhase('INTENT')} className="px-12 py-4 rounded-lg font-black uppercase tracking-widest text-sm shadow-xl transition-transform hover:-translate-y-1 cursor-pointer" style={{ background: theme.accent, color: theme.bg }}>
-          Start Session
-        </button>
-
-        {/* Task Section */}
-        <div className="w-full mt-10 pt-8 border-t" style={{ borderColor: theme.sh }}>
-          <div className="flex gap-2">
-            <button onClick={() => setNewPri(p => p==='high'?'normal':'high')} className="w-11 h-11 rounded flex items-center justify-center font-bold text-lg cursor-pointer transition-colors" style={{ background: newPri === 'high' ? 'rgba(251,73,52,0.1)' : 'transparent', border: `1px solid ${newPri === 'high' ? theme.stop : theme.sh}`, color: newPri === 'high' ? theme.stop : theme.muted }}>{newPri==='high'?'!':'–'}</button>
-            <input value={newTask} onChange={e => setNewTask(e.target.value)} onKeyDown={e => e.key==='Enter' && saveTasks([...tasks, { id: Date.now(), text: newTask.trim(), done: false, pinned: false, priority: newPri }])} placeholder="What are you working on?" className="flex-1 px-4 py-3 rounded text-sm outline-none transition-colors" style={{ background: 'rgba(0,0,0,0.2)', border: `1px solid ${theme.sh}`, color: theme.text }} />
-            <input type="number" value={newEst} onChange={e => setNewEst(e.target.value)} placeholder="~min" className="w-20 px-3 py-3 rounded text-sm outline-none transition-colors" style={{ background: 'rgba(0,0,0,0.2)', border: `1px solid ${theme.sh}`, color: theme.text }} />
-            <button onClick={() => { if(newTask.trim()) { saveTasks([...tasks, { id: Date.now(), text: newTask.trim(), done: false, pinned: false, priority: newPri, estMins: parseInt(newEst)||undefined }]); setNewTask(''); setNewEst(''); setNewPri('normal'); } }} className="px-6 py-3 rounded font-bold text-sm cursor-pointer" style={{ background: theme.sh, color: theme.text, border: 'none' }}>Add</button>
+          <WeekBars history={history} />
+          <div style={{ marginTop: 14, height: 4, background: T.border, borderRadius: 4, overflow: 'hidden' }}>
+            <div style={{
+              height: '100%', background: weekPct >= 100 ? T.green : T.accent,
+              width: `${weekPct}%`, borderRadius: 4, transition: 'width 0.8s ease',
+              boxShadow: `0 0 10px ${weekPct >= 100 ? T.greenDim : T.accentGlow}`,
+            }} />
           </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: 10, color: T.dim, fontFamily: 'monospace' }}>
+            <span>{(weekSecs / 3600).toFixed(1)}h done</span>
+            <span>{targetHrs}h goal</span>
+          </div>
+        </div>
 
-          <div className="mt-4 space-y-2 text-left">
-            {tasks.filter(t => !t.done).map(t => (
-              <div key={t.id} className="flex items-center gap-3 p-3 rounded-lg border border-l-4 transition-colors hover:border-gray-500" style={{ background: 'rgba(0,0,0,0.1)', borderColor: theme.sh, borderLeftColor: t.priority==='high' ? theme.stop : theme.sh }}>
-                <input type="checkbox" onChange={() => saveTasks(tasks.map(x => x.id === t.id ? {...x, done: true} : x))} className="w-4 h-4 cursor-pointer accent-green-400" />
-                <span className="text-sm font-medium flex-1">{t.text}</span>
-                {t.estMins && <span className="text-[10px] font-mono px-2 py-1 rounded" style={{ background: 'rgba(255,255,255,0.05)', color: theme.muted }}>~{t.estMins}m</span>}
-                <div className="flex gap-2">
-                  <button onClick={() => saveTasks(tasks.map(x => ({...x, pinned: x.id === t.id ? !x.pinned : false})))} className="text-xs bg-transparent border-none cursor-pointer" style={{ color: t.pinned ? theme.accent : theme.muted }}>{t.pinned ? '📌' : '📍'}</button>
-                  <button onClick={() => saveTasks(tasks.filter(x => x.id !== t.id))} className="text-xs bg-transparent border-none cursor-pointer hover:text-red-500" style={{ color: theme.muted }}>✕</button>
+        {/* Peak hours heatmap */}
+        <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 16, padding: 22 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: T.muted, marginBottom: 16 }}>Peak Hours</div>
+          <HourHeatmap grid={peakGrid} />
+          <div style={{ marginTop: 14, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+            {weeklyReviews.slice(0, 1).map(w => (
+              <React.Fragment key={w.label}>
+                <div style={{ textAlign: 'center', padding: '8px', borderRadius: 8, background: T.card }}>
+                  <div style={{ fontSize: 16, fontWeight: 900, fontFamily: 'monospace', color: T.text }}>{(w.total / 60).toFixed(1)}h</div>
+                  <div style={{ fontSize: 9, color: T.dim, marginTop: 2, textTransform: 'uppercase', letterSpacing: '1px' }}>focus</div>
                 </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-6 text-right">
-            <button onClick={() => setShowTmrModal(true)} className="text-[11px] font-bold uppercase tracking-[1px] px-4 py-2 border rounded cursor-pointer transition-colors hover:bg-white/5" style={{ borderColor: theme.sh, color: theme.muted, background: 'transparent' }}>📋 Plan Tomorrow</button>
-          </div>
-        </div>
-      </div>
-
-      {/* STATS GRID */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {[
-          { l: 'Total Focus', v: `${(totalMins/60).toFixed(1)}h` },
-          { l: 'Today', v: `${(todayMins/60).toFixed(1)}h`, c: todayMins > 0 ? theme.ok : undefined },
-          { l: 'Streak', v: `${streak} days`, c: streak > 2 ? theme.stop : undefined },
-          { l: 'Daily Avg', v: `${history.length > 0 ? Math.round(totalMins / new Set(history.map(h=>h.date)).size) : 0}m` }
-        ].map(s => (
-          <div key={s.l} className="rounded-xl p-6 text-center transition-transform hover:-translate-y-1 border-t-4" style={{ background: 'rgba(0,0,0,0.15)', border: `1px solid ${theme.sh}`, borderTopColor: theme.sh }}>
-            <div className="text-3xl font-black font-mono mb-2" style={{ color: (s as any).c || theme.text }}>{s.v}</div>
-            <div className="font-bold text-[10px] uppercase tracking-[2px]" style={{ color: theme.muted }}>{s.l}</div>
-          </div>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* WEEKLY TARGET */}
-        <div className="rounded-xl p-8" style={{ background: 'rgba(0,0,0,0.15)', border: `1px solid ${theme.sh}` }}>
-          <div className="text-[11px] font-bold uppercase tracking-[3px] mb-6 flex items-center justify-between" style={{ color: theme.muted }}>
-            Weekly Target
-            <span className="font-mono text-xs" style={{ color: theme.text }}>{(weekSecs/3600).toFixed(1)}h / {targetHrs}h</span>
-          </div>
-          <div className="w-full h-3 rounded-full overflow-hidden" style={{ background: theme.sh }}>
-            <div className="h-full transition-all duration-1000" style={{ background: theme.accent, width: `${Math.min(100, (weekSecs / (Math.max(1, targetHrs) * 3600)) * 100)}%` }} />
-          </div>
-        </div>
-
-        {/* PEAK HOURS */}
-        <div className="rounded-xl p-8" style={{ background: 'rgba(0,0,0,0.15)', border: `1px solid ${theme.sh}` }}>
-          <div className="text-[11px] font-bold uppercase tracking-[3px] mb-6" style={{ color: theme.muted }}>Peak Execution Hours</div>
-          <div className="grid grid-cols-24 gap-1 h-14 items-end">
-            {peakGrid.map((level, i) => (
-              <div key={i} className="w-full rounded-sm transition-all" title={`${i}:00`}
-                style={{ height: level === 0 ? '4px' : `${level * 20}%`, background: level === 0 ? '#111' : theme.accent, opacity: level === 0 ? 1 : 0.3 + (level * 0.14) }} />
-            ))}
-          </div>
-          <div className="grid grid-cols-24 gap-1 mt-2">
-            {peakGrid.map((_, i) => (
-              <div key={i} className="text-[9px] font-mono text-center" style={{ color: theme.muted }}>{i%4===0 ? i : ''}</div>
+                <div style={{ textAlign: 'center', padding: '8px', borderRadius: 8, background: T.card }}>
+                  <div style={{ fontSize: 16, fontWeight: 900, fontFamily: 'monospace', color: T.green }}>{w.acs}</div>
+                  <div style={{ fontSize: 9, color: T.dim, marginTop: 2, textTransform: 'uppercase', letterSpacing: '1px' }}>ACs</div>
+                </div>
+                <div style={{ textAlign: 'center', padding: '8px', borderRadius: 8, background: T.card }}>
+                  <div style={{ fontSize: 16, fontWeight: 900, fontFamily: 'monospace', color: T.accent }}>{w.activeD}</div>
+                  <div style={{ fontSize: 9, color: T.dim, marginTop: 2, textTransform: 'uppercase', letterSpacing: '1px' }}>active days</div>
+                </div>
+              </React.Fragment>
             ))}
           </div>
         </div>
       </div>
 
-      {/* WEEKLY REVIEWS */}
-      <div className="rounded-xl p-8" style={{ background: 'rgba(0,0,0,0.15)', border: `1px solid ${theme.sh}` }}>
-        <div className="flex gap-2 mb-6">
-          {weeklyReviews.map((w, i) => (
-            <button key={i} onClick={() => setWrActiveTab(i)} className="text-[11px] font-bold uppercase tracking-[1px] px-3 py-2 rounded cursor-pointer transition-colors border-none" style={{ background: wrActiveTab === i ? theme.accent : 'transparent', color: wrActiveTab === i ? theme.bg : theme.muted }}>
-              {w.label}
+      {/* ── BOTTOM: Tasks & History tabs ─────────────────────────────────────── */}
+      <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 16, overflow: 'hidden' }}>
+        {/* Tab nav */}
+        <div style={{ display: 'flex', borderBottom: `1px solid ${T.border}` }}>
+          {(['tasks', 'history'] as const).map(tab => (
+            <button key={tab} onClick={() => setActiveIdleTab(tab)} style={{
+              flex: 1, padding: '14px 0', fontSize: 11, fontWeight: 700, letterSpacing: '1.5px',
+              textTransform: 'uppercase', cursor: 'pointer', background: 'transparent', border: 'none',
+              borderBottom: `2px solid ${activeIdleTab === tab ? T.accent : 'transparent'}`,
+              color: activeIdleTab === tab ? T.accent : T.muted, transition: 'all 0.15s',
+              marginBottom: -1,
+            }}>
+              {tab === 'tasks' ? `Tasks (${tasks.filter(t => !t.done).length})` : `History (${history.length})`}
             </button>
           ))}
         </div>
-        {weeklyReviews[wrActiveTab] && (() => {
-          const w = weeklyReviews[wrActiveTab];
-          return (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {[
-                { l: 'Focus Time', v: `${(w.total/60).toFixed(1)}h` },
-                { l: 'Problems AC', v: String(w.acs) },
-                { l: 'Active Days', v: `${w.activeD}/7` },
-                { l: 'Peak Day', v: `${(w.maxD/60).toFixed(1)}h` },
-              ].map(s => (
-                <div key={s.l} className="rounded-lg p-4 text-center" style={{ background: 'rgba(0,0,0,0.2)', border: `1px solid ${theme.sh}` }}>
-                  <div className="text-2xl font-black font-mono" style={{ color: theme.accent }}>{s.v}</div>
-                  <div className="text-[10px] uppercase tracking-[1px] mt-1" style={{ color: theme.muted }}>{s.l}</div>
+
+        {/* Tasks panel */}
+        {activeIdleTab === 'tasks' && (
+          <div style={{ padding: 20 }}>
+            {/* Add task input */}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+              <button
+                onClick={() => setNewPri(p => p === 'high' ? 'normal' : 'high')}
+                style={{
+                  width: 40, height: 40, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontWeight: 700, fontSize: 15, cursor: 'pointer', transition: 'all 0.15s', flexShrink: 0,
+                  background: newPri === 'high' ? T.redDim : 'transparent',
+                  border: `1px solid ${newPri === 'high' ? T.red : T.border}`,
+                  color: newPri === 'high' ? T.red : T.dim,
+                }}
+              >!</button>
+              <input
+                value={newTask} onChange={e => setNewTask(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && newTask.trim()) {
+                    saveTasks([...tasks, { id: Date.now(), text: newTask.trim(), done: false, pinned: false, priority: newPri, estMins: parseInt(newEst) || undefined }]);
+                    setNewTask(''); setNewEst(''); setNewPri('normal');
+                  }
+                }}
+                placeholder="Add a task…"
+                style={{ flex: 1, padding: '10px 14px', borderRadius: 8, fontSize: 13, color: T.text, background: T.card, border: `1px solid ${T.border}`, outline: 'none' }}
+                onFocus={e => e.target.style.borderColor = T.borderHi}
+                onBlur={e => e.target.style.borderColor = T.border}
+              />
+              <input
+                type="number" value={newEst} onChange={e => setNewEst(e.target.value)}
+                placeholder="min"
+                style={{ width: 64, padding: '10px 8px', borderRadius: 8, fontSize: 12, textAlign: 'center', color: T.text, background: T.card, border: `1px solid ${T.border}`, outline: 'none' }}
+              />
+              <button
+                onClick={() => {
+                  if (newTask.trim()) {
+                    saveTasks([...tasks, { id: Date.now(), text: newTask.trim(), done: false, pinned: false, priority: newPri, estMins: parseInt(newEst) || undefined }]);
+                    setNewTask(''); setNewEst(''); setNewPri('normal');
+                  }
+                }}
+                style={{
+                  padding: '10px 18px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                  background: T.accentDim, border: `1px solid ${T.accent}40`, color: T.accent, transition: 'all 0.15s', letterSpacing: '1px',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = `${T.accent}25`; }}
+                onMouseLeave={e => { e.currentTarget.style.background = T.accentDim; }}
+              >Add</button>
+            </div>
+
+            {/* Task list */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {tasks.filter(t => !t.done).length === 0 && (
+                <div style={{ textAlign: 'center', padding: '24px 0', fontSize: 12, color: T.dim }}>No open tasks. Add something to work on.</div>
+              )}
+              {tasks.filter(t => !t.done).sort((a, b) => {
+                if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+                if (a.priority !== b.priority) return a.priority === 'high' ? -1 : 1;
+                return 0;
+              }).map(t => (
+                <div key={t.id} style={{
+                  display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 10,
+                  background: T.card, border: `1px solid ${T.border}`,
+                  borderLeft: `3px solid ${t.priority === 'high' ? T.red : t.pinned ? T.accent : T.border}`,
+                  transition: 'all 0.15s',
+                }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = T.borderHi; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; }}
+                >
+                  <input type="checkbox" onChange={() => saveTasks(tasks.map(x => x.id === t.id ? { ...x, done: true } : x))} style={{ width: 15, height: 15, cursor: 'pointer', accentColor: T.green }} />
+                  <span style={{ flex: 1, fontSize: 13, fontWeight: 500 }}>{t.text}</span>
+                  {t.priority === 'high' && <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: T.red, background: T.redDim, padding: '2px 6px', borderRadius: 4 }}>urgent</span>}
+                  {t.estMins && <span style={{ fontSize: 10, fontFamily: 'monospace', color: T.muted, background: 'rgba(255,255,255,0.04)', padding: '2px 6px', borderRadius: 4 }}>~{t.estMins}m</span>}
+                  <button
+                    onClick={() => saveTasks(tasks.map(x => ({ ...x, pinned: x.id === t.id ? !x.pinned : false })))}
+                    style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 13, opacity: t.pinned ? 1 : 0.3, transition: 'opacity 0.15s' }}
+                    title="Pin as focus target"
+                  >📌</button>
+                  <button onClick={() => saveTasks(tasks.filter(x => x.id !== t.id))} style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 12, color: T.dim, transition: 'color 0.15s' }}
+                    onMouseEnter={e => e.currentTarget.style.color = T.red}
+                    onMouseLeave={e => e.currentTarget.style.color = T.dim}
+                  >✕</button>
                 </div>
               ))}
             </div>
-          );
-        })()}
-      </div>
 
-      {/* COMBAT ARCHIVE LAUNCHER */}
-      <div className="rounded-xl p-8 flex flex-col md:flex-row items-center justify-between gap-6" style={{ background: 'rgba(0,0,0,0.15)', border: `1px solid ${theme.sh}` }}>
-        <div>
-          <h3 className="text-lg font-black uppercase tracking-widest text-white mb-1">The Combat Archive</h3>
-          <p className="text-xs font-medium" style={{ color: theme.muted }}>
-            Lifetime Record: <span style={{ color: theme.accent }}>{history.length} Sessions</span> logged.
-          </p>
-        </div>
-        <button onClick={() => setShowArchive(true)} className="px-8 py-3 rounded font-black uppercase tracking-widest text-sm transition-transform hover:-translate-y-1 cursor-pointer shadow-lg border-none" style={{ background: theme.accent, color: theme.bg }}>
-          Open Full Archive
-        </button>
-      </div>
+            {/* Completed tasks */}
+            {tasks.filter(t => t.done).length > 0 && (
+              <div style={{ marginTop: 16 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: T.dim, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span>Completed</span>
+                  <span style={{ color: T.green }}>({tasks.filter(t => t.done).length})</span>
+                </div>
+                {tasks.filter(t => t.done).map(t => (
+                  <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 14px', opacity: 0.4 }}>
+                    <span style={{ fontSize: 12, color: T.green }}>✓</span>
+                    <span style={{ fontSize: 12, color: T.muted, textDecoration: 'line-through' }}>{t.text}</span>
+                    <button onClick={() => saveTasks(tasks.filter(x => x.id !== t.id))} style={{ marginLeft: 'auto', background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 11, color: T.dim }}>✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
-      {/* TOMORROW PLAN MODAL */}
-      {showTmrModal && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[10000] flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-2xl p-8 shadow-2xl border" style={{ background: theme.surface, borderColor: theme.sh }}>
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-lg font-bold" style={{ color: theme.text }}>📋 Tomorrow's Battle Plan</h3>
-              <button onClick={() => setShowTmrModal(false)} className="text-2xl cursor-pointer hover:text-red-400 transition-colors bg-transparent border-none" style={{ color: theme.muted }}>×</button>
+        {/* History panel */}
+        {activeIdleTab === 'history' && (
+          <div>
+            {/* Weekly review tabs */}
+            <div style={{ display: 'flex', gap: 0, padding: '16px 20px 0', borderBottom: `1px solid ${T.border}` }}>
+              {weeklyReviews.map((w, i) => (
+                <button key={i} onClick={() => setWrActiveTab(i)} style={{
+                  padding: '8px 16px', fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase',
+                  cursor: 'pointer', background: 'transparent', border: 'none',
+                  borderBottom: `2px solid ${wrActiveTab === i ? T.accent : 'transparent'}`,
+                  color: wrActiveTab === i ? T.accent : T.muted, transition: 'all 0.15s', marginBottom: -1,
+                }}>{w.label}</button>
+              ))}
             </div>
-            <p className="text-sm mb-6" style={{ color: theme.muted }}>They'll appear as pinned intentions when you start your next session.</p>
-            <div className="space-y-3 mb-6">
+
+            {/* Weekly review stats */}
+            {weeklyReviews[wrActiveTab] && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 0, borderBottom: `1px solid ${T.border}` }}>
+                {[
+                  { l: 'Focus', v: `${(weeklyReviews[wrActiveTab].total / 60).toFixed(1)}h`, c: T.accent },
+                  { l: 'ACs', v: String(weeklyReviews[wrActiveTab].acs), c: T.green },
+                  { l: 'Peak Day', v: `${(weeklyReviews[wrActiveTab].maxD / 60).toFixed(1)}h`, c: T.text },
+                  { l: 'Active Days', v: `${weeklyReviews[wrActiveTab].activeD}/7`, c: T.blue },
+                ].map(s => (
+                  <div key={s.l} style={{ padding: '16px', textAlign: 'center', borderRight: `1px solid ${T.border}` }}>
+                    <div style={{ fontSize: 22, fontWeight: 900, fontFamily: 'monospace', color: s.c }}>{s.v}</div>
+                    <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: T.dim, marginTop: 4 }}>{s.l}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Session log */}
+            <div>
+              {history.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '32px 0', fontSize: 12, color: T.dim }}>No sessions yet. Start grinding!</div>
+              ) : (
+                history.slice(0, 20).map(h => <SessionRow key={h.id} log={h} />)
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Tomorrow Plan Modal ──────────────────────────────────────────────── */}
+      {showTmrModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(8px)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <div style={{ width: '100%', maxWidth: 420, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 20, padding: 32, boxShadow: '0 32px 80px rgba(0,0,0,0.6)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', color: T.accent }}>Tomorrow</div>
+                <div style={{ fontSize: 18, fontWeight: 900, color: T.text }}>Top Priorities</div>
+              </div>
+              <button onClick={() => setShowTmrModal(false)} style={{ width: 32, height: 32, borderRadius: 8, background: 'transparent', border: `1px solid ${T.border}`, color: T.muted, cursor: 'pointer', fontSize: 16, transition: 'all 0.15s' }}>×</button>
+            </div>
+            <div style={{ fontSize: 12, color: T.muted, marginBottom: 20, lineHeight: 1.6 }}>Set up to 3 priorities. They'll appear as pinned intentions when you start your next session.</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
               {tmrPlan.map((t, i) => (
-                <div key={t.id} className="flex items-center gap-3 p-3 rounded border" style={{ background: 'rgba(0,0,0,0.2)', borderColor: theme.sh }}>
-                  <span className="font-mono text-xs font-bold" style={{ color: theme.accent }}>{i+1}</span>
-                  <span className="flex-1 text-sm">{t.text}</span>
-                  <button onClick={() => saveTmrPlan(tmrPlan.filter(x => x.id !== t.id))} className="text-red-400 bg-transparent border-none cursor-pointer">✕</button>
+                <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 10, background: T.card, border: `1px solid ${T.border}` }}>
+                  <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: T.accent, minWidth: 16 }}>{i + 1}.</span>
+                  <span style={{ flex: 1, fontSize: 13 }}>{t.text}</span>
+                  <button onClick={() => saveTmrPlan(tmrPlan.filter(x => x.id !== t.id))} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: T.dim, fontSize: 12 }}
+                    onMouseEnter={e => e.currentTarget.style.color = T.red}
+                    onMouseLeave={e => e.currentTarget.style.color = T.dim}
+                  >✕</button>
                 </div>
               ))}
             </div>
             {tmrPlan.length < 3 && (
-              <div className="flex gap-2">
-                <input value={newTmr} onChange={e => setNewTmr(e.target.value)} onKeyDown={e => { if(e.key==='Enter' && newTmr.trim()) { saveTmrPlan([...tmrPlan, {id: Date.now(), text: newTmr.trim()}]); setNewTmr(''); } }} placeholder="Add a priority..." className="flex-1 px-4 py-3 rounded text-sm outline-none" style={{ background: 'rgba(0,0,0,0.2)', border: `1px solid ${theme.sh}`, color: theme.text }} autoFocus />
-                <button onClick={() => { if(newTmr.trim()) { saveTmrPlan([...tmrPlan, {id: Date.now(), text: newTmr.trim()}]); setNewTmr(''); } }} className="px-6 py-3 rounded font-bold text-sm cursor-pointer" style={{ background: theme.sh, color: theme.text, border: 'none' }}>Add</button>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  value={newTmr} onChange={e => setNewTmr(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && newTmr.trim()) { saveTmrPlan([...tmrPlan, { id: Date.now(), text: newTmr.trim() }]); setNewTmr(''); } }}
+                  placeholder="Add a priority…"
+                  autoFocus
+                  style={{ flex: 1, padding: '11px 14px', borderRadius: 8, fontSize: 13, color: T.text, background: T.card, border: `1px solid ${T.border}`, outline: 'none' }}
+                  onFocus={e => e.target.style.borderColor = T.accent}
+                  onBlur={e => e.target.style.borderColor = T.border}
+                />
+                <button
+                  onClick={() => { if (newTmr.trim()) { saveTmrPlan([...tmrPlan, { id: Date.now(), text: newTmr.trim() }]); setNewTmr(''); } }}
+                  style={{ padding: '11px 18px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: T.accentDim, border: `1px solid ${T.accent}40`, color: T.accent, transition: 'all 0.15s' }}
+                >Add</button>
               </div>
             )}
           </div>
         </div>
       )}
 
-      {/* SETTINGS MODAL */}
+      {/* ── Settings Modal ───────────────────────────────────────────────────── */}
       {showSettings && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[10000] flex items-center justify-center p-4">
-          <div className="w-full max-w-4xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh] border" style={{ background: theme.surface, borderColor: theme.sh }}>
-            <div className="p-8 border-b flex justify-between items-center" style={{ borderColor: theme.sh }}>
-              <h3 className="text-xl font-bold" style={{ color: theme.text }}>⚙ Configuration & Data</h3>
-              <button onClick={() => setShowSettings(false)} className="text-3xl cursor-pointer hover:text-red-400 transition-colors bg-transparent border-none" style={{ color: theme.muted }}>×</button>
-            </div>
-
-            <div className="p-8 overflow-y-auto flex-1 space-y-10">
-              {/* Weekly Target Setting */}
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(10px)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ width: '100%', maxWidth: 720, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 20, display: 'flex', flexDirection: 'column', maxHeight: '88vh', boxShadow: '0 32px 80px rgba(0,0,0,0.6)' }}>
+            <div style={{ padding: '24px 28px', borderBottom: `1px solid ${T.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
-                <h4 className="text-[11px] font-bold uppercase tracking-[2px] mb-4" style={{ color: theme.muted }}>Weekly Target</h4>
-                <div className="flex items-center gap-4">
-                  <input type="number" value={targetHrs} onChange={e => { setTargetHrs(Math.max(0, Number(e.target.value)||0)); localStorage.setItem(STORAGE_KEYS.GRIND_TARGET_HRS, e.target.value); }} className="w-32 px-4 py-3 rounded text-sm outline-none font-mono" style={{ background: 'rgba(0,0,0,0.2)', border: `1px solid ${theme.sh}`, color: theme.text }} />
-                  <span className="text-sm" style={{ color: theme.muted }}>Hours per week</span>
+                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', color: T.muted }}>Configuration</div>
+                <div style={{ fontSize: 18, fontWeight: 900, color: T.text }}>Settings & Data</div>
+              </div>
+              <button onClick={() => setShowSettings(false)} style={{ width: 32, height: 32, borderRadius: 8, background: 'transparent', border: `1px solid ${T.border}`, color: T.muted, cursor: 'pointer', fontSize: 18, transition: 'all 0.15s' }}>×</button>
+            </div>
+            <div style={{ padding: 28, overflowY: 'auto', flex: 1 }}>
+              <div style={{ marginBottom: 28 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: T.muted, marginBottom: 12 }}>Weekly Goal</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <input type="number" value={targetHrs} onChange={e => { setTargetHrs(Number(e.target.value)); localStorage.setItem('cf_grind_target', e.target.value); }}
+                    style={{ width: 80, padding: '10px 12px', borderRadius: 8, fontSize: 16, fontWeight: 700, fontFamily: 'monospace', textAlign: 'center', background: T.card, border: `1px solid ${T.border}`, color: T.text, outline: 'none' }} />
+                  <span style={{ fontSize: 13, color: T.muted }}>hours per week</span>
                 </div>
               </div>
 
-              {/* Session Ledger */}
               <div>
-                <h4 className="text-[11px] font-bold uppercase tracking-[2px] mb-4" style={{ color: theme.muted }}>Session Ledger (Raw Data)</h4>
-                <div className="rounded-xl overflow-hidden border" style={{ borderColor: theme.sh }}>
-                  <table className="w-full text-left text-sm">
-                    <thead style={{ background: 'rgba(0,0,0,0.2)' }}>
-                      <tr>
-                        <th className="p-4 font-normal" style={{ color: theme.muted }}>Date</th>
-                        <th className="p-4 font-normal" style={{ color: theme.muted }}>Intent</th>
-                        <th className="p-4 font-normal w-24 text-center" style={{ color: theme.muted }}>Mins</th>
-                        <th className="p-4 font-normal w-24 text-center" style={{ color: theme.muted }}>Rating</th>
-                        <th className="p-4 font-normal w-20 text-center" style={{ color: theme.muted }}>Action</th>
+                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: T.muted, marginBottom: 12 }}>Session Ledger</div>
+                <div style={{ borderRadius: 12, overflow: 'hidden', border: `1px solid ${T.border}` }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                    <thead>
+                      <tr style={{ background: T.card }}>
+                        {['Date', 'Intent', 'Mins', 'ACs', 'Rating', ''].map(h => (
+                          <th key={h} style={{ padding: '10px 14px', textAlign: h === 'Mins' || h === 'ACs' || h === 'Rating' ? 'center' : 'left', fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: T.dim }}>{h}</th>
+                        ))}
                       </tr>
                     </thead>
                     <tbody>
                       {history.length === 0 ? (
-                        <tr><td colSpan={5} className="p-8 text-center italic" style={{ color: theme.muted }}>No sessions recorded.</td></tr>
+                        <tr><td colSpan={6} style={{ padding: '24px', textAlign: 'center', color: T.dim, fontStyle: 'italic' }}>No sessions yet.</td></tr>
                       ) : history.map(h => (
-                        <tr key={h.id} className="border-t transition-colors hover:bg-white/5" style={{ borderColor: theme.sh }}>
-                          <td className="p-4 font-mono text-xs">{new Date(h.startTs * 1000).toLocaleString('en-GB', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'})}</td>
-                          <td className="p-4 truncate max-w-[200px]">{h.intent || '—'}</td>
-                          <td className="p-4 text-center">
+                        <tr key={h.id} style={{ borderTop: `1px solid ${T.border}` }}>
+                          <td style={{ padding: '10px 14px', fontFamily: 'monospace', fontSize: 11, color: T.muted }}>{new Date(h.startTs * 1000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</td>
+                          <td style={{ padding: '10px 14px', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: T.text }}>{h.intent || '—'}</td>
+                          <td style={{ padding: '10px 14px', textAlign: 'center' }}>
                             <input type="number" value={h.workMins} onChange={e => {
-                              const v = Math.max(0, Number(e.target.value) || 0);
-                              setHistory(prev => { const next = prev.map(x => x.id === h.id ? {...x, workMins: v} : x); localStorage.setItem(STORAGE_KEYS.GRIND_SESSIONS, JSON.stringify(next)); return next; });
-                            }} className="w-16 px-2 py-1 rounded outline-none font-mono text-center bg-black/40 border-none" style={{ color: theme.text }} />
+                              const v = Number(e.target.value);
+                              setHistory(prev => { const next = prev.map(x => x.id === h.id ? { ...x, workMins: v } : x); localStorage.setItem('cf_grind_v4', JSON.stringify(next)); return next; });
+                            }} style={{ width: 54, padding: '4px 6px', borderRadius: 6, textAlign: 'center', fontFamily: 'monospace', fontSize: 12, background: 'rgba(0,0,0,0.3)', border: `1px solid ${T.border}`, color: T.text, outline: 'none' }} />
                           </td>
-                          <td className="p-4 text-center">
+                          <td style={{ padding: '10px 14px', textAlign: 'center', fontFamily: 'monospace', color: T.green }}>{h.problemsSolved}</td>
+                          <td style={{ padding: '10px 14px', textAlign: 'center' }}>
                             <input type="number" min="0" max="5" value={h.flowRating || 0} onChange={e => {
-                              const v = Math.max(0, Number(e.target.value) || 0);
-                              setHistory(prev => { const next = prev.map(x => x.id === h.id ? {...x, flowRating: v} : x); localStorage.setItem(STORAGE_KEYS.GRIND_SESSIONS, JSON.stringify(next)); return next; });
-                            }} className="w-12 px-2 py-1 rounded outline-none font-mono text-center bg-black/40 border-none" style={{ color: theme.text }} />
+                              const v = Number(e.target.value);
+                              setHistory(prev => { const next = prev.map(x => x.id === h.id ? { ...x, flowRating: v } : x); localStorage.setItem('cf_grind_v4', JSON.stringify(next)); return next; });
+                            }} style={{ width: 40, padding: '4px 6px', borderRadius: 6, textAlign: 'center', fontFamily: 'monospace', fontSize: 12, background: 'rgba(0,0,0,0.3)', border: `1px solid ${T.border}`, color: T.accent, outline: 'none' }} />
                           </td>
-                          <td className="p-4 text-center">
-                            <button onClick={() => { const next = history.filter(x => x.id !== h.id); saveHistory(next); }} className="text-xs font-bold uppercase cursor-pointer bg-transparent border-none hover:text-red-400 transition-colors" style={{ color: theme.muted }}>Del</button>
+                          <td style={{ padding: '10px 14px' }}>
+                            <button onClick={() => saveHistory(history.filter(x => x.id !== h.id))} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: T.dim, fontSize: 12, padding: '2px 6px', borderRadius: 4, transition: 'color 0.15s' }}
+                              onMouseEnter={e => e.currentTarget.style.color = T.red}
+                              onMouseLeave={e => e.currentTarget.style.color = T.dim}
+                            >✕</button>
                           </td>
                         </tr>
                       ))}
@@ -757,95 +1391,8 @@ export default function GrindMode({ handle }: { handle: string }) {
           </div>
         </div>
       )}
-
-      {/* DEEP COMBAT ARCHIVE MODAL */}
-      {showArchive && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-[10000] flex items-center justify-center p-4 overflow-hidden">
-          <div className="w-full max-w-5xl h-[90vh] rounded-2xl shadow-2xl flex flex-col border" style={{ background: theme.surface, borderColor: theme.sh }}>
-            
-            {/* Archive Header */}
-            <div className="p-6 border-b flex justify-between items-center" style={{ borderColor: theme.sh, background: 'rgba(0,0,0,0.2)' }}>
-              <div>
-                <h3 className="text-2xl font-black uppercase tracking-widest text-white">Combat Archive</h3>
-                <p className="text-xs font-mono mt-1" style={{ color: theme.muted }}>Complete telemetry of all recorded grind sessions.</p>
-              </div>
-              <button onClick={() => setShowArchive(false)} className="text-3xl cursor-pointer transition-colors bg-transparent border-none hover:text-red-400" style={{ color: theme.muted }}>×</button>
-            </div>
-
-            {/* Scrollable Archive List */}
-            <div className="p-6 overflow-y-auto flex-1 space-y-4">
-              {history.length === 0 ? (
-                <div className="text-center py-20 font-mono" style={{ color: theme.muted }}>No sessions recorded yet. Get to grinding.</div>
-              ) : (
-                history.map(h => {
-                  const isExpanded = expandedSession === h.id;
-                  return (
-                    <div key={h.id} className="rounded-xl border overflow-hidden transition-all" style={{ background: isExpanded ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.1)', borderColor: isExpanded ? theme.accent : theme.sh }}>
-                      
-                      {/* Session Summary Bar (Clickable) */}
-                      <div onClick={() => setExpandedSession(isExpanded ? null : h.id)} className="p-5 flex flex-wrap lg:flex-nowrap items-center justify-between gap-4 cursor-pointer hover:bg-white/5 transition-colors">
-                        <div className="min-w-[200px]">
-                          <div className="flex items-center gap-3 mb-1">
-                            <span className="font-mono text-sm font-bold" style={{ color: theme.accent }}>
-                              {new Date(h.startTs * 1000).toLocaleString('en-GB', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })}
-                            </span>
-                            <span className="text-[9px] px-2 py-0.5 rounded font-bold uppercase tracking-[2px]" style={{ background: 'rgba(255,255,255,0.05)', color: theme.muted }}>{h.type}</span>
-                          </div>
-                          <div className="text-sm font-medium text-white truncate">{h.intent || 'Unspecified focus session'}</div>
-                        </div>
-
-                        {/* Top Level Stats */}
-                        <div className="flex flex-wrap gap-6 text-center">
-                          <div><div className="text-[9px] font-bold uppercase tracking-[1px]" style={{ color: theme.muted }}>Focus</div><div className="font-mono text-base font-bold text-white">{h.workMins}m</div></div>
-                          <div><div className="text-[9px] font-bold uppercase tracking-[1px]" style={{ color: theme.muted }}>XP</div><div className="font-mono text-base font-bold" style={{ color: '#58a6ff' }}>+{h.pointsEarned}</div></div>
-                          <div><div className="text-[9px] font-bold uppercase tracking-[1px]" style={{ color: theme.muted }}>ACs</div><div className="font-mono text-base font-bold" style={{ color: theme.ok }}>{h.problemsSolved}</div></div>
-                          <div><div className="text-[9px] font-bold uppercase tracking-[1px]" style={{ color: theme.muted }}>Acc</div><div className="font-mono text-base font-bold" style={{ color: (h.accuracyPct||0) >= 70 ? theme.ok : theme.stop }}>{h.accuracyPct || 0}%</div></div>
-                        </div>
-                        
-                        <div className="text-xs font-mono font-bold" style={{ color: theme.muted }}>{isExpanded ? '▼' : '▶'}</div>
-                      </div>
-
-                      {/* Expanded Deep Stats & Problem Breakdown */}
-                      {isExpanded && (
-                        <div className="p-5 border-t bg-black/20" style={{ borderColor: theme.sh }}>
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                            <div className="p-3 rounded border" style={{ borderColor: theme.sh, background: theme.surface }}><div className="text-[9px] uppercase text-gray-500 mb-1">Sprint Score</div><div className="font-mono font-bold text-[#d2a8ff]">{h.sprintScore || 0} pts/m</div></div>
-                            <div className="p-3 rounded border" style={{ borderColor: theme.sh, background: theme.surface }}><div className="text-[9px] uppercase text-gray-500 mb-1">Total Subs</div><div className="font-mono font-bold text-white">{h.totalSubmissions || 0}</div></div>
-                            <div className="p-3 rounded border" style={{ borderColor: theme.sh, background: theme.surface }}><div className="text-[9px] uppercase text-gray-500 mb-1">Peak Cleared</div><div className="font-mono font-bold text-red-400">{h.hardestAC || 'None'} Rated</div></div>
-                            <div className="p-3 rounded border" style={{ borderColor: theme.sh, background: theme.surface }}><div className="text-[9px] uppercase text-gray-500 mb-1">Flow Rating</div><div className="font-mono font-bold text-yellow-400">{h.flowRating ? '★'.repeat(h.flowRating) : 'Unrated'}</div></div>
-                          </div>
-
-                          {/* Individual Problem Breakdown */}
-                          <h4 className="text-[10px] font-bold uppercase tracking-[2px] mb-3" style={{ color: theme.muted }}>Problem Telemetry</h4>
-                          <div className="space-y-2">
-                            {h.details && h.details.length > 0 ? (
-                              h.details.map((p, idx) => (
-                                <a key={idx} href={`https://codeforces.com/contest/${p.pid.split('-')[0]}/problem/${p.pid.split('-')[1]}`} target="_blank" className="flex items-center justify-between p-3 rounded border transition-colors no-underline hover:border-gray-500" style={{ borderColor: theme.sh, background: 'rgba(0,0,0,0.4)' }}>
-                                  <div className="flex items-center gap-3">
-                                    <span className="font-mono text-xs font-bold" style={{ color: p.solved ? theme.ok : theme.stop }}>{p.pid}</span>
-                                    <span className="text-sm font-medium text-gray-300 truncate max-w-[200px] md:max-w-md">{p.name}</span>
-                                    <span className="text-[10px] px-2 py-0.5 rounded font-mono" style={{ background: 'rgba(255,255,255,0.05)', color: theme.accent }}>{p.rating}</span>
-                                  </div>
-                                  <div className="flex gap-4 text-xs font-mono text-right shrink-0">
-                                    <span style={{ color: (p.attempts || 1) > 1 ? theme.stop : theme.ok }}>{p.attempts || 1} Tries</span>
-                                    <span className="w-16 text-gray-500">{p.timeTakenSecs ? `${Math.floor(p.timeTakenSecs / 60)}m` : '—'}</span>
-                                  </div>
-                                </a>
-                              ))
-                            ) : (
-                              <div className="text-xs font-mono italic text-gray-600">No specific problem data captured for this session.</div>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
+
+
