@@ -18,10 +18,10 @@ import type { CFSubmission, CFInfo, CFRating, ProcessedMetrics, SquadMemberData 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const TABS = [
   { id: "COMMAND",   icon: "⚡" },
+  { id: "GRIND",     icon: "🔥" }, // Moved to VIP position #2
   { id: "ARMORY",    icon: "🏆" },
   { id: "SQUAD OPS", icon: "👥" },
   { id: "NEMESIS",   icon: "⚔️" },
-  { id: "GRIND",     icon: "🔥" },
   { id: "TITAN",     icon: "🎯" },
   { id: "CONTESTS",  icon: "📋" },
 ];
@@ -264,7 +264,6 @@ export default function Home() {
 
     const reconMetrics = processMetrics(getFilteredSubs(squadData[config.main].rawSubs));
     
-    // Evaluate badges without the map metrics
     const badges: BadgeDef[] = computeBadges(allPlayers, sMatrix, bMatrix, reconMetrics, config.main, Date.now() / 1000);
 
     return { mainMetrics, squadMatrix: sMatrix, bounties: uniqueBounties.slice(0, 30), computedBadges: badges, absoluteMySolves: absSolves };
@@ -320,28 +319,30 @@ export default function Home() {
         ::-webkit-scrollbar { width: 4px; background: var(--bg-base); }
         ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
         ::selection { background: var(--accent-20); }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
       `}</style>
 
       {/* ── HEADER ─────────────────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-50 px-8"
+      <header className="sticky top-0 z-50 px-4 sm:px-8"
         style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)', backdropFilter: 'blur(16px)' }}>
         <div className="max-w-[1400px] mx-auto">
 
           {/* Top bar */}
-          <div className="flex items-center justify-between py-3 gap-6">
+          <div className="flex items-center justify-between py-3 gap-3 sm:gap-6">
 
             {/* Logo */}
             <div className="flex items-center gap-3 shrink-0">
               <div className="w-8 h-8 rounded-lg flex items-center justify-center text-base font-bold"
                 style={{ background: 'var(--accent)', color: 'var(--bg-base)' }}>⚡</div>
-              <div>
+              <div className="hidden sm:block">
                 <div className="font-bold text-sm tracking-wide" style={{ color: 'var(--text-main)' }}>CF Synthesis</div>
                 <div className="text-[0.6rem] tracking-widest uppercase" style={{ color: 'var(--text-muted)' }}>Tactical Intelligence</div>
               </div>
             </div>
 
             {/* Context filters */}
-            <div className="flex rounded-lg overflow-hidden border" style={{ borderColor: 'var(--border)' }}>
+            <div className="hidden md:flex rounded-lg overflow-hidden border" style={{ borderColor: 'var(--border)' }}>
               {['ALL', 'CONTEST', 'PRACTICE', 'RECON'].map(ctx => (
                 <button key={ctx} onClick={() => setContextFilter(ctx)}
                   className="px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer border-r last:border-0"
@@ -354,7 +355,7 @@ export default function Home() {
               ))}
             </div>
 
-            <div className="flex rounded-lg overflow-hidden border" style={{ borderColor: 'var(--border)' }}>
+            <div className="hidden lg:flex rounded-lg overflow-hidden border" style={{ borderColor: 'var(--border)' }}>
               {['ALL', '30', '7'].map(tf => (
                 <button key={tf} onClick={() => setTimeFilter(tf)}
                   className="px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer border-r last:border-0"
@@ -371,7 +372,7 @@ export default function Home() {
 
             {/* Handle + rating */}
             {mainMetrics && squadData[config.main] && (
-              <div className="flex items-center gap-3">
+              <div className="hidden sm:flex items-center gap-3">
                 <img
                   src={squadData[config.main]?.info?.titlePhoto || "/api/placeholder/36/36"}
                   alt="Avatar"
@@ -388,14 +389,30 @@ export default function Home() {
             )}
 
             {/* Clock */}
-            <div className="font-mono text-sm hidden md:block" style={{ color: 'var(--text-muted)' }}>{timeStr}</div>
+            <div className="font-mono text-sm hidden xl:block" style={{ color: 'var(--text-muted)' }}>{timeStr}</div>
+
+            {/* GRIND MODE QUICK LAUNCH */}
+            <button
+              onClick={() => setActiveTab("GRIND")}
+              title="Launch Grind Mode"
+              className="h-9 px-3 sm:px-4 rounded-lg flex items-center justify-center gap-2 transition-all cursor-pointer hover:-translate-y-0.5 shrink-0"
+              style={{
+                background: activeTab === 'GRIND' ? 'var(--bg-base)' : 'rgba(251,73,52,0.15)',
+                border: `1px solid ${activeTab === 'GRIND' ? 'var(--border)' : 'rgba(251,73,52,0.4)'}`,
+                color: activeTab === 'GRIND' ? 'var(--text-muted)' : '#fb4934',
+                boxShadow: activeTab === 'GRIND' ? 'none' : '0 4px 12px rgba(251,73,52,0.2)'
+              }}
+            >
+              <span className={activeTab !== 'GRIND' ? "animate-pulse" : ""}>🔥</span>
+              <span className="font-mono text-[0.65rem] font-bold tracking-widest uppercase hidden sm:block">Grind</span>
+            </button>
 
             {/* Sync button */}
             <button
               onClick={() => fetchGlobalTelemetry(config.main, config.squad, true)}
               disabled={isSyncing || loading}
               title="Force sync"
-              className="w-9 h-9 rounded-lg flex items-center justify-center text-base transition-colors cursor-pointer disabled:cursor-not-allowed"
+              className="w-9 h-9 shrink-0 rounded-lg flex items-center justify-center text-base transition-colors cursor-pointer disabled:cursor-not-allowed"
               style={{
                 background: 'var(--bg-base)',
                 border: '1px solid var(--border)',
@@ -409,15 +426,33 @@ export default function Home() {
             <button
               onClick={() => setShowSettings(true)}
               title="Settings"
-              className="w-9 h-9 rounded-lg flex items-center justify-center text-base transition-colors cursor-pointer"
+              className="w-9 h-9 shrink-0 rounded-lg flex items-center justify-center text-base transition-colors cursor-pointer"
               style={{ background: 'var(--bg-base)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}
             >⚙</button>
           </div>
 
           {/* Tab bar */}
-          <div className="flex gap-0.5">
+          <div className="flex gap-0.5 overflow-x-auto no-scrollbar">
             {TABS.map(({ id, icon }) => {
               const isActive = activeTab === id;
+              const isGrind = id === 'GRIND';
+
+              if (isGrind) {
+                return (
+                  <button key={id} onClick={() => setActiveTab(id)}
+                    className="flex items-center gap-1.5 px-5 py-2.5 text-xs font-black transition-all cursor-pointer rounded-t-md border-b-2 whitespace-nowrap"
+                    style={{
+                      borderBottomColor: isActive ? '#fb4934' : 'transparent',
+                      color: isActive ? '#fb4934' : '#fb4934',
+                      background: isActive ? 'rgba(251,73,52,0.1)' : 'transparent',
+                      textShadow: isActive ? '0 0 10px rgba(251,73,52,0.5)' : 'none'
+                    }}>
+                    <span className={!isActive ? "animate-pulse" : ""}>{icon}</span>
+                    <span className="font-mono tracking-widest uppercase text-[0.62rem]">{id}</span>
+                  </button>
+                );
+              }
+
               return (
                 <button key={id} onClick={() => setActiveTab(id)}
                   className="flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium transition-all cursor-pointer rounded-t-md border-b-2 whitespace-nowrap"
@@ -436,7 +471,7 @@ export default function Home() {
       </header>
 
       {/* ── MAIN ───────────────────────────────────────────────────────────── */}
-      <main className="max-w-[1400px] mx-auto px-8 py-6 pb-16">
+      <main className="max-w-[1400px] mx-auto px-4 sm:px-8 py-6 pb-16">
 
         {/* Status strip */}
         <div className="h-5 mb-6 flex items-center justify-center font-mono text-[0.6rem] tracking-widest">
