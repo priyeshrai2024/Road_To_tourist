@@ -90,35 +90,22 @@ function MiniBar({ value, max, color }: { value: number; max: number; color: str
 // ── Animated Flow Ring ────────────────────────────────────────────────────────
 function FlowRing({ phase, targetRest, restSecs }: { phase: Phase; targetRest: number; restSecs: number }) {
   const r = 110, c = 2 * Math.PI * r;
-  const pct = phase === 'REST' && targetRest > 0 ? Math.min(restSecs / targetRest, 1) : 0;
+  // During rest, pct goes from 1 down to 0 as it counts down
+  const pct = phase === 'REST' && targetRest > 0 ? Math.max(0, restSecs / targetRest) : 0;
+  
   return (
     <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 280 280">
-      {/* Background track */}
-      <circle cx="140" cy="140" r={r} fill="none" stroke={T.border} strokeWidth="1" />
       {phase === 'FLOW' && (
-        <>
-          <circle cx="140" cy="140" r={r} fill="none" stroke={T.accent} strokeWidth="1"
-            strokeDasharray="3 22" strokeLinecap="round"
-            style={{ transformOrigin: 'center', animation: 'grindRingSpin 60s linear infinite', opacity: 0.4 }} />
-          <circle cx="140" cy="140" r={r - 8} fill="none" stroke={T.accent} strokeWidth="0.5"
-            strokeDasharray="1 30" strokeLinecap="round"
-            style={{ transformOrigin: 'center', animation: 'grindRingSpin 35s linear infinite reverse', opacity: 0.2 }} />
-        </>
+        <circle cx="140" cy="140" r={r} fill="none" stroke={T.accent} strokeWidth="2.5"
+          strokeDasharray="4 16" strokeLinecap="round"
+          style={{ transformOrigin: 'center', animation: 'grindRingSpin 45s linear infinite, pulseRing 4s ease-in-out infinite' }} />
       )}
       {phase === 'REST' && (
         <>
           <circle cx="140" cy="140" r={r} fill="none" stroke={T.border} strokeWidth="3" />
           <circle cx="140" cy="140" r={r} fill="none" stroke={T.blue} strokeWidth="3" strokeLinecap="round"
             strokeDasharray={`${c * pct} ${c * (1 - pct)}`}
-            style={{ transform: 'rotate(-90deg)', transformOrigin: 'center', transition: 'stroke-dasharray 1s ease', filter: `drop-shadow(0 0 6px ${T.blue})` }} />
-          {/* Tick markers */}
-          {[0, 25, 50, 75].map(p => {
-            const angle = (p / 100) * 360 - 90;
-            const rad = angle * Math.PI / 180;
-            const x1 = 140 + (r - 6) * Math.cos(rad), y1 = 140 + (r - 6) * Math.sin(rad);
-            const x2 = 140 + (r + 6) * Math.cos(rad), y2 = 140 + (r + 6) * Math.sin(rad);
-            return <line key={p} x1={x1} y1={y1} x2={x2} y2={y2} stroke={T.border} strokeWidth="1.5" />;
-          })}
+            style={{ transform: 'rotate(-90deg)', transformOrigin: 'center', transition: 'stroke-dasharray 1s linear', filter: `drop-shadow(0 0 6px ${T.blue})`, animation: 'pulseRing 6s ease-in-out infinite' }} />
         </>
       )}
     </svg>
@@ -277,7 +264,9 @@ export default function GrindMode({ handle }: { handle: string }) {
   const [rogueACs, setRogueACs] = useState<any[]>([]);
   const [wrActiveTab, setWrActiveTab] = useState(0);
   const [activeIdleTab, setActiveIdleTab] = useState<'tasks' | 'history'>('tasks');
+  
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastTickRef = useRef<number>(0);
 
   // ── Init ──────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -287,7 +276,7 @@ export default function GrindMode({ handle }: { handle: string }) {
     try { const tg = localStorage.getItem('cf_grind_target'); if (tg) setTargetHrs(parseInt(tg)); } catch {}
     const style = document.createElement('style');
     style.id = 'grind-ring-css';
-    style.textContent = `@keyframes grindRingSpin { 100% { transform: rotate(360deg); } } @keyframes fadeSlideUp { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } } @keyframes pulse-dot { 0%,100%{opacity:1;} 50%{opacity:0.3;} }`;
+    style.textContent = `@keyframes grindRingSpin { 100% { transform: rotate(360deg); } } @keyframes pulseRing { 0%, 100% { transform: scale(0.98); opacity: 0.6; } 50% { transform: scale(1.02); opacity: 1; } } @keyframes fadeSlideUp { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } } @keyframes pulse-dot { 0%,100%{opacity:1;} 50%{opacity:0.3;} }`;
     if (!document.getElementById('grind-ring-css')) document.head.appendChild(style);
   }, []);
 
@@ -316,10 +305,28 @@ export default function GrindMode({ handle }: { handle: string }) {
   // ── Timer ─────────────────────────────────────────────────────────────────
   const startTick = useCallback((field: 'work' | 'rest') => {
     if (timerRef.current) clearInterval(timerRef.current);
+    lastTickRef.current = Date.now();
+    
     timerRef.current = setInterval(() => {
-      if (field === 'work') setWorkSecs(p => p + 1);
-      else setRestSecs(p => p + 1);
-    }, 1000);
+      const now = Date.now();
+      const delta = Math.floor((now - lastTickRef.current) / 1000);
+      
+      if (delta >= 1) {
+        lastTickRef.current += delta * 1000;
+        
+        if (field === 'work') {
+          setWorkSecs(p => p + delta);
+        } else {
+          setRestSecs(p => {
+            if (p - delta <= 0) {
+              if (timerRef.current) clearInterval(timerRef.current);
+              return 0; // Auto-stop at 0
+            }
+            return p - delta;
+          });
+        }
+      }
+    }, 500); // 500ms interval handles background throttling flawlessly
   }, []);
 
   const startFlow = useCallback(() => {
@@ -331,9 +338,36 @@ export default function GrindMode({ handle }: { handle: string }) {
   }, [phase, startTick]);
 
   const initiateRest = useCallback(() => {
-    const rec = Math.max(60, Math.floor(workSecs / 5));
-    setTargetRest(rec); setRestSecs(0);
-    setBreakCount(b => b + 1); setPhase('REST'); startTick('rest');
+    // Dynamic fatigue algorithm
+    let shiftTotalSec = parseInt(localStorage.getItem('cf_grind_shiftTotal') || '0');
+    let lastEnd = parseInt(localStorage.getItem('cf_grind_lastEnd') || '0');
+    
+    // Reset shift if it's been > 2 hours since last session
+    if (Date.now() - lastEnd > 7200000) { shiftTotalSec = 0; }
+    shiftTotalSec += workSecs;
+    localStorage.setItem('cf_grind_shiftTotal', shiftTotalSec.toString());
+    localStorage.setItem('cf_grind_lastEnd', Date.now().toString());
+
+    const shiftHours = shiftTotalSec / 3600;
+    const volMult = 1 + (0.15 * Math.max(0, shiftHours - 4));
+
+    const hour = new Date().getHours();
+    let circMult = 1.0;
+    if (hour >= 22 || hour < 2) circMult = 1.2;
+    else if (hour >= 2 && hour < 6) circMult = 1.5;
+    else if (hour >= 6 && hour < 8) circMult = 1.15;
+
+    // Base assumption for GrindMode is high difficulty
+    const diffMult = 1.25; 
+
+    const rawBreak = (workSecs / 5) * volMult * circMult * diffMult;
+    const rec = Math.max(60, Math.min(Math.floor(rawBreak), 2700));
+
+    setTargetRest(rec); 
+    setRestSecs(rec); // Start at target and count down
+    setBreakCount(b => b + 1); 
+    setPhase('REST'); 
+    startTick('rest');
   }, [workSecs, startTick]);
 
   const resumeFlow = useCallback(() => { setPhase('FLOW'); startTick('work'); }, [startTick]);
@@ -548,7 +582,8 @@ export default function GrindMode({ handle }: { handle: string }) {
   if (phase === 'FLOW' || phase === 'REST') {
     const isFlow = phase === 'FLOW';
     const accent = isFlow ? T.accent : T.blue;
-    const restPct = targetRest > 0 ? Math.min(100, Math.round(restSecs / targetRest * 100)) : 0;
+    // Calculates elapsed % instead of remaining % for the bottom bar
+    const restPct = targetRest > 0 ? Math.min(100, Math.round(((targetRest - restSecs) / targetRest) * 100)) : 0;
     const pinned = tasks.find(t => t.pinned && !t.done);
     const todayACs = history.filter(h => new Date(h.date).toLocaleDateString() === new Date().toLocaleDateString()).reduce((a, h) => a + h.problemsSolved, 0);
 
@@ -590,15 +625,17 @@ export default function GrindMode({ handle }: { handle: string }) {
             <FlowRing phase={phase} targetRest={targetRest} restSecs={restSecs} />
             <div style={{ zIndex: 10, textAlign: 'center' }}>
               <div style={{
-                fontSize: '5.5rem', fontFamily: 'monospace', fontWeight: 300, lineHeight: 1,
-                color: accent, letterSpacing: '-4px',
-                textShadow: `0 0 40px ${accent}50`,
+                fontSize: '5.5rem', fontFamily: 'monospace', fontWeight: 200, lineHeight: 1,
+                color: accent, letterSpacing: '-3px',
+                textShadow: `0 0 30px ${accent}40`,
                 transition: 'color 0.7s ease',
               }}>
                 {isFlow ? fmt(workSecs) : fmt(restSecs)}
               </div>
               {!isFlow && targetRest > 0 && (
-                <div style={{ marginTop: 10, fontSize: 11, fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', color: accent }}>{restPct}% recovered</div>
+                <div style={{ marginTop: 10, fontSize: 11, fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', color: accent }}>
+                  {restSecs === 0 ? 'Ready' : `${Math.round((restSecs / targetRest) * 100)}% remaining`}
+                </div>
               )}
               {isFlow && plannedMins && (
                 <div style={{ marginTop: 8 }}>
@@ -647,7 +684,7 @@ export default function GrindMode({ handle }: { handle: string }) {
                 }} />
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 10, color: T.muted, fontFamily: 'monospace' }}>
-                <span>{fmt(restSecs)} elapsed</span>
+                <span>{fmt(targetRest - restSecs)} elapsed</span>
                 <span>{fmt(targetRest)} target</span>
               </div>
             </div>
@@ -1394,5 +1431,3 @@ export default function GrindMode({ handle }: { handle: string }) {
     </div>
   );
 }
-
-
