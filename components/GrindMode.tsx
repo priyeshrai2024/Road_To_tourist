@@ -78,16 +78,12 @@ function FlowRing({ phase, targetRest, restSecs }: { phase: Phase; targetRest: n
   return (
     <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 280 280">
       {phase === 'FLOW' && (
-        <circle cx="140" cy="140" r={r} fill="none" stroke={T.accent} strokeWidth="2.5"
-          strokeDasharray="4 16" strokeLinecap="round"
-          style={{ transformOrigin: 'center', animation: 'grindRingSpin 45s linear infinite, pulseRing 4s ease-in-out infinite' }} />
+        <circle cx="140" cy="140" r={r} fill="none" stroke={T.accent} strokeWidth="2.5" strokeDasharray="4 16" strokeLinecap="round" style={{ transformOrigin: 'center', animation: 'grindRingSpin 45s linear infinite, pulseRing 4s ease-in-out infinite' }} />
       )}
       {phase === 'REST' && (
         <>
           <circle cx="140" cy="140" r={r} fill="none" stroke={T.border} strokeWidth="3" />
-          <circle cx="140" cy="140" r={r} fill="none" stroke={T.blue} strokeWidth="3" strokeLinecap="round"
-            strokeDasharray={`${c * pct} ${c * (1 - pct)}`}
-            style={{ transform: 'rotate(-90deg)', transformOrigin: 'center', transition: 'stroke-dasharray 1s linear', filter: `drop-shadow(0 0 6px ${T.blue})`, animation: 'pulseRing 6s ease-in-out infinite' }} />
+          <circle cx="140" cy="140" r={r} fill="none" stroke={T.blue} strokeWidth="3" strokeLinecap="round" strokeDasharray={`${c * pct} ${c * (1 - pct)}`} style={{ transform: 'rotate(-90deg)', transformOrigin: 'center', transition: 'stroke-dasharray 1s linear', filter: `drop-shadow(0 0 6px ${T.blue})`, animation: 'pulseRing 6s ease-in-out infinite' }} />
         </>
       )}
     </svg>
@@ -96,14 +92,9 @@ function FlowRing({ phase, targetRest, restSecs }: { phase: Phase; targetRest: n
 
 function StatCard({ label, value, sub, color, icon }: { label: string; value: string; sub?: string; color?: string; icon?: string }) {
   return (
-    <div style={{
-      background: T.card, border: `1px solid ${T.border}`, borderRadius: 12,
-      padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 6, position: 'relative', overflow: 'hidden'
-    }}>
+    <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 6, position: 'relative', overflow: 'hidden' }}>
       {color && <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: color, borderRadius: '12px 12px 0 0' }} />}
-      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: T.muted, display: 'flex', alignItems: 'center', gap: 5 }}>
-        {icon && <span>{icon}</span>}{label}
-      </div>
+      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: T.muted, display: 'flex', alignItems: 'center', gap: 5 }}>{icon && <span>{icon}</span>}{label}</div>
       <div style={{ fontSize: 26, fontWeight: 900, fontFamily: 'monospace', color: color || T.text, lineHeight: 1 }}>{value}</div>
       {sub && <div style={{ fontSize: 10, color: T.muted }}>{sub}</div>}
     </div>
@@ -111,20 +102,20 @@ function StatCard({ label, value, sub, color, icon }: { label: string; value: st
 }
 
 function HourHeatmap({ grid, rawHours }: { grid: number[], rawHours: number[] }) {
+  const [hover, setHover] = useState<number | null>(null);
   const labels = ['12a', '3a', '6a', '9a', '12p', '3p', '6p', '9p'];
+  
   return (
     <div>
-      <div style={{ display: 'flex', gap: 3, alignItems: 'flex-end', height: 36 }}>
+      <div style={{ display: 'flex', gap: 3, alignItems: 'flex-end', height: 36, position: 'relative' }}>
         {grid.map((v, i) => {
           const hrLabel = i === 0 ? '12 AM' : i < 12 ? `${i} AM` : i === 12 ? '12 PM' : `${i - 12} PM`;
+          const tipStyle: React.CSSProperties = { position: 'absolute', bottom: '100%', marginBottom: 8, background: T.surface, border: `1px solid ${T.borderHi}`, padding: '6px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, color: T.text, whiteSpace: 'nowrap', zIndex: 10, boxShadow: `0 8px 24px rgba(0,0,0,0.6)`, pointerEvents: 'none', ...(i < 3 ? { left: 0 } : i > 20 ? { right: 0 } : { left: '50%', transform: 'translateX(-50%)' }) };
+          
           return (
-            <div key={i} title={`${hrLabel}: ${Math.round(rawHours[i])} mins focused`} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
-              <div style={{
-                width: '100%', borderRadius: 2,
-                height: v === 0 ? 3 : 4 + v * 6,
-                background: v === 0 ? T.border : v <= 2 ? `${T.accent}60` : v <= 4 ? `${T.accent}99` : T.accent,
-                transition: 'height 0.4s ease',
-              }} />
+            <div key={i} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)} style={{ position: 'relative', flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
+              {hover === i && <div style={tipStyle}>{hrLabel}: <span style={{ color: T.accent }}>{Math.round(rawHours[i])}m</span></div>}
+              <div style={{ width: '100%', borderRadius: 2, height: v === 0 ? 3 : 4 + v * 6, background: v === 0 ? T.border : v <= 2 ? `${T.accent}60` : v <= 4 ? `${T.accent}99` : T.accent, transition: 'height 0.4s ease' }} />
             </div>
           );
         })}
@@ -137,33 +128,28 @@ function HourHeatmap({ grid, rawHours }: { grid: number[], rawHours: number[] })
 }
 
 function WeekBars({ history }: { history: SessionLog[] }) {
+  const [hover, setHover] = useState<number | null>(null);
   const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   const mon = getWeekMonday(new Date());
   const dMap: Record<string, number> = {};
-  history.forEach(h => {
-    const d = new Date(h.date).toLocaleDateString();
-    dMap[d] = (dMap[d] || 0) + h.workMins;
-  });
-  const vals = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(mon); d.setDate(d.getDate() + i);
-    return dMap[d.toLocaleDateString()] || 0;
-  });
+  history.forEach(h => { const d = new Date(h.date).toLocaleDateString(); dMap[d] = (dMap[d] || 0) + h.workMins; });
+  const vals = Array.from({ length: 7 }, (_, i) => { const d = new Date(mon); d.setDate(d.getDate() + i); return dMap[d.toLocaleDateString()] || 0; });
   const max = Math.max(1, ...vals);
   const todayIdx = new Date().getDay() === 0 ? 6 : new Date().getDay() - 1;
+  
   return (
-    <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end', height: 60 }}>
-      {vals.map((v, i) => (
-        <div key={i} title={`${days[i]}: ${v > 0 ? Math.round(v) + ' mins' : 'No sessions'}`} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
-          <div style={{
-            width: '100%', borderRadius: 3,
-            height: v === 0 ? 3 : Math.max(4, (v / max) * 48),
-            background: i === todayIdx ? T.accent : v > 0 ? `${T.accent}55` : T.border,
-            boxShadow: i === todayIdx && v > 0 ? `0 0 8px ${T.accentGlow}` : 'none',
-            transition: 'height 0.5s ease',
-          }} />
-          <span style={{ fontSize: 9, color: i === todayIdx ? T.accent : T.dim, fontFamily: 'monospace', fontWeight: i === todayIdx ? 700 : 400 }}>{days[i][0]}</span>
-        </div>
-      ))}
+    <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end', height: 60, position: 'relative' }}>
+      {vals.map((v, i) => {
+        const tipStyle: React.CSSProperties = { position: 'absolute', bottom: '100%', marginBottom: 8, background: T.surface, border: `1px solid ${T.borderHi}`, padding: '6px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, color: T.text, whiteSpace: 'nowrap', zIndex: 10, boxShadow: `0 8px 24px rgba(0,0,0,0.6)`, pointerEvents: 'none', ...(i === 0 ? { left: 0 } : i === 6 ? { right: 0 } : { left: '50%', transform: 'translateX(-50%)' }) };
+        
+        return (
+          <div key={i} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)} style={{ position: 'relative', flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+            {hover === i && <div style={tipStyle}>{days[i]}: <span style={{ color: T.accent }}>{v > 0 ? Math.round(v) + 'm' : 'Rest'}</span></div>}
+            <div style={{ width: '100%', borderRadius: 3, height: v === 0 ? 3 : Math.max(4, (v / max) * 48), background: i === todayIdx ? T.accent : v > 0 ? `${T.accent}55` : T.border, boxShadow: i === todayIdx && v > 0 ? `0 0 8px ${T.accentGlow}` : 'none', transition: 'height 0.5s ease' }} />
+            <span style={{ fontSize: 9, color: i === todayIdx ? T.accent : T.dim, fontFamily: 'monospace', fontWeight: i === todayIdx ? 700 : 400 }}>{days[i][0]}</span>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -172,29 +158,15 @@ function SessionRow({ log, onView }: { log: SessionLog, onView: (l: SessionLog) 
   const date = new Date(log.startTs * 1000);
   const stars = log.flowRating || 0;
   return (
-    <div 
-      onClick={() => onView(log)}
-      style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', cursor: 'pointer', transition: 'background 0.15s', borderBottom: `1px solid ${T.border}` }}
-      onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.03)')}
-      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-    >
+    <div onClick={() => onView(log)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', cursor: 'pointer', transition: 'background 0.15s', borderBottom: `1px solid ${T.border}` }} onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.03)')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
       <div style={{ width: 3, height: 32, borderRadius: 2, background: log.type === 'RETROACTIVE RECON' ? T.purple : T.accent, flexShrink: 0 }} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 12, fontWeight: 600, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{log.intent || 'Free Grind'}</div>
         <div style={{ fontSize: 10, color: T.muted, fontFamily: 'monospace', marginTop: 2 }}>{date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} · {date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</div>
       </div>
       <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexShrink: 0 }}>
-        <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: 13, fontWeight: 700, fontFamily: 'monospace', color: T.accent }}>{Math.round(log.workMins)}m</div>
-          <div style={{ fontSize: 10, color: T.muted }}>{log.problemsSolved} ACs</div>
-        </div>
-        {stars > 0 && (
-          <div style={{ display: 'flex', gap: 1 }}>
-            {[1, 2, 3, 4, 5].map(n => (
-              <span key={n} style={{ fontSize: 9, color: n <= stars ? T.accent : T.dim }}>★</span>
-            ))}
-          </div>
-        )}
+        <div style={{ textAlign: 'right' }}><div style={{ fontSize: 13, fontWeight: 700, fontFamily: 'monospace', color: T.accent }}>{Math.round(log.workMins)}m</div><div style={{ fontSize: 10, color: T.muted }}>{log.problemsSolved} ACs</div></div>
+        {stars > 0 && <div style={{ display: 'flex', gap: 1 }}>{[1, 2, 3, 4, 5].map(n => <span key={n} style={{ fontSize: 9, color: n <= stars ? T.accent : T.dim }}>★</span>)}</div>}
         <span style={{ fontSize: 10, color: T.dim }}>▶</span>
       </div>
     </div>
@@ -204,13 +176,15 @@ function SessionRow({ log, onView }: { log: SessionLog, onView: (l: SessionLog) 
 // ── Main Component ────────────────────────────────────────────────────────────
 export default function GrindMode({ handle }: { handle: string }) {
   const [phase, setPhase] = useState<Phase>('IDLE');
-  const [viewingSession, setViewingSession] = useState<SessionLog | null>(null); // New state for history clicks
+  const [viewingSession, setViewingSession] = useState<SessionLog | null>(null);
   const [workSecs, setWorkSecs] = useState(0);
   const [restSecs, setRestSecs] = useState(0);
   const [targetRest, setTargetRest] = useState(0);
   const [intent, setIntent] = useState('');
   const [plannedMins, setPlannedMins] = useState('');
   const [flowRating, setFlowRating] = useState(0);
+  const [hoverRating, setHoverRating] = useState(0); // Interactive stars state
+  const [hoverBucket, setHoverBucket] = useState<string | null>(null); // Rating distribution tooltip
   const [breakCount, setBreakCount] = useState(0);
   const [tasks, setTasks] = useState<GrindTask[]>([]);
   const [newTask, setNewTask] = useState('');
@@ -239,7 +213,7 @@ export default function GrindMode({ handle }: { handle: string }) {
     try { const tg = localStorage.getItem('cf_grind_target'); if (tg) setTargetHrs(parseInt(tg)); } catch {}
     const style = document.createElement('style');
     style.id = 'grind-ring-css';
-    style.textContent = `@keyframes grindRingSpin { 100% { transform: rotate(360deg); } } @keyframes pulseRing { 0%, 100% { transform: scale(0.98); opacity: 0.6; } 50% { transform: scale(1.02); opacity: 1; } } @keyframes fadeSlideUp { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } } @keyframes pulse-dot { 0%,100%{opacity:1;} 50%{opacity:0.3;} }`;
+    style.textContent = `@keyframes grindRingSpin { 100% { transform: rotate(360deg); } } @keyframes pulseRing { 0%, 100% { transform: scale(0.98); opacity: 0.6; } 50% { transform: scale(1.02); opacity: 1; } } @keyframes fadeSlideUp { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } } @keyframes pulse-dot { 0%,100%{opacity:1;} 50%{opacity:0.3;} } @keyframes pulseLog { 0% { box-shadow: 0 0 0 0 rgba(184,187,38,0.4); } 70% { box-shadow: 0 0 0 12px rgba(184,187,38,0); } 100% { box-shadow: 0 0 0 0 rgba(184,187,38,0); } }`;
     if (!document.getElementById('grind-ring-css')) document.head.appendChild(style);
   }, []);
 
@@ -267,41 +241,25 @@ export default function GrindMode({ handle }: { handle: string }) {
   const startTick = useCallback((field: 'work' | 'rest') => {
     if (timerRef.current) clearInterval(timerRef.current);
     lastTickRef.current = Date.now();
-    
     timerRef.current = setInterval(() => {
-      const now = Date.now();
-      const delta = Math.floor((now - lastTickRef.current) / 1000);
-      
+      const delta = Math.floor((Date.now() - lastTickRef.current) / 1000);
       if (delta >= 1) {
         lastTickRef.current += delta * 1000;
-        
-        if (field === 'work') {
-          setWorkSecs(p => p + delta);
-        } else {
-          setRestSecs(p => {
-            if (p - delta <= 0) {
-              if (timerRef.current) clearInterval(timerRef.current);
-              return 0; 
-            }
-            return p - delta;
-          });
-        }
+        if (field === 'work') setWorkSecs(p => p + delta);
+        else setRestSecs(p => { if (p - delta <= 0) { if (timerRef.current) clearInterval(timerRef.current); return 0; } return p - delta; });
       }
     }, 500);
   }, []);
 
   const startFlow = useCallback(() => {
-    if (phase === 'IDLE' || phase === 'INTENT') {
-      setSessionStartTS(Date.now() / 1000);
-      setWorkSecs(0); setBreakCount(0);
-    }
+    if (phase === 'IDLE' || phase === 'INTENT') { setSessionStartTS(Date.now() / 1000); setWorkSecs(0); setBreakCount(0); }
     setPhase('FLOW'); startTick('work');
   }, [phase, startTick]);
 
   const initiateRest = useCallback(() => {
     let shiftTotalSec = parseInt(localStorage.getItem('cf_grind_shiftTotal') || '0');
     let lastEnd = parseInt(localStorage.getItem('cf_grind_lastEnd') || '0');
-    if (Date.now() - lastEnd > 7200000) { shiftTotalSec = 0; }
+    if (Date.now() - lastEnd > 7200000) shiftTotalSec = 0;
     shiftTotalSec += workSecs;
     localStorage.setItem('cf_grind_shiftTotal', shiftTotalSec.toString());
     localStorage.setItem('cf_grind_lastEnd', Date.now().toString());
@@ -310,33 +268,25 @@ export default function GrindMode({ handle }: { handle: string }) {
     const volMult = 1 + (0.15 * Math.max(0, shiftHours - 4));
     const hour = new Date().getHours();
     let circMult = 1.0;
-    if (hour >= 22 || hour < 2) circMult = 1.2;
-    else if (hour >= 2 && hour < 6) circMult = 1.5;
-    else if (hour >= 6 && hour < 8) circMult = 1.15;
-
-    const diffMult = 1.25; 
-    const rawBreak = (workSecs / 5) * volMult * circMult * diffMult;
-    const rec = Math.max(60, Math.min(Math.floor(rawBreak), 2700));
-
-    setTargetRest(rec); setRestSecs(rec); setBreakCount(b => b + 1); 
-    setPhase('REST'); startTick('rest');
+    if (hour >= 22 || hour < 2) circMult = 1.2; else if (hour >= 2 && hour < 6) circMult = 1.5; else if (hour >= 6 && hour < 8) circMult = 1.15;
+    
+    const rec = Math.max(60, Math.min(Math.floor((workSecs / 5) * volMult * circMult * 1.25), 2700));
+    setTargetRest(rec); setRestSecs(rec); setBreakCount(b => b + 1); setPhase('REST'); startTick('rest');
   }, [workSecs, startTick]);
 
   const resumeFlow = useCallback(() => { setPhase('FLOW'); startTick('work'); }, [startTick]);
 
   const terminate = useCallback(async () => {
     if (timerRef.current) clearInterval(timerRef.current);
-    setPhase('RATE'); setSyncing(true);
-    let points = 0, type = 'PRACTICE GRIND';
-    const details: ProbDetail[] = [];
+    setPhase('RATE'); setSyncing(true); setHoverRating(0);
+    let points = 0; const details: ProbDetail[] = [];
     try {
       if (sessionStartTS && handle) {
         const res = await fetch(`https://codeforces.com/api/user.status?handle=${handle}&from=1&count=100`);
         const data = await res.json();
         if (data.status === 'OK') {
           const subs = data.result.filter((s: any) => s.creationTimeSeconds >= sessionStartTS).reverse();
-          let mark = sessionStartTS;
-          const seen = new Set<string>();
+          let mark = sessionStartTS; const seen = new Set<string>();
           subs.forEach((s: any) => {
             if (s.verdict === 'OK' && s.problem && s.author.participantType === 'PRACTICE') {
               const pid = `${s.problem.contestId}-${s.problem.index}`;
@@ -354,12 +304,9 @@ export default function GrindMode({ handle }: { handle: string }) {
     } catch {}
     const avg = details.length > 0 ? Math.round(details.reduce((a, p) => a + p.timeTakenSecs, 0) / details.length) : 0;
     const report: SessionLog = {
-      id: Date.now().toString(), date: new Date().toISOString(),
-      startTs: sessionStartTS || (Date.now() / 1000 - workSecs), endTs: Date.now() / 1000,
-      workMins: parseFloat((workSecs / 60).toFixed(1)),
-      problemsSolved: details.length, pointsEarned: points, type,
-      avgTimeSecs: avg, details, flowRating: 0,
-      intent: intent || undefined, plannedMins: parseInt(plannedMins) || undefined, breakCount,
+      id: Date.now().toString(), date: new Date().toISOString(), startTs: sessionStartTS || (Date.now() / 1000 - workSecs), endTs: Date.now() / 1000,
+      workMins: parseFloat((workSecs / 60).toFixed(1)), problemsSolved: details.length, pointsEarned: points, type: 'PRACTICE GRIND',
+      avgTimeSecs: avg, details, flowRating: 0, intent: intent || undefined, plannedMins: parseInt(plannedMins) || undefined, breakCount,
     };
     setLastReport(report); setSyncing(false); setFlowRating(0);
     setWorkSecs(0); setRestSecs(0); setTargetRest(0); setSessionStartTS(null); setBreakCount(0);
@@ -377,108 +324,51 @@ export default function GrindMode({ handle }: { handle: string }) {
     if (rogueACs.length === 0) return;
     const pts = rogueACs.reduce((sum, s) => sum + (CF_SCORE_MAP[s.problem?.rating ? Math.floor(s.problem.rating / 100) * 100 : 800] || 10), 0);
     const details = rogueACs.map(s => ({ pid: `${s.problem.contestId}-${s.problem.index}`, name: s.problem.name, timeTakenSecs: 0, rating: s.problem.rating || 800 }));
-    const assumedMins = rogueACs.length * 20;
-    const ts = rogueACs[rogueACs.length - 1].creationTimeSeconds;
+    const assumedMins = rogueACs.length * 20; const ts = rogueACs[rogueACs.length - 1].creationTimeSeconds;
     const report: SessionLog = {
       id: Date.now().toString(), date: new Date(ts * 1000).toISOString(), startTs: ts - (assumedMins * 60), endTs: ts,
       workMins: assumedMins, problemsSolved: rogueACs.length, pointsEarned: pts, type: 'RETROACTIVE RECON',
       avgTimeSecs: 0, details, flowRating: 3, intent: 'Logged retroactively', breakCount: 0,
     };
-    saveHistory([report, ...history].sort((a, b) => b.endTs - a.endTs));
-    setRogueACs([]);
+    saveHistory([report, ...history].sort((a, b) => b.endTs - a.endTs)); setRogueACs([]);
   };
 
   const { totalMins, todayMins, streak, weekSecs, peakGrid, rawHours, weeklyReviews } = useMemo(() => {
-    let tMins = 0, tdyMins = 0;
-    const dMap: Record<string, number> = {};
-    const hSecs = new Array(24).fill(0);
+    let tMins = 0, tdyMins = 0; const dMap: Record<string, number> = {}; const hSecs = new Array(24).fill(0);
     const now = new Date(), todayStr = now.toLocaleDateString(), mon = getWeekMonday(now);
     history.forEach(h => {
-      tMins += h.workMins;
-      const dStr = new Date(h.date).toLocaleDateString();
+      tMins += h.workMins; const dStr = new Date(h.date).toLocaleDateString();
       if (dStr === todayStr) tdyMins += h.workMins;
       dMap[dStr] = (dMap[dStr] || 0) + h.workMins;
-      const hour = new Date(h.startTs * 1000).getHours();
-      hSecs[hour] += h.workMins;
+      hSecs[new Date(h.startTs * 1000).getHours()] += h.workMins;
     });
-    let s = 0; let c = new Date();
-    while (true) {
-      if (dMap[c.toLocaleDateString()] > 0) s++;
-      else if (c.toLocaleDateString() !== todayStr) break;
-      c.setDate(c.getDate() - 1);
-    }
-    let wSecs = 0;
-    for (let i = 0; i < 7; i++) { const d = new Date(mon); d.setDate(d.getDate() + i); wSecs += (dMap[d.toLocaleDateString()] || 0) * 60; }
+    let s = 0, c = new Date();
+    while (true) { if (dMap[c.toLocaleDateString()] > 0) s++; else if (c.toLocaleDateString() !== todayStr) break; c.setDate(c.getDate() - 1); }
+    let wSecs = 0; for (let i = 0; i < 7; i++) { const d = new Date(mon); d.setDate(d.getDate() + i); wSecs += (dMap[d.toLocaleDateString()] || 0) * 60; }
     const reviews = [];
     for (let w = 0; w < 4; w++) {
-      const wMon = new Date(mon); wMon.setDate(wMon.getDate() - w * 7);
-      const wSun = new Date(wMon); wSun.setDate(wSun.getDate() + 6);
+      const wMon = new Date(mon); wMon.setDate(wMon.getDate() - w * 7); const wSun = new Date(wMon); wSun.setDate(wSun.getDate() + 6);
       let wTotal = 0, wAcs = 0, maxD = 0, activeD = 0;
       for (let i = 0; i < 7; i++) { const d = new Date(wMon); d.setDate(d.getDate() + i); const dStr = d.toLocaleDateString(); if (dMap[dStr] > 0) { wTotal += dMap[dStr]; activeD++; if (dMap[dStr] > maxD) maxD = dMap[dStr]; } }
       history.filter(h => { const d = new Date(h.date); return d >= wMon && d <= wSun; }).forEach(h => wAcs += h.problemsSolved);
       reviews.push({ label: w === 0 ? 'This Week' : `${wMon.getDate()}/${wMon.getMonth() + 1}`, total: wTotal, acs: wAcs, maxD, activeD });
     }
     const maxH = Math.max(1, ...hSecs);
-    const pGrid = hSecs.map(sec => sec === 0 ? 0 : Math.ceil((sec / maxH) * 5));
-    return { totalMins: tMins, todayMins: tdyMins, streak: s, weekSecs: wSecs, peakGrid: pGrid, rawHours: hSecs, weeklyReviews: reviews };
+    return { totalMins: tMins, todayMins: tdyMins, streak: s, weekSecs: wSecs, peakGrid: hSecs.map(sec => sec === 0 ? 0 : Math.ceil((sec / maxH) * 5)), rawHours: hSecs, weeklyReviews: reviews };
   }, [history]);
-
   const weekPct = Math.min(100, Math.round((weekSecs / (targetHrs * 3600)) * 100));
 
   // ════════════════════════════════════════════════════════════════════════════
   // PHASE: INTENT
   // ════════════════════════════════════════════════════════════════════════════
   if (phase === 'INTENT') return (
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: 'rgba(16,17,18,0.96)', backdropFilter: 'blur(12px)', padding: 24, fontFamily: 'sans-serif'
-    }}>
-      <div style={{
-        width: '100%', maxWidth: 460, background: T.surface, border: `1px solid ${T.border}`,
-        borderRadius: 20, padding: 36, boxShadow: `0 32px 80px rgba(0,0,0,0.6), 0 0 0 1px ${T.border}`,
-        animation: 'fadeSlideUp 0.3s ease'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 28 }}>
-          <div style={{ width: 32, height: 32, borderRadius: 8, background: T.accentDim, border: `1px solid ${T.accent}40`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>⚡</div>
-          <div>
-            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', color: T.accent }}>Pre-Session Brief</div>
-            <div style={{ fontSize: 18, fontWeight: 900, color: T.text, marginTop: 1 }}>Set your target</div>
-          </div>
-        </div>
-        <div style={{ marginBottom: 16 }}>
-          <label style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: T.muted, display: 'block', marginBottom: 8 }}>Session intent</label>
-          <input
-            value={intent} onChange={e => setIntent(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') startFlow(); if (e.key === 'Escape') setPhase('IDLE'); }}
-            placeholder="e.g. Clear 3 Div2 D's…" autoFocus
-            style={{ width: '100%', padding: '12px 14px', borderRadius: 10, fontSize: 14, color: T.text, background: 'rgba(0,0,0,0.3)', border: `1px solid ${T.borderHi}`, outline: 'none', boxSizing: 'border-box', transition: 'border-color 0.15s' }}
-            onFocus={e => e.target.style.borderColor = T.accent} onBlur={e => e.target.style.borderColor = T.borderHi}
-          />
-        </div>
-        <div style={{ marginBottom: 28 }}>
-          <label style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: T.muted, display: 'block', marginBottom: 8 }}>Planned duration</label>
-          <div style={{ display: 'flex', gap: 8 }}>
-            {[60, 90, 120].map(m => (
-              <button key={m} onClick={() => setPlannedMins(String(m))} style={{ flex: 1, padding: '10px 0', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer', transition: 'all 0.15s', background: plannedMins === String(m) ? T.accentDim : 'rgba(0,0,0,0.2)', border: `1px solid ${plannedMins === String(m) ? T.accent : T.border}`, color: plannedMins === String(m) ? T.accent : T.muted }}>{m}m</button>
-            ))}
-            <input type="number" placeholder="custom" value={[60, 90, 120].includes(Number(plannedMins)) ? '' : plannedMins} onChange={e => setPlannedMins(e.target.value)} style={{ flex: 1, padding: '10px 8px', borderRadius: 8, fontSize: 12, textAlign: 'center', background: 'rgba(0,0,0,0.2)', border: `1px solid ${T.border}`, color: T.text, outline: 'none' }} />
-          </div>
-        </div>
-        {tmrPlan.length > 0 && (
-          <div style={{ marginBottom: 24, padding: '12px 14px', borderRadius: 10, background: T.card, border: `1px solid ${T.border}` }}>
-            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: T.muted, marginBottom: 8 }}>Today's priorities</div>
-            {tmrPlan.map((t, i) => (
-              <div key={t.id} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginBottom: 4 }}>
-                <span style={{ fontSize: 10, fontFamily: 'monospace', color: T.accent, minWidth: 14 }}>{i + 1}.</span>
-                <span style={{ fontSize: 12, color: T.text }}>{t.text}</span>
-              </div>
-            ))}
-          </div>
-        )}
-        <div style={{ display: 'flex', gap: 10 }}>
-          <button onClick={() => setPhase('IDLE')} style={{ padding: '13px 20px', borderRadius: 10, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'transparent', border: `1px solid ${T.border}`, color: T.muted, transition: 'all 0.15s', letterSpacing: '1px', textTransform: 'uppercase' }} onMouseEnter={e => { e.currentTarget.style.borderColor = T.borderHi; e.currentTarget.style.color = T.text; }} onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.color = T.muted; }}>Abort</button>
-          <button onClick={startFlow} style={{ flex: 1, padding: '13px 0', borderRadius: 10, fontSize: 13, fontWeight: 900, cursor: 'pointer', background: T.accent, border: 'none', color: T.bg, letterSpacing: '2px', textTransform: 'uppercase', boxShadow: `0 4px 20px ${T.accentGlow}`, transition: 'all 0.15s' }} onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = `0 6px 24px ${T.accentGlow}`; }} onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = `0 4px 20px ${T.accentGlow}`; }}>⚡ Engage</button>
-        </div>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(16,17,18,0.96)', backdropFilter: 'blur(12px)', padding: 24, fontFamily: 'sans-serif' }}>
+      <div style={{ width: '100%', maxWidth: 460, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 20, padding: 36, boxShadow: `0 32px 80px rgba(0,0,0,0.6), 0 0 0 1px ${T.border}`, animation: 'fadeSlideUp 0.3s ease' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 28 }}><div style={{ width: 32, height: 32, borderRadius: 8, background: T.accentDim, border: `1px solid ${T.accent}40`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>⚡</div><div><div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', color: T.accent }}>Pre-Session Brief</div><div style={{ fontSize: 18, fontWeight: 900, color: T.text, marginTop: 1 }}>Set your target</div></div></div>
+        <div style={{ marginBottom: 16 }}><label style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: T.muted, display: 'block', marginBottom: 8 }}>Session intent</label><input value={intent} onChange={e => setIntent(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') startFlow(); if (e.key === 'Escape') setPhase('IDLE'); }} placeholder="e.g. Clear 3 Div2 D's…" autoFocus style={{ width: '100%', padding: '12px 14px', borderRadius: 10, fontSize: 14, color: T.text, background: 'rgba(0,0,0,0.3)', border: `1px solid ${T.borderHi}`, outline: 'none', boxSizing: 'border-box', transition: 'border-color 0.15s' }} onFocus={e => e.target.style.borderColor = T.accent} onBlur={e => e.target.style.borderColor = T.borderHi} /></div>
+        <div style={{ marginBottom: 28 }}><label style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: T.muted, display: 'block', marginBottom: 8 }}>Planned duration</label><div style={{ display: 'flex', gap: 8 }}>{[60, 90, 120].map(m => (<button key={m} onClick={() => setPlannedMins(String(m))} style={{ flex: 1, padding: '10px 0', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer', transition: 'all 0.15s', background: plannedMins === String(m) ? T.accentDim : 'rgba(0,0,0,0.2)', border: `1px solid ${plannedMins === String(m) ? T.accent : T.border}`, color: plannedMins === String(m) ? T.accent : T.muted }}>{m}m</button>))}<input type="number" placeholder="custom" value={[60, 90, 120].includes(Number(plannedMins)) ? '' : plannedMins} onChange={e => setPlannedMins(e.target.value)} style={{ flex: 1, padding: '10px 8px', borderRadius: 8, fontSize: 12, textAlign: 'center', background: 'rgba(0,0,0,0.2)', border: `1px solid ${T.border}`, color: T.text, outline: 'none' }} /></div></div>
+        {tmrPlan.length > 0 && (<div style={{ marginBottom: 24, padding: '12px 14px', borderRadius: 10, background: T.card, border: `1px solid ${T.border}` }}><div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: T.muted, marginBottom: 8 }}>Today's priorities</div>{tmrPlan.map((t, i) => (<div key={t.id} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginBottom: 4 }}><span style={{ fontSize: 10, fontFamily: 'monospace', color: T.accent, minWidth: 14 }}>{i + 1}.</span><span style={{ fontSize: 12, color: T.text }}>{t.text}</span></div>))}</div>)}
+        <div style={{ display: 'flex', gap: 10 }}><button onClick={() => setPhase('IDLE')} style={{ padding: '13px 20px', borderRadius: 10, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'transparent', border: `1px solid ${T.border}`, color: T.muted, transition: 'all 0.15s', letterSpacing: '1px', textTransform: 'uppercase' }} onMouseEnter={e => { e.currentTarget.style.borderColor = T.borderHi; e.currentTarget.style.color = T.text; }} onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.color = T.muted; }}>Abort</button><button onClick={startFlow} style={{ flex: 1, padding: '13px 0', borderRadius: 10, fontSize: 13, fontWeight: 900, cursor: 'pointer', background: T.accent, border: 'none', color: T.bg, letterSpacing: '2px', textTransform: 'uppercase', boxShadow: `0 4px 20px ${T.accentGlow}`, transition: 'all 0.15s' }} onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = `0 6px 24px ${T.accentGlow}`; }} onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = `0 4px 20px ${T.accentGlow}`; }}>⚡ Engage</button></div>
       </div>
     </div>
   );
@@ -487,75 +377,21 @@ export default function GrindMode({ handle }: { handle: string }) {
   // PHASE: FLOW / REST
   // ════════════════════════════════════════════════════════════════════════════
   if (phase === 'FLOW' || phase === 'REST') {
-    const isFlow = phase === 'FLOW';
-    const accent = isFlow ? T.accent : T.blue;
+    const isFlow = phase === 'FLOW'; const accent = isFlow ? T.accent : T.blue;
     const restPct = targetRest > 0 ? Math.min(100, Math.round(((targetRest - restSecs) / targetRest) * 100)) : 0;
     const pinned = tasks.find(t => t.pinned && !t.done);
     const todayACs = history.filter(h => new Date(h.date).toLocaleDateString() === new Date().toLocaleDateString()).reduce((a, h) => a + h.problemsSolved, 0);
 
     return (
-      <div style={{
-        position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', flexDirection: 'column',
-        background: '#0c0d0e', fontFamily: 'sans-serif', overflow: 'hidden', userSelect: 'none',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 28px', borderBottom: `1px solid ${T.border}` }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{ width: 6, height: 6, borderRadius: '50%', background: accent, animation: 'pulse-dot 2s ease-in-out infinite' }} />
-            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '2.5px', textTransform: 'uppercase', color: accent }}>{isFlow ? 'Flow State Active' : 'Recovery Protocol'}</span>
-          </div>
-          <div style={{ display: 'flex', gap: 24, alignItems: 'center' }}>
-            {intent && <span style={{ fontSize: 11, color: T.muted, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>↳ {intent}</span>}
-            <div style={{ display: 'flex', gap: 16 }}>
-              <div style={{ textAlign: 'center' }}><div style={{ fontSize: 9, letterSpacing: '1px', textTransform: 'uppercase', color: T.dim }}>breaks</div><div style={{ fontSize: 14, fontWeight: 700, fontFamily: 'monospace', color: T.muted }}>{breakCount}</div></div>
-              <div style={{ textAlign: 'center' }}><div style={{ fontSize: 9, letterSpacing: '1px', textTransform: 'uppercase', color: T.dim }}>today ACs</div><div style={{ fontSize: 14, fontWeight: 700, fontFamily: 'monospace', color: T.green }}>{todayACs}</div></div>
-            </div>
-          </div>
-        </div>
-
+      <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', flexDirection: 'column', background: '#0c0d0e', fontFamily: 'sans-serif', overflow: 'hidden', userSelect: 'none' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 28px', borderBottom: `1px solid ${T.border}` }}><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><div style={{ width: 6, height: 6, borderRadius: '50%', background: accent, animation: 'pulse-dot 2s ease-in-out infinite' }} /><span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '2.5px', textTransform: 'uppercase', color: accent }}>{isFlow ? 'Flow State Active' : 'Recovery Protocol'}</span></div><div style={{ display: 'flex', gap: 24, alignItems: 'center' }}>{intent && <span style={{ fontSize: 11, color: T.muted, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>↳ {intent}</span>}<div style={{ display: 'flex', gap: 16 }}><div style={{ textAlign: 'center' }}><div style={{ fontSize: 9, letterSpacing: '1px', textTransform: 'uppercase', color: T.dim }}>breaks</div><div style={{ fontSize: 14, fontWeight: 700, fontFamily: 'monospace', color: T.muted }}>{breakCount}</div></div><div style={{ textAlign: 'center' }}><div style={{ fontSize: 9, letterSpacing: '1px', textTransform: 'uppercase', color: T.dim }}>today ACs</div><div style={{ fontSize: 14, fontWeight: 700, fontFamily: 'monospace', color: T.green }}>{todayACs}</div></div></div></div></div>
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 32, padding: 24 }}>
-          <div style={{ position: 'relative', width: 300, height: 300, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <FlowRing phase={phase} targetRest={targetRest} restSecs={restSecs} />
-            <div style={{ zIndex: 10, textAlign: 'center' }}>
-              <div style={{ fontSize: '5.5rem', fontFamily: 'monospace', fontWeight: 200, lineHeight: 1, color: accent, letterSpacing: '-3px', textShadow: `0 0 30px ${accent}40`, transition: 'color 0.7s ease' }}>
-                {isFlow ? fmt(workSecs) : fmt(restSecs)}
-              </div>
-              {!isFlow && targetRest > 0 && <div style={{ marginTop: 10, fontSize: 11, fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', color: accent }}>{restSecs === 0 ? 'Ready' : `${Math.round((restSecs / targetRest) * 100)}% remaining`}</div>}
-              {isFlow && plannedMins && (
-                <div style={{ marginTop: 8 }}>
-                  <div style={{ fontSize: 10, color: T.dim, marginBottom: 4, letterSpacing: '1px' }}>target</div>
-                  <MiniBar value={workSecs / 60} max={Number(plannedMins)} color={T.accent} />
-                  <div style={{ fontSize: 10, color: T.muted, marginTop: 4, fontFamily: 'monospace' }}>{Math.round(workSecs / 60)}/{plannedMins}m</div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {isFlow && pinned && (
-            <div style={{ width: '100%', maxWidth: 520, display: 'flex', alignItems: 'center', gap: 14, padding: '14px 18px', borderRadius: 12, background: `${accent}0d`, border: `1px solid ${accent}30` }}>
-              <div style={{ width: 3, height: 36, borderRadius: 2, background: accent, flexShrink: 0 }} />
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: accent, marginBottom: 3 }}>Locked On</div>
-                <div style={{ fontSize: 14, fontWeight: 600, color: T.text }}>{pinned.text}</div>
-                {pinned.estMins && <div style={{ fontSize: 10, color: T.muted, marginTop: 2 }}>est. {pinned.estMins}m</div>}
-              </div>
-              <button onClick={() => saveTasks(tasks.map(t => t.id === pinned.id ? { ...t, done: true } : t))} style={{ padding: '8px 16px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'transparent', border: `1px solid ${accent}`, color: accent, letterSpacing: '1px', textTransform: 'uppercase', transition: 'all 0.15s' }} onMouseEnter={e => { e.currentTarget.style.background = `${accent}20`; }} onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}>Done ✓</button>
-            </div>
-          )}
-
-          {!isFlow && targetRest > 0 && (
-            <div style={{ width: '100%', maxWidth: 520 }}>
-              <div style={{ height: 4, background: T.border, borderRadius: 4, overflow: 'hidden' }}><div style={{ height: '100%', background: T.blue, borderRadius: 4, width: `${restPct}%`, transition: 'width 1s ease', boxShadow: `0 0 12px ${T.blue}60` }} /></div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 10, color: T.muted, fontFamily: 'monospace' }}><span>{fmt(targetRest - restSecs)} elapsed</span><span>{fmt(targetRest)} target</span></div>
-            </div>
-          )}
+          <div style={{ position: 'relative', width: 300, height: 300, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><FlowRing phase={phase} targetRest={targetRest} restSecs={restSecs} /><div style={{ zIndex: 10, textAlign: 'center' }}><div style={{ fontSize: '5.5rem', fontFamily: 'monospace', fontWeight: 200, lineHeight: 1, color: accent, letterSpacing: '-3px', textShadow: `0 0 30px ${accent}40`, transition: 'color 0.7s ease' }}>{isFlow ? fmt(workSecs) : fmt(restSecs)}</div>{!isFlow && targetRest > 0 && <div style={{ marginTop: 10, fontSize: 11, fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', color: accent }}>{restSecs === 0 ? 'Ready' : `${Math.round((restSecs / targetRest) * 100)}% remaining`}</div>}{isFlow && plannedMins && (<div style={{ marginTop: 8 }}><div style={{ fontSize: 10, color: T.dim, marginBottom: 4, letterSpacing: '1px' }}>target</div><MiniBar value={workSecs / 60} max={Number(plannedMins)} color={T.accent} /><div style={{ fontSize: 10, color: T.muted, marginTop: 4, fontFamily: 'monospace' }}>{Math.round(workSecs / 60)}/{plannedMins}m</div></div>)}</div></div>
+          {isFlow && pinned && (<div style={{ width: '100%', maxWidth: 520, display: 'flex', alignItems: 'center', gap: 14, padding: '14px 18px', borderRadius: 12, background: `${accent}0d`, border: `1px solid ${accent}30` }}><div style={{ width: 3, height: 36, borderRadius: 2, background: accent, flexShrink: 0 }} /><div style={{ flex: 1 }}><div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: accent, marginBottom: 3 }}>Locked On</div><div style={{ fontSize: 14, fontWeight: 600, color: T.text }}>{pinned.text}</div>{pinned.estMins && <div style={{ fontSize: 10, color: T.muted, marginTop: 2 }}>est. {pinned.estMins}m</div>}</div><button onClick={() => saveTasks(tasks.map(t => t.id === pinned.id ? { ...t, done: true } : t))} style={{ padding: '8px 16px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'transparent', border: `1px solid ${accent}`, color: accent, letterSpacing: '1px', textTransform: 'uppercase', transition: 'all 0.15s' }} onMouseEnter={e => { e.currentTarget.style.background = `${accent}20`; }} onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}>Done ✓</button></div>)}
+          {!isFlow && targetRest > 0 && (<div style={{ width: '100%', maxWidth: 520 }}><div style={{ height: 4, background: T.border, borderRadius: 4, overflow: 'hidden' }}><div style={{ height: '100%', background: T.blue, borderRadius: 4, width: `${restPct}%`, transition: 'width 1s ease', boxShadow: `0 0 12px ${T.blue}60` }} /></div><div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 10, color: T.muted, fontFamily: 'monospace' }}><span>{fmt(targetRest - restSecs)} elapsed</span><span>{fmt(targetRest)} target</span></div></div>)}
         </div>
-
         <div style={{ padding: '20px 28px', borderTop: `1px solid ${T.border}`, display: 'flex', gap: 12, justifyContent: 'center' }}>
-          {isFlow ? (
-            <button onClick={initiateRest} style={{ padding: '12px 28px', borderRadius: 10, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: T.blueDim, border: `1px solid ${T.blue}50`, color: T.blue, letterSpacing: '1.5px', textTransform: 'uppercase', transition: 'all 0.15s' }} onMouseEnter={e => { e.currentTarget.style.background = `${T.blue}25`; e.currentTarget.style.borderColor = T.blue; }} onMouseLeave={e => { e.currentTarget.style.background = T.blueDim; e.currentTarget.style.borderColor = `${T.blue}50`; }}>⏸ Rest</button>
-          ) : (
-            <button onClick={resumeFlow} style={{ padding: '12px 28px', borderRadius: 10, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: T.accentDim, border: `1px solid ${T.accent}50`, color: T.accent, letterSpacing: '1.5px', textTransform: 'uppercase', transition: 'all 0.15s' }} onMouseEnter={e => { e.currentTarget.style.background = `${T.accent}25`; e.currentTarget.style.borderColor = T.accent; }} onMouseLeave={e => { e.currentTarget.style.background = T.accentDim; e.currentTarget.style.borderColor = `${T.accent}50`; }}>⚡ Resume</button>
-          )}
+          {isFlow ? (<button onClick={initiateRest} style={{ padding: '12px 28px', borderRadius: 10, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: T.blueDim, border: `1px solid ${T.blue}50`, color: T.blue, letterSpacing: '1.5px', textTransform: 'uppercase', transition: 'all 0.15s' }} onMouseEnter={e => { e.currentTarget.style.background = `${T.blue}25`; e.currentTarget.style.borderColor = T.blue; }} onMouseLeave={e => { e.currentTarget.style.background = T.blueDim; e.currentTarget.style.borderColor = `${T.blue}50`; }}>⏸ Rest</button>) : (<button onClick={resumeFlow} style={{ padding: '12px 28px', borderRadius: 10, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: T.accentDim, border: `1px solid ${T.accent}50`, color: T.accent, letterSpacing: '1.5px', textTransform: 'uppercase', transition: 'all 0.15s' }} onMouseEnter={e => { e.currentTarget.style.background = `${T.accent}25`; e.currentTarget.style.borderColor = T.accent; }} onMouseLeave={e => { e.currentTarget.style.background = T.accentDim; e.currentTarget.style.borderColor = `${T.accent}50`; }}>⚡ Resume</button>)}
           <button onClick={terminate} style={{ padding: '12px 24px', borderRadius: 10, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'transparent', border: `1px solid ${T.border}`, color: T.muted, letterSpacing: '1.5px', textTransform: 'uppercase', transition: 'all 0.15s' }} onMouseEnter={e => { e.currentTarget.style.borderColor = T.red; e.currentTarget.style.color = T.red; }} onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.color = T.muted; }}>■ Extract</button>
         </div>
       </div>
@@ -566,11 +402,7 @@ export default function GrindMode({ handle }: { handle: string }) {
   // PHASE: RATE OR VIEWING A PAST SESSION
   // ════════════════════════════════════════════════════════════════════════════
   if (phase === 'RATE' || viewingSession !== null) {
-    const isRate = phase === 'RATE';
-    const r = isRate ? lastReport : viewingSession;
-    const solvedDetails = r?.details ?? [];
-    
-    // Safety math checks to avoid NaN and Infinity
+    const isRate = phase === 'RATE'; const r = isRate ? lastReport : viewingSession; const solvedDetails = r?.details ?? [];
     const focusMins = r ? Math.round(r.workMins) : 0;
     const eff = focusMins > 0 && (r?.problemsSolved || 0) > 0 ? Math.round(focusMins / r!.problemsSolved) : 0;
     const xpPerHour = focusMins > 0 ? Math.round(((r?.pointsEarned || 0) / focusMins) * 60) : 0;
@@ -598,102 +430,101 @@ export default function GrindMode({ handle }: { handle: string }) {
     const ratingColor = (rt: number) => rt >= 2400 ? '#ff0000' : rt >= 2100 ? '#ff8c00' : rt >= 1900 ? '#aa00aa' : rt >= 1600 ? '#0000ff' : rt >= 1400 ? '#03a89e' : rt >= 1200 ? T.green : T.muted;
 
     return (
-      <div style={{
-        position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'stretch',
-        background: '#0c0d0e', fontFamily: 'sans-serif', overflow: 'hidden',
-      }}>
-        {/* Left pane — sticky summary */}
-        <div style={{ width: 260, flexShrink: 0, background: T.surface, borderRight: `1px solid ${T.border}`, display: 'flex', flexDirection: 'column', padding: 28 }}>
-          <div style={{ marginBottom: 28 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-              <div style={{ width: 8, height: 8, borderRadius: '50%', background: isRate ? T.green : T.accent, boxShadow: `0 0 8px ${isRate ? T.green : T.accent}` }} />
-              <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '2.5px', textTransform: 'uppercase', color: isRate ? T.green : T.accent }}>{isRate ? 'Extraction Complete' : 'Session Record'}</span>
+      <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'stretch', background: '#0c0d0e', fontFamily: 'sans-serif', overflow: 'hidden' }}>
+        
+        {/* Left Pane Upgrade: Sleek Gradient & Animated Button */}
+        <div style={{ width: 280, flexShrink: 0, background: `linear-gradient(160deg, ${T.surface} 0%, #111 100%)`, borderRight: `1px solid ${T.border}`, display: 'flex', flexDirection: 'column', padding: 32 }}>
+          <div style={{ marginBottom: 32 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <div style={{ width: 8, height: 8, borderRadius: '50%', background: isRate ? T.green : T.accent, boxShadow: `0 0 12px ${isRate ? T.green : T.accent}` }} />
+              <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '2.5px', textTransform: 'uppercase', color: isRate ? T.green : T.accent }}>{isRate ? 'Extraction Complete' : 'Session Record'}</span>
             </div>
-            <div style={{ fontSize: 22, fontWeight: 900, color: T.text, lineHeight: 1.2 }}>Session<br/>Debrief</div>
-            {r?.intent && <div style={{ marginTop: 8, fontSize: 11, color: T.muted, fontStyle: 'italic' }}>"{r.intent}"</div>}
-            {!isRate && r && <div style={{ marginTop: 4, fontSize: 10, color: T.dim, fontFamily: 'monospace' }}>{new Date(r.startTs * 1000).toLocaleDateString()}</div>}
+            <div style={{ fontSize: 28, fontWeight: 900, color: T.text, lineHeight: 1.1, letterSpacing: '-0.5px' }}>Session<br/>Debrief</div>
+            {r?.intent && <div style={{ marginTop: 10, fontSize: 12, color: T.muted, fontStyle: 'italic', borderLeft: `2px solid ${T.borderHi}`, paddingLeft: 10 }}>"{r.intent}"</div>}
+            {!isRate && r && <div style={{ marginTop: 8, fontSize: 11, color: T.dim, fontFamily: 'monospace' }}>{new Date(r.startTs * 1000).toLocaleDateString()}</div>}
           </div>
 
           {syncing ? (
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <div style={{ textAlign: 'center' }}><div style={{ fontSize: 24, marginBottom: 12 }}>⚙️</div><div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', color: T.accent, animation: 'pulse-dot 1.2s ease-in-out infinite' }}>Syncing…</div></div>
-            </div>
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div style={{ textAlign: 'center' }}><div style={{ fontSize: 24, marginBottom: 12 }}>⚙️</div><div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', color: T.accent, animation: 'pulse-dot 1.2s ease-in-out infinite' }}>Syncing…</div></div></div>
           ) : (
             <>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 24 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 32 }}>
                 {[
                   { l: 'Focus Time', v: `${focusMins}m`, sub: plannedM > 0 ? `of ${plannedM}m planned` : undefined, c: T.accent },
                   { l: 'Problems AC\'d', v: String(r?.problemsSolved ?? 0), sub: (r?.problemsSolved ?? 0) > 0 ? `${acRate}/hr rate` : 'none this session', c: T.green },
                   { l: 'XP Earned', v: `+${r?.pointsEarned ?? 0}`, sub: xpPerHour > 0 ? `${xpPerHour} xp/hr` : undefined, c: T.blue },
                 ].map(s => (
-                  <div key={s.l} style={{ padding: '12px 14px', borderRadius: 10, background: T.card, border: `1px solid ${T.border}` }}>
+                  <div key={s.l} style={{ padding: '14px 16px', borderRadius: 12, background: 'rgba(0,0,0,0.2)', border: `1px solid ${T.border}`, transition: 'transform 0.2s, background 0.2s' }} onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.background = 'rgba(255,255,255,0.03)'; }} onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.background = 'rgba(0,0,0,0.2)'; }}>
                     <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: T.muted, marginBottom: 4 }}>{s.l}</div>
-                    <div style={{ fontSize: 26, fontWeight: 900, fontFamily: 'monospace', color: s.c, lineHeight: 1 }}>{s.v}</div>
-                    {s.sub && <div style={{ fontSize: 10, color: T.dim, marginTop: 3 }}>{s.sub}</div>}
+                    <div style={{ fontSize: 28, fontWeight: 900, fontFamily: 'monospace', color: s.c, lineHeight: 1 }}>{s.v}</div>
+                    {s.sub && <div style={{ fontSize: 10, color: T.dim, marginTop: 4 }}>{s.sub}</div>}
                   </div>
                 ))}
               </div>
 
-              {/* Flow rating */}
+              {/* Dynamic Rating Stars Upgrade */}
               <div style={{ marginBottom: 24 }}>
-                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: T.muted, marginBottom: 10 }}>Flow Rating</div>
+                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: T.muted, marginBottom: 12 }}>Flow Rating</div>
                 <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
                   {[1, 2, 3, 4, 5].map(n => {
-                    const active = isRate ? n <= flowRating : n <= (r?.flowRating || 0);
+                    const active = isRate ? n <= (hoverRating || flowRating) : n <= (r?.flowRating || 0);
                     return (
-                      <button key={n} onClick={() => isRate && setFlowRating(n)} style={{
-                        fontSize: 24, background: 'transparent', border: 'none', cursor: isRate ? 'pointer' : 'default',
-                        transition: 'all 0.15s', transform: active ? 'scale(1.2)' : 'scale(1)',
-                        filter: active ? `drop-shadow(0 0 6px ${T.accent})` : 'none',
-                        opacity: active ? 1 : 0.2, color: T.accent, padding: 0,
+                      <button key={n} onClick={() => isRate && setFlowRating(n)} onMouseEnter={() => isRate && setHoverRating(n)} onMouseLeave={() => isRate && setHoverRating(0)} style={{
+                        fontSize: 28, background: 'transparent', border: 'none', cursor: isRate ? 'pointer' : 'default', padding: 0,
+                        transition: 'all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+                        transform: active ? 'scale(1.25)' : 'scale(1)', filter: active ? `drop-shadow(0 0 8px ${T.accent})` : 'none',
+                        opacity: active ? 1 : 0.2, color: T.accent,
                       }}>★</button>
                     )
                   })}
                 </div>
               </div>
 
-              {/* Action button */}
+              {/* Glowing Log Session Button Upgrade */}
               {isRate ? (
-                <button onClick={confirmRate} style={{ width: '100%', padding: '13px 0', borderRadius: 10, fontSize: 12, fontWeight: 900, cursor: 'pointer', background: T.green, border: 'none', color: T.bg, letterSpacing: '2px', textTransform: 'uppercase', boxShadow: `0 4px 16px ${T.greenDim}`, transition: 'all 0.15s', marginTop: 'auto' }} onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-1px)'} onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}>Log Session →</button>
+                <button onClick={confirmRate} style={{ width: '100%', padding: '14px 0', borderRadius: 12, fontSize: 13, fontWeight: 900, cursor: 'pointer', background: T.green, border: 'none', color: T.bg, letterSpacing: '2px', textTransform: 'uppercase', boxShadow: `0 4px 16px ${T.greenDim}`, transition: 'all 0.2s', marginTop: 'auto', animation: 'pulseLog 2s infinite' }} onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.filter = 'brightness(1.1)'; }} onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.filter = 'brightness(1)'; }}>Log Session →</button>
               ) : (
-                <button onClick={() => setViewingSession(null)} style={{ width: '100%', padding: '13px 0', borderRadius: 10, fontSize: 12, fontWeight: 900, cursor: 'pointer', background: 'transparent', border: `1px solid ${T.border}`, color: T.muted, letterSpacing: '2px', textTransform: 'uppercase', transition: 'all 0.15s', marginTop: 'auto' }} onMouseEnter={e => { e.currentTarget.style.borderColor = T.borderHi; e.currentTarget.style.color = T.text; }} onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.color = T.muted; }}>Close Briefing ✕</button>
+                <button onClick={() => setViewingSession(null)} style={{ width: '100%', padding: '14px 0', borderRadius: 12, fontSize: 13, fontWeight: 900, cursor: 'pointer', background: 'transparent', border: `1px solid ${T.borderHi}`, color: T.muted, letterSpacing: '2px', textTransform: 'uppercase', transition: 'all 0.2s', marginTop: 'auto' }} onMouseEnter={e => { e.currentTarget.style.borderColor = T.text; e.currentTarget.style.color = T.text; }} onMouseLeave={e => { e.currentTarget.style.borderColor = T.borderHi; e.currentTarget.style.color = T.muted; }}>Close Briefing ✕</button>
               )}
             </>
           )}
         </div>
 
-        {/* Right pane — scrollable detail stats */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: 32, display: 'flex', flexDirection: 'column', gap: 20 }}>
+        {/* Right pane — Scrollable Content */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '36px 40px', display: 'flex', flexDirection: 'column', gap: 24 }}>
           {syncing ? null : (
             <>
-              {/* Row 1: Time & Pace */}
               <div>
                 <SectionLabel>Time & Pace</SectionLabel>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
-                  <MiniStatCard label="Avg Time/Problem" value={avgTimeSecs > 0 ? fmtSecs(avgTimeSecs) : '—'} color={T.accent} icon="⏱" />
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+                  <MiniStatCard label="Avg Time/Prob" value={avgTimeSecs > 0 ? fmtSecs(avgTimeSecs) : '—'} color={T.accent} icon="⏱" />
                   <MiniStatCard label="Fastest Solve" value={minTimeSecs > 0 ? fmtSecs(minTimeSecs) : '—'} sub={fastestProblem?.name.slice(0, 14)} color={T.green} icon="⚡" />
                   <MiniStatCard label="Slowest Solve" value={maxTimeSecs > 0 ? fmtSecs(maxTimeSecs) : '—'} sub={slowestProblem?.name.slice(0, 14)} color={T.red} icon="🐢" />
                   <MiniStatCard label="Mins/Problem" value={eff > 0 ? `${eff}m` : '—'} sub="focus efficiency" color={T.blue} icon="📐" />
                 </div>
               </div>
 
-              {/* Row 2: Rating Breakdown */}
               <div>
                 <SectionLabel>Rating Breakdown</SectionLabel>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 12 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 16 }}>
                   <MiniStatCard label="Avg Rating" value={avgRating > 0 ? String(avgRating) : '—'} color={ratingColor(avgRating)} icon="★" />
                   <MiniStatCard label="Hardest AC" value={maxRating > 0 ? String(maxRating) : '—'} color={ratingColor(maxRating)} icon="🏆" />
                   <MiniStatCard label="Easiest AC" value={minRating > 0 ? String(minRating) : '—'} color={ratingColor(minRating)} icon="✓" />
                   <MiniStatCard label="Rated Solved" value={`${ratedProblems.length}/${solvedDetails.length}`} color={T.muted} icon="📊" />
                 </div>
                 {bucketEntries.length > 0 && (
-                  <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: '16px 18px' }}>
+                  <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: '16px 20px' }}>
                     <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: T.dim, marginBottom: 12 }}>Distribution</div>
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', height: 52 }}>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', height: 52, position: 'relative' }}>
                       {bucketEntries.map(([bucket, count]) => (
-                        <div key={bucket} title={`Rating ${bucket}: ${count} problems`} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
-                          <div style={{ width: '100%', borderRadius: 3, height: Math.max(4, (count / maxBucketCount) * 40), background: ratingColor(Number(bucket)), opacity: 0.85 }} />
-                          <span style={{ fontSize: 8, color: T.dim, fontFamily: 'monospace' }}>{bucket}</span>
+                        <div key={bucket} onMouseEnter={() => setHoverBucket(bucket)} onMouseLeave={() => setHoverBucket(null)} style={{ position: 'relative', flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+                          {hoverBucket === bucket && (
+                            <div style={{ position: 'absolute', bottom: '100%', marginBottom: 8, background: T.surface, border: `1px solid ${ratingColor(Number(bucket))}`, padding: '6px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, color: T.text, whiteSpace: 'nowrap', zIndex: 10, left: '50%', transform: 'translateX(-50%)', pointerEvents: 'none', boxShadow: '0 8px 24px rgba(0,0,0,0.6)' }}>
+                              Rating {bucket}: <span style={{ color: ratingColor(Number(bucket)) }}>{count} problems</span>
+                            </div>
+                          )}
+                          <div style={{ width: '100%', borderRadius: 3, height: Math.max(4, (count / maxBucketCount) * 40), background: ratingColor(Number(bucket)), opacity: hoverBucket === bucket ? 1 : 0.85, transition: 'all 0.2s' }} />
+                          <span style={{ fontSize: 9, color: T.dim, fontFamily: 'monospace' }}>{bucket}</span>
                         </div>
                       ))}
                     </div>
@@ -701,10 +532,9 @@ export default function GrindMode({ handle }: { handle: string }) {
                 )}
               </div>
 
-              {/* Row 3: Session health */}
               <div>
                 <SectionLabel>Session Health</SectionLabel>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
                   <MiniStatCard label="Breaks Taken" value={String(r?.breakCount ?? 0)} sub={r && r.breakCount > 3 ? 'consider fewer' : 'solid focus'} color={r && (r.breakCount ?? 0) > 3 ? T.red : T.green} icon="⏸" />
                   <MiniStatCard label="Plan Accuracy" value={planAccuracy !== null ? `${planAccuracy}%` : '—'} sub={planAccuracy !== null ? (planAccuracy > 110 ? 'overran' : planAccuracy < 80 ? 'underran' : 'on target') : 'no plan set'} color={planAccuracy !== null ? (planAccuracy >= 80 && planAccuracy <= 110 ? T.green : T.accent) : T.dim} icon="🎯" />
                   <MiniStatCard label="XP / Hour" value={xpPerHour > 0 ? String(xpPerHour) : '—'} sub="grind intensity" color={xpPerHour > 80 ? T.green : xpPerHour > 40 ? T.accent : T.muted} icon="⚡" />
@@ -712,55 +542,50 @@ export default function GrindMode({ handle }: { handle: string }) {
                 </div>
               </div>
 
-              {/* Row 4: Problem Log */}
+              {/* Table Row Hover Upgrade */}
               {solvedDetails.length > 0 && (
                 <div>
                   <SectionLabel>Problem Log</SectionLabel>
                   <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, overflow: 'hidden' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                       <thead>
-                        <tr style={{ borderBottom: `1px solid ${T.border}` }}>
-                          {['#', 'Problem', 'Rating', 'Time Taken', 'Speed'].map(h => (
-                            <th key={h} style={{ padding: '10px 14px', textAlign: h === '#' || h === 'Rating' || h === 'Time Taken' || h === 'Speed' ? 'center' : 'left', fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: T.dim, fontFamily: 'monospace' }}>{h}</th>
-                          ))}
+                        <tr style={{ borderBottom: `1px solid ${T.border}`, background: 'rgba(0,0,0,0.2)' }}>
+                          {['#', 'Problem', 'Rating', 'Time Taken', 'Speed'].map(h => <th key={h} style={{ padding: '12px 16px', textAlign: h === '#' || h === 'Rating' || h === 'Time Taken' || h === 'Speed' ? 'center' : 'left', fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: T.dim, fontFamily: 'monospace' }}>{h}</th>)}
                         </tr>
                       </thead>
                       <tbody>
                         {solvedDetails.map((d, i) => {
                           const isMax = d.timeTakenSecs === maxTimeSecs && timedProblems.length > 1;
                           const isMin = d.timeTakenSecs === minTimeSecs && timedProblems.length > 1;
-                          // Safe math: avoid div-by-zero if all problems took the exact same time
                           const tRange = maxTimeSecs - minTimeSecs;
-                          const speedPct = timedProblems.length > 0 && d.timeTakenSecs > 30 
-                            ? (tRange > 0 ? Math.round((1 - (d.timeTakenSecs - minTimeSecs) / tRange) * 100) : 100) 
-                            : null;
+                          const speedPct = timedProblems.length > 0 && d.timeTakenSecs > 30 ? (tRange > 0 ? Math.round((1 - (d.timeTakenSecs - minTimeSecs) / tRange) * 100) : 100) : null;
                             
                           return (
-                            <tr key={d.pid} style={{ borderTop: i > 0 ? `1px solid ${T.border}` : 'none' }}>
-                              <td style={{ padding: '10px 14px', textAlign: 'center', fontFamily: 'monospace', fontSize: 11, color: T.dim }}>{i + 1}</td>
-                              <td style={{ padding: '10px 14px' }}>
-                                <a href={`https://codeforces.com/problemset/problem/${d.pid.replace('-', '/')}`} target="_blank" rel="noreferrer" style={{ color: T.text, textDecoration: 'none', fontWeight: 600, fontSize: 12 }} onMouseEnter={e => e.currentTarget.style.color = T.accent} onMouseLeave={e => e.currentTarget.style.color = T.text}>{d.name}</a>
-                                <div style={{ fontSize: 10, color: T.dim, fontFamily: 'monospace', marginTop: 1 }}>{d.pid}</div>
+                            <tr key={d.pid} style={{ borderTop: i > 0 ? `1px solid ${T.border}` : 'none', transition: 'background 0.2s' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                              <td style={{ padding: '12px 16px', textAlign: 'center', fontFamily: 'monospace', fontSize: 12, color: T.dim }}>{i + 1}</td>
+                              <td style={{ padding: '12px 16px' }}>
+                                <a href={`https://codeforces.com/problemset/problem/${d.pid.replace('-', '/')}`} target="_blank" rel="noreferrer" style={{ color: T.text, textDecoration: 'none', fontWeight: 600, fontSize: 13 }} onMouseEnter={e => e.currentTarget.style.color = T.accent} onMouseLeave={e => e.currentTarget.style.color = T.text}>{d.name}</a>
+                                <div style={{ fontSize: 11, color: T.dim, fontFamily: 'monospace', marginTop: 2 }}>{d.pid}</div>
                               </td>
-                              <td style={{ padding: '10px 14px', textAlign: 'center' }}>
-                                {d.rating > 0 ? <span style={{ fontSize: 12, fontWeight: 700, fontFamily: 'monospace', color: ratingColor(d.rating) }}>{d.rating}</span> : <span style={{ color: T.dim }}>—</span>}
+                              <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                                {d.rating > 0 ? <span style={{ fontSize: 13, fontWeight: 700, fontFamily: 'monospace', color: ratingColor(d.rating) }}>{d.rating}</span> : <span style={{ color: T.dim }}>—</span>}
                               </td>
-                              <td style={{ padding: '10px 14px', textAlign: 'center', fontFamily: 'monospace', fontSize: 12 }}>
+                              <td style={{ padding: '12px 16px', textAlign: 'center', fontFamily: 'monospace', fontSize: 13 }}>
                                 {d.timeTakenSecs > 30 ? (
                                   <span style={{ color: isMin ? T.green : isMax ? T.red : T.text }}>
                                     {fmtSecs(d.timeTakenSecs)}
-                                    {isMin && <span style={{ marginLeft: 4, fontSize: 9, color: T.green }}>fastest</span>}
-                                    {isMax && <span style={{ marginLeft: 4, fontSize: 9, color: T.red }}>slowest</span>}
+                                    {isMin && <span style={{ marginLeft: 6, fontSize: 9, color: T.green, background: T.greenDim, padding: '2px 6px', borderRadius: 4 }}>fastest</span>}
+                                    {isMax && <span style={{ marginLeft: 6, fontSize: 9, color: T.red, background: T.redDim, padding: '2px 6px', borderRadius: 4 }}>slowest</span>}
                                   </span>
                                 ) : <span style={{ color: T.dim }}>—</span>}
                               </td>
-                              <td style={{ padding: '10px 20px', textAlign: 'center' }}>
+                              <td style={{ padding: '12px 20px', textAlign: 'center' }}>
                                 {speedPct !== null ? (
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                     <div style={{ flex: 1, height: 4, background: T.border, borderRadius: 2, overflow: 'hidden' }}><div style={{ height: '100%', width: `${speedPct}%`, background: speedPct > 60 ? T.green : speedPct > 30 ? T.accent : T.red, borderRadius: 2 }} /></div>
-                                    <span style={{ fontSize: 9, fontFamily: 'monospace', color: T.muted, minWidth: 28 }}>{speedPct}%</span>
+                                    <span style={{ fontSize: 10, fontFamily: 'monospace', color: T.muted, minWidth: 32 }}>{speedPct}%</span>
                                   </div>
-                                ) : <span style={{ color: T.dim, fontSize: 11 }}>—</span>}
+                                ) : <span style={{ color: T.dim, fontSize: 12 }}>—</span>}
                               </td>
                             </tr>
                           );
@@ -771,16 +596,13 @@ export default function GrindMode({ handle }: { handle: string }) {
                 </div>
               )}
 
-              {/* Row 5: Comparison vs avg */}
               {history.length > 0 && r && (
                 <div>
                   <SectionLabel>vs. Your Average</SectionLabel>
                   <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, overflow: 'hidden' }}>
                     {(() => {
-                      // Compare against sessions PRIOR to this one, or safely avoid NaN if none exist
                       const prevSessions = isRate ? history.slice(1) : history.filter(h => h.id !== r.id && h.startTs < r.startTs);
                       const pLen = prevSessions.length > 0 ? prevSessions.length : 1; 
-                      
                       const avgFocusMins = prevSessions.reduce((a, h) => a + h.workMins, 0) / pLen;
                       const avgACs = prevSessions.reduce((a, h) => a + h.problemsSolved, 0) / pLen;
                       const avgXP = prevSessions.reduce((a, h) => a + h.pointsEarned, 0) / pLen;
@@ -795,23 +617,21 @@ export default function GrindMode({ handle }: { handle: string }) {
                       ];
 
                       return (
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                           <thead>
-                            <tr style={{ borderBottom: `1px solid ${T.border}` }}>
-                              {['Metric', 'This Session', 'Your Avg', 'Δ'].map(h => (
-                                <th key={h} style={{ padding: '10px 16px', textAlign: h === 'Metric' ? 'left' : 'center', fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: T.dim }}>{h}</th>
-                              ))}
+                            <tr style={{ borderBottom: `1px solid ${T.border}`, background: 'rgba(0,0,0,0.2)' }}>
+                              {['Metric', 'This Session', 'Your Avg', 'Δ'].map(h => <th key={h} style={{ padding: '12px 16px', textAlign: h === 'Metric' ? 'left' : 'center', fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: T.dim }}>{h}</th>)}
                             </tr>
                           </thead>
                           <tbody>
                             {rows.map((row, i) => (
-                              <tr key={row.metric} style={{ borderTop: i > 0 ? `1px solid ${T.border}` : 'none' }}>
-                                <td style={{ padding: '10px 16px', color: T.muted, fontSize: 12 }}>{row.metric}</td>
-                                <td style={{ padding: '10px 16px', textAlign: 'center', fontFamily: 'monospace', fontWeight: 700, color: T.text }}>{row.current}</td>
-                                <td style={{ padding: '10px 16px', textAlign: 'center', fontFamily: 'monospace', color: T.dim }}>{row.avg}</td>
-                                <td style={{ padding: '10px 16px', textAlign: 'center' }}>
-                                  {prevSessions.length === 0 ? <span style={{ fontSize: 11, color: T.dim }}>—</span> : (
-                                    <span style={{ fontSize: 11, fontWeight: 700, color: row.better ? T.green : T.red }}>{row.better ? '▲' : '▼'}</span>
+                              <tr key={row.metric} style={{ borderTop: i > 0 ? `1px solid ${T.border}` : 'none', transition: 'background 0.2s' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                                <td style={{ padding: '12px 16px', color: T.muted, fontSize: 13 }}>{row.metric}</td>
+                                <td style={{ padding: '12px 16px', textAlign: 'center', fontFamily: 'monospace', fontWeight: 700, color: T.text }}>{row.current}</td>
+                                <td style={{ padding: '12px 16px', textAlign: 'center', fontFamily: 'monospace', color: T.dim }}>{row.avg}</td>
+                                <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                                  {prevSessions.length === 0 ? <span style={{ fontSize: 12, color: T.dim }}>—</span> : (
+                                    <span style={{ fontSize: 12, fontWeight: 900, color: row.better ? T.green : T.red }}>{row.better ? '▲' : '▼'}</span>
                                   )}
                                 </td>
                               </tr>
