@@ -220,6 +220,7 @@ export default function GrindMode({ handle }: { handle: string }) {
     if (!document.getElementById('grind-ring-css')) document.head.appendChild(style);
   }, []);
 
+  // ── FIX: Enhanced Rogue AC Checker ──────────────────────────────────────────
   useEffect(() => {
     if (!handle || phase !== 'IDLE') return;
     const checkForRogues = async () => {
@@ -229,7 +230,23 @@ export default function GrindMode({ handle }: { handle: string }) {
         if (data.status === 'OK') {
           const now = Date.now() / 1000;
           const recent = data.result.filter((s: any) => s.verdict === 'OK' && s.author.participantType === 'PRACTICE' && (now - s.creationTimeSeconds) < 86400 * 2);
-          const missing = recent.filter((s: any) => !history.some(h => s.creationTimeSeconds >= h.startTs && s.creationTimeSeconds <= h.endTs));
+          
+          const missing = recent.filter((s: any) => {
+            const pid = s.problem ? `${s.problem.contestId}-${s.problem.index}` : '';
+            
+            // Check 1: Did we already log this specific problem in any session?
+            const alreadyLogged = history.some(h => h.details && h.details.some(d => d.pid === pid));
+            if (alreadyLogged) return false;
+
+            // Check 2: Does it fall within a session window? (Added +/- 15 min buffer for clock drift)
+            const inTimeWindow = history.some(h => 
+              s.creationTimeSeconds >= (h.startTs - 900) && 
+              s.creationTimeSeconds <= (h.endTs + 900)
+            );
+            
+            return !inTimeWindow;
+          });
+          
           setRogueACs(missing);
         }
       } catch {}
@@ -435,7 +452,6 @@ export default function GrindMode({ handle }: { handle: string }) {
     return (
       <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'stretch', background: '#0c0d0e', fontFamily: 'sans-serif', overflow: 'hidden' }}>
         
-        {/* Left Pane Upgrade: Sleek Gradient & Animated Button */}
         <div style={{ width: 280, flexShrink: 0, background: `linear-gradient(160deg, ${T.surface} 0%, #111 100%)`, borderRight: `1px solid ${T.border}`, display: 'flex', flexDirection: 'column', padding: 32 }}>
           <div style={{ marginBottom: 32 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
@@ -465,7 +481,6 @@ export default function GrindMode({ handle }: { handle: string }) {
                 ))}
               </div>
 
-              {/* Dynamic Rating Stars Upgrade */}
               <div style={{ marginBottom: 24 }}>
                 <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: T.muted, marginBottom: 12 }}>Flow Rating</div>
                 <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
@@ -483,7 +498,6 @@ export default function GrindMode({ handle }: { handle: string }) {
                 </div>
               </div>
 
-              {/* Glowing Log Session Button Upgrade */}
               {isRate ? (
                 <button onClick={confirmRate} style={{ width: '100%', padding: '14px 0', borderRadius: 12, fontSize: 13, fontWeight: 900, cursor: 'pointer', background: T.green, border: 'none', color: T.bg, letterSpacing: '2px', textTransform: 'uppercase', boxShadow: `0 4px 16px ${T.greenDim}`, transition: 'all 0.2s', marginTop: 'auto', animation: 'pulseLog 2s infinite' }} onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.filter = 'brightness(1.1)'; }} onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.filter = 'brightness(1)'; }}>Log Session →</button>
               ) : (
@@ -493,7 +507,6 @@ export default function GrindMode({ handle }: { handle: string }) {
           )}
         </div>
 
-        {/* Right pane — Scrollable Content */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '36px 40px', display: 'flex', flexDirection: 'column', gap: 24 }}>
           {syncing ? null : (
             <>
@@ -545,7 +558,6 @@ export default function GrindMode({ handle }: { handle: string }) {
                 </div>
               </div>
 
-              {/* Table Row Hover Upgrade */}
               {solvedDetails.length > 0 && (
                 <div>
                   <SectionLabel>Problem Log</SectionLabel>
