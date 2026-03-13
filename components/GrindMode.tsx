@@ -208,6 +208,10 @@ export default function GrindMode({ handle }: { handle: string }) {
   
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const lastTickRef = useRef<number>(0);
+  
+  // LIVE MIRROR REF: Prevents race conditions by always serving exact, up-to-date history
+  const historyRef = useRef<SessionLog[]>([]);
+  useEffect(() => { historyRef.current = history; }, [history]);
 
   useEffect(() => {
     try { const h = localStorage.getItem('cf_grind_v4'); if (h) setHistory(JSON.parse(h)); } catch {}
@@ -220,28 +224,40 @@ export default function GrindMode({ handle }: { handle: string }) {
     if (!document.getElementById('grind-ring-css')) document.head.appendChild(style);
   }, []);
 
-  // ── FIX: Enhanced Rogue AC Checker ──────────────────────────────────────────
+  // ── FIX: Robust Rogue AC Detector ───────────────────────────────────────────
   useEffect(() => {
     if (!handle || phase !== 'IDLE') return;
+    
+    let isActive = true; // Prevents stale closures from overwriting state
+
     const checkForRogues = async () => {
       try {
         const res = await fetch(`https://codeforces.com/api/user.status?handle=${handle}&from=1&count=50`);
         const data = await res.json();
+        if (!isActive) return;
+
         if (data.status === 'OK') {
           const now = Date.now() / 1000;
           const recent = data.result.filter((s: any) => s.verdict === 'OK' && s.author.participantType === 'PRACTICE' && (now - s.creationTimeSeconds) < 86400 * 2);
           
+          const dismissedRogues = JSON.parse(localStorage.getItem('cf_grind_dismissed') || '[]');
+          const liveHistory = historyRef.current; // Grab the absolute newest history from the ref
+
           const missing = recent.filter((s: any) => {
             const pid = s.problem ? `${s.problem.contestId}-${s.problem.index}` : '';
-            
-            // Check 1: Did we already log this specific problem in any session?
-            const alreadyLogged = history.some(h => h.details && h.details.some(d => d.pid === pid));
+            if (!pid) return false;
+
+            // Check 0: Did the user manually dismiss this problem before?
+            if (dismissedRogues.includes(pid)) return false;
+
+            // Check 1: Is this specific PID stored safely inside ANY logged session?
+            const alreadyLogged = liveHistory.some(h => h.details && h.details.some(d => d.pid === pid));
             if (alreadyLogged) return false;
 
-            // Check 2: Does it fall within a session window? (Added +/- 15 min buffer for clock drift)
-            const inTimeWindow = history.some(h => 
-              s.creationTimeSeconds >= (h.startTs - 900) && 
-              s.creationTimeSeconds <= (h.endTs + 900)
+            // Check 2: Does it fall inside an active time window? (+/- 20 mins buffer)
+            const inTimeWindow = liveHistory.some(h => 
+              s.creationTimeSeconds >= (h.startTs - 1200) && 
+              s.creationTimeSeconds <= (h.endTs + 1200)
             );
             
             return !inTimeWindow;
@@ -251,8 +267,21 @@ export default function GrindMode({ handle }: { handle: string }) {
         }
       } catch {}
     };
+    
     checkForRogues();
-  }, [handle, phase, history]);
+    
+    // Cleanup function: aborts old fetches if phase changes or unmounts
+    return () => { isActive = false; };
+  }, [handle, phase]); // history removed from dependencies to stop race condition chaining
+
+  const dismissRogues = useCallback(() => {
+    try {
+      const existing = JSON.parse(localStorage.getItem('cf_grind_dismissed') || '[]');
+      const toDismiss = rogueACs.map(s => s.problem ? `${s.problem.contestId}-${s.problem.index}` : '').filter(Boolean);
+      localStorage.setItem('cf_grind_dismissed', JSON.stringify([...existing, ...toDismiss]));
+    } catch {}
+    setRogueACs([]);
+  }, [rogueACs]);
 
   const saveTasks = useCallback((t: GrindTask[]) => { setTasks(t); try { localStorage.setItem('cf_grind_tasks_v4', JSON.stringify(t)); } catch {} }, []);
   const saveHistory = useCallback((h: SessionLog[]) => { setHistory(h); try { localStorage.setItem('cf_grind_v4', JSON.stringify(h)); } catch {} }, []);
@@ -674,7 +703,7 @@ export default function GrindMode({ handle }: { handle: string }) {
       {rogueACs.length > 0 && (
         <div style={{ padding: '14px 18px', marginBottom: 16, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: T.redDim, border: `1px solid ${T.red}40` }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><div style={{ width: 6, height: 6, borderRadius: '50%', background: T.red, animation: 'pulse-dot 1.5s ease-in-out infinite' }} /><div><div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', color: T.red }}>Untracked Activity</div><div style={{ fontSize: 12, color: T.text, marginTop: 2 }}>Solved <strong style={{ color: T.red }}>{rogueACs.length} problems</strong> outside Grind Mode recently</div></div></div>
-          <div style={{ display: 'flex', gap: 8 }}><button onClick={() => setRogueACs([])} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'transparent', border: `1px solid ${T.border}`, color: T.muted, transition: 'all 0.15s', textTransform: 'uppercase', letterSpacing: '1px' }}>Dismiss</button><button onClick={logRogueACs} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: T.red, border: 'none', color: '#fff', transition: 'all 0.15s', textTransform: 'uppercase', letterSpacing: '1px' }}>Log as Session</button></div>
+          <div style={{ display: 'flex', gap: 8 }}><button onClick={dismissRogues} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'transparent', border: `1px solid ${T.border}`, color: T.muted, transition: 'all 0.15s', textTransform: 'uppercase', letterSpacing: '1px' }}>Dismiss</button><button onClick={logRogueACs} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: T.red, border: 'none', color: '#fff', transition: 'all 0.15s', textTransform: 'uppercase', letterSpacing: '1px' }}>Log as Session</button></div>
         </div>
       )}
 
