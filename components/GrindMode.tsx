@@ -26,13 +26,26 @@ function fmt(s: number) {
 
 function getWeekMonday(d: Date) { const day = new Date(d), dow = day.getDay(), diff = dow === 0 ? -6 : 1 - dow; day.setDate(day.getDate() + diff); day.setHours(0, 0, 0, 0); return day; }
 
-// ── Theme ────────────────────────────────────────────────────────────────────
+// ── Dynamic Theme Mapping ────────────────────────────────────────────────────
 const T = {
-  bg: '#161718', surface: '#1e2022', card: '#242628', border: '#2e3133', borderHi: '#3d4245',
-  text: '#e8dcc8', muted: '#7c7468', dim: '#4a4540', accent: '#fabd2f', accentDim: 'rgba(250,189,47,0.12)',
-  accentGlow: 'rgba(250,189,47,0.25)', red: '#fb4934', redDim: 'rgba(251,73,52,0.12)',
-  green: '#b8bb26', greenDim: 'rgba(184,187,38,0.12)', blue: '#83a598', blueDim: 'rgba(131,165,152,0.12)',
-  purple: '#d3869b',
+  bg: 'var(--bg-base)',
+  surface: 'var(--bg-card)',
+  card: 'color-mix(in srgb, var(--bg-card) 60%, transparent)',
+  border: 'var(--border)',
+  borderHi: 'color-mix(in srgb, var(--border) 50%, var(--text-main))',
+  text: 'var(--text-main)',
+  muted: 'var(--text-muted)',
+  dim: 'color-mix(in srgb, var(--text-muted) 50%, transparent)',
+  accent: 'var(--accent)',
+  accentDim: 'var(--accent-10)',
+  accentGlow: 'color-mix(in srgb, var(--accent) 25%, transparent)',
+  red: '#f85149', // Kept hardcoded for semantic warning/error signals
+  redDim: 'rgba(248,81,73,0.12)',
+  green: 'var(--status-ac, #2ea043)',
+  greenDim: 'color-mix(in srgb, var(--status-ac, #2ea043) 15%, transparent)',
+  blue: '#58a6ff',
+  blueDim: 'rgba(88,166,255,0.12)',
+  purple: '#d2a8ff',
 };
 
 function fmtSecs(s: number) {
@@ -118,7 +131,7 @@ function HourHeatmap({ grid, rawHours }: { grid: number[], rawHours: number[] })
           return (
             <div key={i} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)} style={{ position: 'relative', flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
               {hover === i && <div style={tipStyle}>{hrLabel}: <span style={{ color: T.accent }}>{Math.round(rawHours[i])}m</span></div>}
-              <div style={{ width: '100%', borderRadius: 2, height: v === 0 ? 3 : 4 + v * 6, background: v === 0 ? T.border : v <= 2 ? `${T.accent}60` : v <= 4 ? `${T.accent}99` : T.accent, transition: 'height 0.4s ease' }} />
+              <div style={{ width: '100%', borderRadius: 2, height: v === 0 ? 3 : 4 + v * 6, background: v === 0 ? T.border : v <= 2 ? `color-mix(in srgb, var(--accent) 40%, transparent)` : v <= 4 ? `color-mix(in srgb, var(--accent) 70%, transparent)` : T.accent, transition: 'height 0.4s ease' }} />
             </div>
           );
         })}
@@ -148,7 +161,7 @@ function WeekBars({ history }: { history: SessionLog[] }) {
         return (
           <div key={i} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)} style={{ position: 'relative', flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
             {hover === i && <div style={tipStyle}>{days[i]}: <span style={{ color: T.accent }}>{v > 0 ? Math.round(v) + 'm' : 'Rest'}</span></div>}
-            <div style={{ width: '100%', borderRadius: 3, height: v === 0 ? 3 : Math.max(4, (v / max) * 48), background: i === todayIdx ? T.accent : v > 0 ? `${T.accent}55` : T.border, boxShadow: i === todayIdx && v > 0 ? `0 0 8px ${T.accentGlow}` : 'none', transition: 'height 0.5s ease' }} />
+            <div style={{ width: '100%', borderRadius: 3, height: v === 0 ? 3 : Math.max(4, (v / max) * 48), background: i === todayIdx ? T.accent : v > 0 ? `color-mix(in srgb, var(--accent) 55%, transparent)` : T.border, boxShadow: i === todayIdx && v > 0 ? `0 0 8px ${T.accentGlow}` : 'none', transition: 'height 0.5s ease' }} />
             <span style={{ fontSize: 9, color: i === todayIdx ? T.accent : T.dim, fontFamily: 'monospace', fontWeight: i === todayIdx ? 700 : 400 }}>{days[i][0]}</span>
           </div>
         );
@@ -161,7 +174,7 @@ function SessionRow({ log, onView }: { log: SessionLog, onView: (l: SessionLog) 
   const date = new Date(log.startTs * 1000);
   const stars = log.flowRating || 0;
   return (
-    <div onClick={() => onView(log)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', cursor: 'pointer', transition: 'background 0.15s', borderBottom: `1px solid ${T.border}` }} onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.03)')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+    <div onClick={() => onView(log)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', cursor: 'pointer', transition: 'background 0.15s', borderBottom: `1px solid ${T.border}` }} onMouseEnter={e => (e.currentTarget.style.background = 'color-mix(in srgb, var(--text-main) 5%, transparent)')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
       <div style={{ width: 3, height: 32, borderRadius: 2, background: log.type === 'RETROACTIVE RECON' ? T.purple : T.accent, flexShrink: 0 }} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 12, fontWeight: 600, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{log.intent || 'Free Grind'}</div>
@@ -209,7 +222,6 @@ export default function GrindMode({ handle }: { handle: string }) {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const lastTickRef = useRef<number>(0);
   
-  // LIVE MIRROR REF: Prevents race conditions by always serving exact, up-to-date history
   const historyRef = useRef<SessionLog[]>([]);
   useEffect(() => { historyRef.current = history; }, [history]);
 
@@ -220,16 +232,13 @@ export default function GrindMode({ handle }: { handle: string }) {
     try { const tg = localStorage.getItem('cf_grind_target'); if (tg) setTargetHrs(parseInt(tg)); } catch {}
     const style = document.createElement('style');
     style.id = 'grind-ring-css';
-    style.textContent = `@keyframes grindRingSpin { 100% { transform: rotate(360deg); } } @keyframes pulseRing { 0%, 100% { transform: scale(0.98); opacity: 0.6; } 50% { transform: scale(1.02); opacity: 1; } } @keyframes fadeSlideUp { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } } @keyframes pulse-dot { 0%,100%{opacity:1;} 50%{opacity:0.3;} } @keyframes pulseLog { 0% { box-shadow: 0 0 0 0 rgba(184,187,38,0.4); } 70% { box-shadow: 0 0 0 12px rgba(184,187,38,0); } 100% { box-shadow: 0 0 0 0 rgba(184,187,38,0); } }`;
+    style.textContent = `@keyframes grindRingSpin { 100% { transform: rotate(360deg); } } @keyframes pulseRing { 0%, 100% { transform: scale(0.98); opacity: 0.6; } 50% { transform: scale(1.02); opacity: 1; } } @keyframes fadeSlideUp { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } } @keyframes pulse-dot { 0%,100%{opacity:1;} 50%{opacity:0.3;} } @keyframes pulseLog { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--status-ac, #2ea043) 40%, transparent); } 70% { box-shadow: 0 0 0 12px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }`;
     if (!document.getElementById('grind-ring-css')) document.head.appendChild(style);
   }, []);
 
-  // ── FIX: Robust Rogue AC Detector ───────────────────────────────────────────
   useEffect(() => {
     if (!handle || phase !== 'IDLE') return;
-    
-    let isActive = true; // Prevents stale closures from overwriting state
-
+    let isActive = true;
     const checkForRogues = async () => {
       try {
         const res = await fetch(`https://codeforces.com/api/user.status?handle=${handle}&from=1&count=50`);
@@ -239,40 +248,24 @@ export default function GrindMode({ handle }: { handle: string }) {
         if (data.status === 'OK') {
           const now = Date.now() / 1000;
           const recent = data.result.filter((s: any) => s.verdict === 'OK' && s.author.participantType === 'PRACTICE' && (now - s.creationTimeSeconds) < 86400 * 2);
-          
           const dismissedRogues = JSON.parse(localStorage.getItem('cf_grind_dismissed') || '[]');
-          const liveHistory = historyRef.current; // Grab the absolute newest history from the ref
+          const liveHistory = historyRef.current;
 
           const missing = recent.filter((s: any) => {
             const pid = s.problem ? `${s.problem.contestId}-${s.problem.index}` : '';
-            if (!pid) return false;
-
-            // Check 0: Did the user manually dismiss this problem before?
-            if (dismissedRogues.includes(pid)) return false;
-
-            // Check 1: Is this specific PID stored safely inside ANY logged session?
+            if (!pid || dismissedRogues.includes(pid)) return false;
             const alreadyLogged = liveHistory.some(h => h.details && h.details.some(d => d.pid === pid));
             if (alreadyLogged) return false;
-
-            // Check 2: Does it fall inside an active time window? (+/- 20 mins buffer)
-            const inTimeWindow = liveHistory.some(h => 
-              s.creationTimeSeconds >= (h.startTs - 1200) && 
-              s.creationTimeSeconds <= (h.endTs + 1200)
-            );
-            
+            const inTimeWindow = liveHistory.some(h => s.creationTimeSeconds >= (h.startTs - 1200) && s.creationTimeSeconds <= (h.endTs + 1200));
             return !inTimeWindow;
           });
-          
           setRogueACs(missing);
         }
       } catch {}
     };
-    
     checkForRogues();
-    
-    // Cleanup function: aborts old fetches if phase changes or unmounts
     return () => { isActive = false; };
-  }, [handle, phase]); // history removed from dependencies to stop race condition chaining
+  }, [handle, phase]);
 
   const dismissRogues = useCallback(() => {
     try {
@@ -411,11 +404,11 @@ export default function GrindMode({ handle }: { handle: string }) {
   // PHASE: INTENT
   // ════════════════════════════════════════════════════════════════════════════
   if (phase === 'INTENT') return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(16,17,18,0.96)', backdropFilter: 'blur(12px)', padding: 24, fontFamily: 'sans-serif' }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'color-mix(in srgb, var(--bg-base) 96%, transparent)', backdropFilter: 'blur(12px)', padding: 24, fontFamily: 'sans-serif' }}>
       <div style={{ width: '100%', maxWidth: 460, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 20, padding: 36, boxShadow: `0 32px 80px rgba(0,0,0,0.6), 0 0 0 1px ${T.border}`, animation: 'fadeSlideUp 0.3s ease' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 28 }}><div style={{ width: 32, height: 32, borderRadius: 8, background: T.accentDim, border: `1px solid ${T.accent}40`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>⚡</div><div><div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', color: T.accent }}>Pre-Session Brief</div><div style={{ fontSize: 18, fontWeight: 900, color: T.text, marginTop: 1 }}>Set your target</div></div></div>
-        <div style={{ marginBottom: 16 }}><label style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: T.muted, display: 'block', marginBottom: 8 }}>Session intent</label><input value={intent} onChange={e => setIntent(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') startFlow(); if (e.key === 'Escape') setPhase('IDLE'); }} placeholder="e.g. Clear 3 Div2 D's…" autoFocus style={{ width: '100%', padding: '12px 14px', borderRadius: 10, fontSize: 14, color: T.text, background: 'rgba(0,0,0,0.3)', border: `1px solid ${T.borderHi}`, outline: 'none', boxSizing: 'border-box', transition: 'border-color 0.15s' }} onFocus={e => e.target.style.borderColor = T.accent} onBlur={e => e.target.style.borderColor = T.borderHi} /></div>
-        <div style={{ marginBottom: 28 }}><label style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: T.muted, display: 'block', marginBottom: 8 }}>Planned duration</label><div style={{ display: 'flex', gap: 8 }}>{[60, 90, 120].map(m => (<button key={m} onClick={() => setPlannedMins(String(m))} style={{ flex: 1, padding: '10px 0', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer', transition: 'all 0.15s', background: plannedMins === String(m) ? T.accentDim : 'rgba(0,0,0,0.2)', border: `1px solid ${plannedMins === String(m) ? T.accent : T.border}`, color: plannedMins === String(m) ? T.accent : T.muted }}>{m}m</button>))}<input type="number" placeholder="custom" value={[60, 90, 120].includes(Number(plannedMins)) ? '' : plannedMins} onChange={e => setPlannedMins(e.target.value)} style={{ flex: 1, padding: '10px 8px', borderRadius: 8, fontSize: 12, textAlign: 'center', background: 'rgba(0,0,0,0.2)', border: `1px solid ${T.border}`, color: T.text, outline: 'none' }} /></div></div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 28 }}><div style={{ width: 32, height: 32, borderRadius: 8, background: T.accentDim, border: `1px solid color-mix(in srgb, var(--accent) 40%, transparent)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>⚡</div><div><div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', color: T.accent }}>Pre-Session Brief</div><div style={{ fontSize: 18, fontWeight: 900, color: T.text, marginTop: 1 }}>Set your target</div></div></div>
+        <div style={{ marginBottom: 16 }}><label style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: T.muted, display: 'block', marginBottom: 8 }}>Session intent</label><input value={intent} onChange={e => setIntent(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') startFlow(); if (e.key === 'Escape') setPhase('IDLE'); }} placeholder="e.g. Clear 3 Div2 D's…" autoFocus style={{ width: '100%', padding: '12px 14px', borderRadius: 10, fontSize: 14, color: T.text, background: 'color-mix(in srgb, var(--bg-base) 40%, transparent)', border: `1px solid ${T.borderHi}`, outline: 'none', boxSizing: 'border-box', transition: 'border-color 0.15s' }} onFocus={e => e.target.style.borderColor = T.accent} onBlur={e => e.target.style.borderColor = T.borderHi} /></div>
+        <div style={{ marginBottom: 28 }}><label style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: T.muted, display: 'block', marginBottom: 8 }}>Planned duration</label><div style={{ display: 'flex', gap: 8 }}>{[60, 90, 120].map(m => (<button key={m} onClick={() => setPlannedMins(String(m))} style={{ flex: 1, padding: '10px 0', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer', transition: 'all 0.15s', background: plannedMins === String(m) ? T.accentDim : 'color-mix(in srgb, var(--bg-base) 40%, transparent)', border: `1px solid ${plannedMins === String(m) ? T.accent : T.border}`, color: plannedMins === String(m) ? T.accent : T.muted }}>{m}m</button>))}<input type="number" placeholder="custom" value={[60, 90, 120].includes(Number(plannedMins)) ? '' : plannedMins} onChange={e => setPlannedMins(e.target.value)} style={{ flex: 1, padding: '10px 8px', borderRadius: 8, fontSize: 12, textAlign: 'center', background: 'color-mix(in srgb, var(--bg-base) 40%, transparent)', border: `1px solid ${T.border}`, color: T.text, outline: 'none' }} /></div></div>
         {tmrPlan.length > 0 && (<div style={{ marginBottom: 24, padding: '12px 14px', borderRadius: 10, background: T.card, border: `1px solid ${T.border}` }}><div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: T.muted, marginBottom: 8 }}>Today's priorities</div>{tmrPlan.map((t, i) => (<div key={t.id} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginBottom: 4 }}><span style={{ fontSize: 10, fontFamily: 'monospace', color: T.accent, minWidth: 14 }}>{i + 1}.</span><span style={{ fontSize: 12, color: T.text }}>{t.text}</span></div>))}</div>)}
         <div style={{ display: 'flex', gap: 10 }}><button onClick={() => setPhase('IDLE')} style={{ padding: '13px 20px', borderRadius: 10, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'transparent', border: `1px solid ${T.border}`, color: T.muted, transition: 'all 0.15s', letterSpacing: '1px', textTransform: 'uppercase' }} onMouseEnter={e => { e.currentTarget.style.borderColor = T.borderHi; e.currentTarget.style.color = T.text; }} onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.color = T.muted; }}>Abort</button><button onClick={startFlow} style={{ flex: 1, padding: '13px 0', borderRadius: 10, fontSize: 13, fontWeight: 900, cursor: 'pointer', background: T.accent, border: 'none', color: T.bg, letterSpacing: '2px', textTransform: 'uppercase', boxShadow: `0 4px 20px ${T.accentGlow}`, transition: 'all 0.15s' }} onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = `0 6px 24px ${T.accentGlow}`; }} onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = `0 4px 20px ${T.accentGlow}`; }}>⚡ Engage</button></div>
       </div>
@@ -432,15 +425,15 @@ export default function GrindMode({ handle }: { handle: string }) {
     const todayACs = history.filter(h => new Date(h.date).toLocaleDateString() === new Date().toLocaleDateString()).reduce((a, h) => a + h.problemsSolved, 0);
 
     return (
-      <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', flexDirection: 'column', background: '#0c0d0e', fontFamily: 'sans-serif', overflow: 'hidden', userSelect: 'none' }}>
+      <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', flexDirection: 'column', background: 'var(--bg-base)', fontFamily: 'sans-serif', overflow: 'hidden', userSelect: 'none' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 28px', borderBottom: `1px solid ${T.border}` }}><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><div style={{ width: 6, height: 6, borderRadius: '50%', background: accent, animation: 'pulse-dot 2s ease-in-out infinite' }} /><span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '2.5px', textTransform: 'uppercase', color: accent }}>{isFlow ? 'Flow State Active' : 'Recovery Protocol'}</span></div><div style={{ display: 'flex', gap: 24, alignItems: 'center' }}>{intent && <span style={{ fontSize: 11, color: T.muted, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>↳ {intent}</span>}<div style={{ display: 'flex', gap: 16 }}><div style={{ textAlign: 'center' }}><div style={{ fontSize: 9, letterSpacing: '1px', textTransform: 'uppercase', color: T.dim }}>breaks</div><div style={{ fontSize: 14, fontWeight: 700, fontFamily: 'monospace', color: T.muted }}>{breakCount}</div></div><div style={{ textAlign: 'center' }}><div style={{ fontSize: 9, letterSpacing: '1px', textTransform: 'uppercase', color: T.dim }}>today ACs</div><div style={{ fontSize: 14, fontWeight: 700, fontFamily: 'monospace', color: T.green }}>{todayACs}</div></div></div></div></div>
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 32, padding: 24 }}>
-          <div style={{ position: 'relative', width: 300, height: 300, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><FlowRing phase={phase} targetRest={targetRest} restSecs={restSecs} /><div style={{ zIndex: 10, textAlign: 'center' }}><div style={{ fontSize: '5.5rem', fontFamily: 'monospace', fontWeight: 200, lineHeight: 1, color: accent, letterSpacing: '-3px', textShadow: `0 0 30px ${accent}40`, transition: 'color 0.7s ease' }}>{isFlow ? fmt(workSecs) : fmt(restSecs)}</div>{!isFlow && targetRest > 0 && <div style={{ marginTop: 10, fontSize: 11, fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', color: accent }}>{restSecs === 0 ? 'Ready' : `${Math.round((restSecs / targetRest) * 100)}% remaining`}</div>}{isFlow && plannedMins && (<div style={{ marginTop: 8 }}><div style={{ fontSize: 10, color: T.dim, marginBottom: 4, letterSpacing: '1px' }}>target</div><MiniBar value={workSecs / 60} max={Number(plannedMins)} color={T.accent} /><div style={{ fontSize: 10, color: T.muted, marginTop: 4, fontFamily: 'monospace' }}>{Math.round(workSecs / 60)}/{plannedMins}m</div></div>)}</div></div>
-          {isFlow && pinned && (<div style={{ width: '100%', maxWidth: 520, display: 'flex', alignItems: 'center', gap: 14, padding: '14px 18px', borderRadius: 12, background: `${accent}0d`, border: `1px solid ${accent}30` }}><div style={{ width: 3, height: 36, borderRadius: 2, background: accent, flexShrink: 0 }} /><div style={{ flex: 1 }}><div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: accent, marginBottom: 3 }}>Locked On</div><div style={{ fontSize: 14, fontWeight: 600, color: T.text }}>{pinned.text}</div>{pinned.estMins && <div style={{ fontSize: 10, color: T.muted, marginTop: 2 }}>est. {pinned.estMins}m</div>}</div><button onClick={() => saveTasks(tasks.map(t => t.id === pinned.id ? { ...t, done: true } : t))} style={{ padding: '8px 16px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'transparent', border: `1px solid ${accent}`, color: accent, letterSpacing: '1px', textTransform: 'uppercase', transition: 'all 0.15s' }} onMouseEnter={e => { e.currentTarget.style.background = `${accent}20`; }} onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}>Done ✓</button></div>)}
-          {!isFlow && targetRest > 0 && (<div style={{ width: '100%', maxWidth: 520 }}><div style={{ height: 4, background: T.border, borderRadius: 4, overflow: 'hidden' }}><div style={{ height: '100%', background: T.blue, borderRadius: 4, width: `${restPct}%`, transition: 'width 1s ease', boxShadow: `0 0 12px ${T.blue}60` }} /></div><div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 10, color: T.muted, fontFamily: 'monospace' }}><span>{fmt(targetRest - restSecs)} elapsed</span><span>{fmt(targetRest)} target</span></div></div>)}
+          <div style={{ position: 'relative', width: 300, height: 300, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><FlowRing phase={phase} targetRest={targetRest} restSecs={restSecs} /><div style={{ zIndex: 10, textAlign: 'center' }}><div style={{ fontSize: '5.5rem', fontFamily: 'monospace', fontWeight: 200, lineHeight: 1, color: accent, letterSpacing: '-3px', textShadow: `0 0 30px color-mix(in srgb, var(--accent) 40%, transparent)`, transition: 'color 0.7s ease' }}>{isFlow ? fmt(workSecs) : fmt(restSecs)}</div>{!isFlow && targetRest > 0 && <div style={{ marginTop: 10, fontSize: 11, fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', color: accent }}>{restSecs === 0 ? 'Ready' : `${Math.round((restSecs / targetRest) * 100)}% remaining`}</div>}{isFlow && plannedMins && (<div style={{ marginTop: 8 }}><div style={{ fontSize: 10, color: T.dim, marginBottom: 4, letterSpacing: '1px' }}>target</div><MiniBar value={workSecs / 60} max={Number(plannedMins)} color={T.accent} /><div style={{ fontSize: 10, color: T.muted, marginTop: 4, fontFamily: 'monospace' }}>{Math.round(workSecs / 60)}/{plannedMins}m</div></div>)}</div></div>
+          {isFlow && pinned && (<div style={{ width: '100%', maxWidth: 520, display: 'flex', alignItems: 'center', gap: 14, padding: '14px 18px', borderRadius: 12, background: `color-mix(in srgb, var(--accent) 5%, transparent)`, border: `1px solid color-mix(in srgb, var(--accent) 30%, transparent)` }}><div style={{ width: 3, height: 36, borderRadius: 2, background: accent, flexShrink: 0 }} /><div style={{ flex: 1 }}><div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: accent, marginBottom: 3 }}>Locked On</div><div style={{ fontSize: 14, fontWeight: 600, color: T.text }}>{pinned.text}</div>{pinned.estMins && <div style={{ fontSize: 10, color: T.muted, marginTop: 2 }}>est. {pinned.estMins}m</div>}</div><button onClick={() => saveTasks(tasks.map(t => t.id === pinned.id ? { ...t, done: true } : t))} style={{ padding: '8px 16px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'transparent', border: `1px solid ${accent}`, color: accent, letterSpacing: '1px', textTransform: 'uppercase', transition: 'all 0.15s' }} onMouseEnter={e => { e.currentTarget.style.background = `color-mix(in srgb, var(--accent) 20%, transparent)`; }} onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}>Done ✓</button></div>)}
+          {!isFlow && targetRest > 0 && (<div style={{ width: '100%', maxWidth: 520 }}><div style={{ height: 4, background: T.border, borderRadius: 4, overflow: 'hidden' }}><div style={{ height: '100%', background: T.blue, borderRadius: 4, width: `${restPct}%`, transition: 'width 1s ease', boxShadow: `0 0 12px color-mix(in srgb, var(--blue) 60%, transparent)` }} /></div><div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 10, color: T.muted, fontFamily: 'monospace' }}><span>{fmt(targetRest - restSecs)} elapsed</span><span>{fmt(targetRest)} target</span></div></div>)}
         </div>
         <div style={{ padding: '20px 28px', borderTop: `1px solid ${T.border}`, display: 'flex', gap: 12, justifyContent: 'center' }}>
-          {isFlow ? (<button onClick={initiateRest} style={{ padding: '12px 28px', borderRadius: 10, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: T.blueDim, border: `1px solid ${T.blue}50`, color: T.blue, letterSpacing: '1.5px', textTransform: 'uppercase', transition: 'all 0.15s' }} onMouseEnter={e => { e.currentTarget.style.background = `${T.blue}25`; e.currentTarget.style.borderColor = T.blue; }} onMouseLeave={e => { e.currentTarget.style.background = T.blueDim; e.currentTarget.style.borderColor = `${T.blue}50`; }}>⏸ Rest</button>) : (<button onClick={resumeFlow} style={{ padding: '12px 28px', borderRadius: 10, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: T.accentDim, border: `1px solid ${T.accent}50`, color: T.accent, letterSpacing: '1.5px', textTransform: 'uppercase', transition: 'all 0.15s' }} onMouseEnter={e => { e.currentTarget.style.background = `${T.accent}25`; e.currentTarget.style.borderColor = T.accent; }} onMouseLeave={e => { e.currentTarget.style.background = T.accentDim; e.currentTarget.style.borderColor = `${T.accent}50`; }}>⚡ Resume</button>)}
+          {isFlow ? (<button onClick={initiateRest} style={{ padding: '12px 28px', borderRadius: 10, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: T.blueDim, border: `1px solid color-mix(in srgb, var(--blue) 50%, transparent)`, color: T.blue, letterSpacing: '1.5px', textTransform: 'uppercase', transition: 'all 0.15s' }} onMouseEnter={e => { e.currentTarget.style.background = `color-mix(in srgb, var(--blue) 25%, transparent)`; e.currentTarget.style.borderColor = T.blue; }} onMouseLeave={e => { e.currentTarget.style.background = T.blueDim; e.currentTarget.style.borderColor = `color-mix(in srgb, var(--blue) 50%, transparent)`; }}>⏸ Rest</button>) : (<button onClick={resumeFlow} style={{ padding: '12px 28px', borderRadius: 10, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: T.accentDim, border: `1px solid color-mix(in srgb, var(--accent) 50%, transparent)`, color: T.accent, letterSpacing: '1.5px', textTransform: 'uppercase', transition: 'all 0.15s' }} onMouseEnter={e => { e.currentTarget.style.background = `color-mix(in srgb, var(--accent) 25%, transparent)`; e.currentTarget.style.borderColor = T.accent; }} onMouseLeave={e => { e.currentTarget.style.background = T.accentDim; e.currentTarget.style.borderColor = `color-mix(in srgb, var(--accent) 50%, transparent)`; }}>⚡ Resume</button>)}
           <button onClick={terminate} style={{ padding: '12px 24px', borderRadius: 10, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'transparent', border: `1px solid ${T.border}`, color: T.muted, letterSpacing: '1.5px', textTransform: 'uppercase', transition: 'all 0.15s' }} onMouseEnter={e => { e.currentTarget.style.borderColor = T.red; e.currentTarget.style.color = T.red; }} onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.color = T.muted; }}>■ Extract</button>
         </div>
       </div>
@@ -479,9 +472,9 @@ export default function GrindMode({ handle }: { handle: string }) {
     const ratingColor = (rt: number) => rt >= 2400 ? '#ff0000' : rt >= 2100 ? '#ff8c00' : rt >= 1900 ? '#aa00aa' : rt >= 1600 ? '#0000ff' : rt >= 1400 ? '#03a89e' : rt >= 1200 ? T.green : T.muted;
 
     return (
-      <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'stretch', background: '#0c0d0e', fontFamily: 'sans-serif', overflow: 'hidden' }}>
+      <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'stretch', background: 'var(--bg-base)', fontFamily: 'sans-serif', overflow: 'hidden' }}>
         
-        <div style={{ width: 280, flexShrink: 0, background: `linear-gradient(160deg, ${T.surface} 0%, #111 100%)`, borderRight: `1px solid ${T.border}`, display: 'flex', flexDirection: 'column', padding: 32 }}>
+        <div style={{ width: 280, flexShrink: 0, background: `linear-gradient(160deg, ${T.surface} 0%, var(--bg-base) 100%)`, borderRight: `1px solid ${T.border}`, display: 'flex', flexDirection: 'column', padding: 32 }}>
           <div style={{ marginBottom: 32 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
               <div style={{ width: 8, height: 8, borderRadius: '50%', background: isRate ? T.green : T.accent, boxShadow: `0 0 12px ${isRate ? T.green : T.accent}` }} />
@@ -502,7 +495,7 @@ export default function GrindMode({ handle }: { handle: string }) {
                   { l: 'Problems AC\'d', v: String(r?.problemsSolved ?? 0), sub: (r?.problemsSolved ?? 0) > 0 ? `${acRate}/hr rate` : 'none this session', c: T.green },
                   { l: 'XP Earned', v: `+${r?.pointsEarned ?? 0}`, sub: xpPerHour > 0 ? `${xpPerHour} xp/hr` : undefined, c: T.blue },
                 ].map(s => (
-                  <div key={s.l} style={{ padding: '14px 16px', borderRadius: 12, background: 'rgba(0,0,0,0.2)', border: `1px solid ${T.border}`, transition: 'transform 0.2s, background 0.2s' }} onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.background = 'rgba(255,255,255,0.03)'; }} onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.background = 'rgba(0,0,0,0.2)'; }}>
+                  <div key={s.l} style={{ padding: '14px 16px', borderRadius: 12, background: 'color-mix(in srgb, var(--bg-base) 40%, transparent)', border: `1px solid ${T.border}`, transition: 'transform 0.2s, background 0.2s' }} onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.background = 'color-mix(in srgb, var(--text-main) 5%, transparent)'; }} onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.background = 'color-mix(in srgb, var(--bg-base) 40%, transparent)'; }}>
                     <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: T.muted, marginBottom: 4 }}>{s.l}</div>
                     <div style={{ fontSize: 28, fontWeight: 900, fontFamily: 'monospace', color: s.c, lineHeight: 1 }}>{s.v}</div>
                     {s.sub && <div style={{ fontSize: 10, color: T.dim, marginTop: 4 }}>{s.sub}</div>}
@@ -528,7 +521,7 @@ export default function GrindMode({ handle }: { handle: string }) {
               </div>
 
               {isRate ? (
-                <button onClick={confirmRate} style={{ width: '100%', padding: '14px 0', borderRadius: 12, fontSize: 13, fontWeight: 900, cursor: 'pointer', background: T.green, border: 'none', color: T.bg, letterSpacing: '2px', textTransform: 'uppercase', boxShadow: `0 4px 16px ${T.greenDim}`, transition: 'all 0.2s', marginTop: 'auto', animation: 'pulseLog 2s infinite' }} onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.filter = 'brightness(1.1)'; }} onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.filter = 'brightness(1)'; }}>Log Session →</button>
+                <button onClick={confirmRate} style={{ width: '100%', padding: '14px 0', borderRadius: 12, fontSize: 13, fontWeight: 900, cursor: 'pointer', background: T.green, border: 'none', color: 'var(--bg-base)', letterSpacing: '2px', textTransform: 'uppercase', boxShadow: `0 4px 16px ${T.greenDim}`, transition: 'all 0.2s', marginTop: 'auto', animation: 'pulseLog 2s infinite' }} onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.filter = 'brightness(1.1)'; }} onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.filter = 'brightness(1)'; }}>Log Session →</button>
               ) : (
                 <button onClick={() => setViewingSession(null)} style={{ width: '100%', padding: '14px 0', borderRadius: 12, fontSize: 13, fontWeight: 900, cursor: 'pointer', background: 'transparent', border: `1px solid ${T.borderHi}`, color: T.muted, letterSpacing: '2px', textTransform: 'uppercase', transition: 'all 0.2s', marginTop: 'auto' }} onMouseEnter={e => { e.currentTarget.style.borderColor = T.text; e.currentTarget.style.color = T.text; }} onMouseLeave={e => { e.currentTarget.style.borderColor = T.borderHi; e.currentTarget.style.color = T.muted; }}>Close Briefing ✕</button>
               )}
@@ -593,7 +586,7 @@ export default function GrindMode({ handle }: { handle: string }) {
                   <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, overflow: 'hidden' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                       <thead>
-                        <tr style={{ borderBottom: `1px solid ${T.border}`, background: 'rgba(0,0,0,0.2)' }}>
+                        <tr style={{ borderBottom: `1px solid ${T.border}`, background: 'color-mix(in srgb, var(--bg-base) 40%, transparent)' }}>
                           {['#', 'Problem', 'Rating', 'Time Taken', 'Speed'].map(h => <th key={h} style={{ padding: '12px 16px', textAlign: h === '#' || h === 'Rating' || h === 'Time Taken' || h === 'Speed' ? 'center' : 'left', fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: T.dim, fontFamily: 'monospace' }}>{h}</th>)}
                         </tr>
                       </thead>
@@ -605,7 +598,7 @@ export default function GrindMode({ handle }: { handle: string }) {
                           const speedPct = timedProblems.length > 0 && d.timeTakenSecs > 30 ? (tRange > 0 ? Math.round((1 - (d.timeTakenSecs - minTimeSecs) / tRange) * 100) : 100) : null;
                             
                           return (
-                            <tr key={d.pid} style={{ borderTop: i > 0 ? `1px solid ${T.border}` : 'none', transition: 'background 0.2s' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                            <tr key={d.pid} style={{ borderTop: i > 0 ? `1px solid ${T.border}` : 'none', transition: 'background 0.2s' }} onMouseEnter={e => e.currentTarget.style.background = 'color-mix(in srgb, var(--text-main) 5%, transparent)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                               <td style={{ padding: '12px 16px', textAlign: 'center', fontFamily: 'monospace', fontSize: 12, color: T.dim }}>{i + 1}</td>
                               <td style={{ padding: '12px 16px' }}>
                                 <a href={`https://codeforces.com/problemset/problem/${d.pid.replace('-', '/')}`} target="_blank" rel="noreferrer" style={{ color: T.text, textDecoration: 'none', fontWeight: 600, fontSize: 13 }} onMouseEnter={e => e.currentTarget.style.color = T.accent} onMouseLeave={e => e.currentTarget.style.color = T.text}>{d.name}</a>
@@ -663,13 +656,13 @@ export default function GrindMode({ handle }: { handle: string }) {
                       return (
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                           <thead>
-                            <tr style={{ borderBottom: `1px solid ${T.border}`, background: 'rgba(0,0,0,0.2)' }}>
+                            <tr style={{ borderBottom: `1px solid ${T.border}`, background: 'color-mix(in srgb, var(--bg-base) 40%, transparent)' }}>
                               {['Metric', 'This Session', 'Your Avg', 'Δ'].map(h => <th key={h} style={{ padding: '12px 16px', textAlign: h === 'Metric' ? 'left' : 'center', fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: T.dim }}>{h}</th>)}
                             </tr>
                           </thead>
                           <tbody>
                             {rows.map((row, i) => (
-                              <tr key={row.metric} style={{ borderTop: i > 0 ? `1px solid ${T.border}` : 'none', transition: 'background 0.2s' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                              <tr key={row.metric} style={{ borderTop: i > 0 ? `1px solid ${T.border}` : 'none', transition: 'background 0.2s' }} onMouseEnter={e => e.currentTarget.style.background = 'color-mix(in srgb, var(--text-main) 5%, transparent)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                                 <td style={{ padding: '12px 16px', color: T.muted, fontSize: 13 }}>{row.metric}</td>
                                 <td style={{ padding: '12px 16px', textAlign: 'center', fontFamily: 'monospace', fontWeight: 700, color: T.text }}>{row.current}</td>
                                 <td style={{ padding: '12px 16px', textAlign: 'center', fontFamily: 'monospace', color: T.dim }}>{row.avg}</td>
@@ -701,7 +694,7 @@ export default function GrindMode({ handle }: { handle: string }) {
     <div style={{ fontFamily: 'sans-serif', color: T.text, maxWidth: 860, margin: '0 auto', paddingBottom: 80, animation: 'fadeSlideUp 0.35s ease' }}>
 
       {rogueACs.length > 0 && (
-        <div style={{ padding: '14px 18px', marginBottom: 16, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: T.redDim, border: `1px solid ${T.red}40` }}>
+        <div style={{ padding: '14px 18px', marginBottom: 16, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: T.redDim, border: `1px solid color-mix(in srgb, ${T.red} 40%, transparent)` }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><div style={{ width: 6, height: 6, borderRadius: '50%', background: T.red, animation: 'pulse-dot 1.5s ease-in-out infinite' }} /><div><div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', color: T.red }}>Untracked Activity</div><div style={{ fontSize: 12, color: T.text, marginTop: 2 }}>Solved <strong style={{ color: T.red }}>{rogueACs.length} problems</strong> outside Grind Mode recently</div></div></div>
           <div style={{ display: 'flex', gap: 8 }}><button onClick={dismissRogues} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'transparent', border: `1px solid ${T.border}`, color: T.muted, transition: 'all 0.15s', textTransform: 'uppercase', letterSpacing: '1px' }}>Dismiss</button><button onClick={logRogueACs} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: T.red, border: 'none', color: '#fff', transition: 'all 0.15s', textTransform: 'uppercase', letterSpacing: '1px' }}>Log as Session</button></div>
         </div>
@@ -709,7 +702,7 @@ export default function GrindMode({ handle }: { handle: string }) {
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
         <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 16, padding: 28, position: 'relative', overflow: 'hidden' }}>
-          <div style={{ position: 'absolute', inset: 0, opacity: 0.03, backgroundImage: 'linear-gradient(#fabd2f 1px, transparent 1px), linear-gradient(90deg, #fabd2f 1px, transparent 1px)', backgroundSize: '24px 24px', pointerEvents: 'none' }} />
+          <div style={{ position: 'absolute', inset: 0, opacity: 0.03, backgroundImage: `linear-gradient(${T.accent} 1px, transparent 1px), linear-gradient(90deg, ${T.accent} 1px, transparent 1px)`, backgroundSize: '24px 24px', pointerEvents: 'none' }} />
           <button onClick={() => setShowSettings(true)} style={{ position: 'absolute', top: 16, right: 16, width: 30, height: 30, borderRadius: 8, background: 'transparent', border: `1px solid ${T.border}`, color: T.muted, cursor: 'pointer', fontSize: 14, transition: 'all 0.15s' }} onMouseEnter={e => { e.currentTarget.style.borderColor = T.borderHi; e.currentTarget.style.color = T.text; e.currentTarget.style.transform = 'rotate(45deg)'; }} onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.color = T.muted; e.currentTarget.style.transform = 'rotate(0)'; }}>⚙</button>
           <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', color: T.muted, marginBottom: 8 }}>Focus Session</div>
           {tmrPlan.length > 0 && (
@@ -718,7 +711,7 @@ export default function GrindMode({ handle }: { handle: string }) {
               {tmrPlan.map((t, i) => <div key={t.id} style={{ fontSize: 12, color: T.text, marginBottom: 2, display: 'flex', gap: 6 }}><span style={{ color: T.accent, fontFamily: 'monospace', fontSize: 10 }}>{i + 1}.</span>{t.text}</div>)}
             </div>
           )}
-          <button onClick={() => setPhase('INTENT')} style={{ width: '100%', padding: '14px 0', borderRadius: 10, fontSize: 14, fontWeight: 900, cursor: 'pointer', background: T.accent, border: 'none', color: T.bg, letterSpacing: '2px', textTransform: 'uppercase', boxShadow: `0 4px 20px ${T.accentGlow}`, transition: 'all 0.15s', marginTop: 8 }} onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = `0 8px 28px ${T.accentGlow}`; }} onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = `0 4px 20px ${T.accentGlow}`; }}>⚡ Start Session</button>
+          <button onClick={() => setPhase('INTENT')} style={{ width: '100%', padding: '14px 0', borderRadius: 10, fontSize: 14, fontWeight: 900, cursor: 'pointer', background: T.accent, border: 'none', color: 'var(--bg-base)', letterSpacing: '2px', textTransform: 'uppercase', boxShadow: `0 4px 20px ${T.accentGlow}`, transition: 'all 0.15s', marginTop: 8 }} onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = `0 8px 28px ${T.accentGlow}`; }} onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = `0 4px 20px ${T.accentGlow}`; }}>⚡ Start Session</button>
           <button onClick={() => setShowTmrModal(true)} style={{ width: '100%', padding: '9px 0', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'transparent', border: `1px solid ${T.border}`, color: T.muted, letterSpacing: '1px', textTransform: 'uppercase', marginTop: 8, transition: 'all 0.15s' }} onMouseEnter={e => { e.currentTarget.style.borderColor = T.borderHi; e.currentTarget.style.color = T.text; }} onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.color = T.muted; }}>📋 Plan Tomorrow</button>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr 1fr', gap: 10 }}>
@@ -766,7 +759,7 @@ export default function GrindMode({ handle }: { handle: string }) {
               <button onClick={() => setNewPri(p => p === 'high' ? 'normal' : 'high')} style={{ width: 40, height: 40, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 15, cursor: 'pointer', transition: 'all 0.15s', flexShrink: 0, background: newPri === 'high' ? T.redDim : 'transparent', border: `1px solid ${newPri === 'high' ? T.red : T.border}`, color: newPri === 'high' ? T.red : T.dim }}>!</button>
               <input value={newTask} onChange={e => setNewTask(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && newTask.trim()) { saveTasks([...tasks, { id: Date.now(), text: newTask.trim(), done: false, pinned: false, priority: newPri, estMins: parseInt(newEst) || undefined }]); setNewTask(''); setNewEst(''); setNewPri('normal'); } }} placeholder="Add a task…" style={{ flex: 1, padding: '10px 14px', borderRadius: 8, fontSize: 13, color: T.text, background: T.card, border: `1px solid ${T.border}`, outline: 'none' }} onFocus={e => e.target.style.borderColor = T.borderHi} onBlur={e => e.target.style.borderColor = T.border} />
               <input type="number" value={newEst} onChange={e => setNewEst(e.target.value)} placeholder="min" style={{ width: 64, padding: '10px 8px', borderRadius: 8, fontSize: 12, textAlign: 'center', color: T.text, background: T.card, border: `1px solid ${T.border}`, outline: 'none' }} />
-              <button onClick={() => { if (newTask.trim()) { saveTasks([...tasks, { id: Date.now(), text: newTask.trim(), done: false, pinned: false, priority: newPri, estMins: parseInt(newEst) || undefined }]); setNewTask(''); setNewEst(''); setNewPri('normal'); } }} style={{ padding: '10px 18px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: T.accentDim, border: `1px solid ${T.accent}40`, color: T.accent, transition: 'all 0.15s', letterSpacing: '1px' }} onMouseEnter={e => { e.currentTarget.style.background = `${T.accent}25`; }} onMouseLeave={e => { e.currentTarget.style.background = T.accentDim; }}>Add</button>
+              <button onClick={() => { if (newTask.trim()) { saveTasks([...tasks, { id: Date.now(), text: newTask.trim(), done: false, pinned: false, priority: newPri, estMins: parseInt(newEst) || undefined }]); setNewTask(''); setNewEst(''); setNewPri('normal'); } }} style={{ padding: '10px 18px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: T.accentDim, border: `1px solid color-mix(in srgb, var(--accent) 40%, transparent)`, color: T.accent, transition: 'all 0.15s', letterSpacing: '1px' }} onMouseEnter={e => { e.currentTarget.style.background = `color-mix(in srgb, var(--accent) 25%, transparent)`; }} onMouseLeave={e => { e.currentTarget.style.background = T.accentDim; }}>Add</button>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {tasks.filter(t => !t.done).length === 0 && <div style={{ textAlign: 'center', padding: '24px 0', fontSize: 12, color: T.dim }}>No open tasks. Add something to work on.</div>}
@@ -775,7 +768,7 @@ export default function GrindMode({ handle }: { handle: string }) {
                   <input type="checkbox" onChange={() => saveTasks(tasks.map(x => x.id === t.id ? { ...x, done: true } : x))} style={{ width: 15, height: 15, cursor: 'pointer', accentColor: T.green }} />
                   <span style={{ flex: 1, fontSize: 13, fontWeight: 500 }}>{t.text}</span>
                   {t.priority === 'high' && <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: T.red, background: T.redDim, padding: '2px 6px', borderRadius: 4 }}>urgent</span>}
-                  {t.estMins && <span style={{ fontSize: 10, fontFamily: 'monospace', color: T.muted, background: 'rgba(255,255,255,0.04)', padding: '2px 6px', borderRadius: 4 }}>~{t.estMins}m</span>}
+                  {t.estMins && <span style={{ fontSize: 10, fontFamily: 'monospace', color: T.muted, background: 'color-mix(in srgb, var(--text-main) 5%, transparent)', padding: '2px 6px', borderRadius: 4 }}>~{t.estMins}m</span>}
                   <button onClick={() => saveTasks(tasks.map(x => ({ ...x, pinned: x.id === t.id ? !x.pinned : false })))} style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 13, opacity: t.pinned ? 1 : 0.3, transition: 'opacity 0.15s' }} title="Pin as focus target">📌</button>
                   <button onClick={() => saveTasks(tasks.filter(x => x.id !== t.id))} style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 12, color: T.dim, transition: 'color 0.15s' }} onMouseEnter={e => e.currentTarget.style.color = T.red} onMouseLeave={e => e.currentTarget.style.color = T.dim}>✕</button>
                 </div>
@@ -812,7 +805,7 @@ export default function GrindMode({ handle }: { handle: string }) {
       </div>
 
       {showTmrModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(8px)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'color-mix(in srgb, var(--bg-base) 80%, transparent)', backdropFilter: 'blur(8px)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
           <div style={{ width: '100%', maxWidth: 420, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 20, padding: 32, boxShadow: '0 32px 80px rgba(0,0,0,0.6)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
               <div><div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', color: T.accent }}>Tomorrow</div><div style={{ fontSize: 18, fontWeight: 900, color: T.text }}>Top Priorities</div></div>
@@ -831,7 +824,7 @@ export default function GrindMode({ handle }: { handle: string }) {
             {tmrPlan.length < 3 && (
               <div style={{ display: 'flex', gap: 8 }}>
                 <input value={newTmr} onChange={e => setNewTmr(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && newTmr.trim()) { saveTmrPlan([...tmrPlan, { id: Date.now(), text: newTmr.trim() }]); setNewTmr(''); } }} placeholder="Add a priority…" autoFocus style={{ flex: 1, padding: '11px 14px', borderRadius: 8, fontSize: 13, color: T.text, background: T.card, border: `1px solid ${T.border}`, outline: 'none' }} onFocus={e => e.target.style.borderColor = T.accent} onBlur={e => e.target.style.borderColor = T.border} />
-                <button onClick={() => { if (newTmr.trim()) { saveTmrPlan([...tmrPlan, { id: Date.now(), text: newTmr.trim() }]); setNewTmr(''); } }} style={{ padding: '11px 18px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: T.accentDim, border: `1px solid ${T.accent}40`, color: T.accent, transition: 'all 0.15s' }}>Add</button>
+                <button onClick={() => { if (newTmr.trim()) { saveTmrPlan([...tmrPlan, { id: Date.now(), text: newTmr.trim() }]); setNewTmr(''); } }} style={{ padding: '11px 18px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: T.accentDim, border: `1px solid color-mix(in srgb, var(--accent) 40%, transparent)`, color: T.accent, transition: 'all 0.15s' }}>Add</button>
               </div>
             )}
           </div>
@@ -839,7 +832,7 @@ export default function GrindMode({ handle }: { handle: string }) {
       )}
 
       {showSettings && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(10px)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'color-mix(in srgb, var(--bg-base) 85%, transparent)', backdropFilter: 'blur(10px)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ width: '100%', maxWidth: 720, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 20, display: 'flex', flexDirection: 'column', maxHeight: '88vh', boxShadow: '0 32px 80px rgba(0,0,0,0.6)' }}>
             <div style={{ padding: '24px 28px', borderBottom: `1px solid ${T.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div><div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', color: T.muted }}>Configuration</div><div style={{ fontSize: 18, fontWeight: 900, color: T.text }}>Settings & Data</div></div>
@@ -867,9 +860,9 @@ export default function GrindMode({ handle }: { handle: string }) {
                         <tr key={h.id} style={{ borderTop: `1px solid ${T.border}` }}>
                           <td style={{ padding: '10px 14px', fontFamily: 'monospace', fontSize: 11, color: T.muted }}>{new Date(h.startTs * 1000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</td>
                           <td style={{ padding: '10px 14px', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: T.text }}>{h.intent || '—'}</td>
-                          <td style={{ padding: '10px 14px', textAlign: 'center' }}><input type="number" value={h.workMins} onChange={e => { const v = Number(e.target.value); setHistory(prev => { const next = prev.map(x => x.id === h.id ? { ...x, workMins: v } : x); localStorage.setItem('cf_grind_v4', JSON.stringify(next)); return next; }); }} style={{ width: 54, padding: '4px 6px', borderRadius: 6, textAlign: 'center', fontFamily: 'monospace', fontSize: 12, background: 'rgba(0,0,0,0.3)', border: `1px solid ${T.border}`, color: T.text, outline: 'none' }} /></td>
+                          <td style={{ padding: '10px 14px', textAlign: 'center' }}><input type="number" value={h.workMins} onChange={e => { const v = Number(e.target.value); setHistory(prev => { const next = prev.map(x => x.id === h.id ? { ...x, workMins: v } : x); localStorage.setItem('cf_grind_v4', JSON.stringify(next)); return next; }); }} style={{ width: 54, padding: '4px 6px', borderRadius: 6, textAlign: 'center', fontFamily: 'monospace', fontSize: 12, background: 'color-mix(in srgb, var(--bg-base) 40%, transparent)', border: `1px solid ${T.border}`, color: T.text, outline: 'none' }} /></td>
                           <td style={{ padding: '10px 14px', textAlign: 'center', fontFamily: 'monospace', color: T.green }}>{h.problemsSolved}</td>
-                          <td style={{ padding: '10px 14px', textAlign: 'center' }}><input type="number" min="0" max="5" value={h.flowRating || 0} onChange={e => { const v = Number(e.target.value); setHistory(prev => { const next = prev.map(x => x.id === h.id ? { ...x, flowRating: v } : x); localStorage.setItem('cf_grind_v4', JSON.stringify(next)); return next; }); }} style={{ width: 40, padding: '4px 6px', borderRadius: 6, textAlign: 'center', fontFamily: 'monospace', fontSize: 12, background: 'rgba(0,0,0,0.3)', border: `1px solid ${T.border}`, color: T.accent, outline: 'none' }} /></td>
+                          <td style={{ padding: '10px 14px', textAlign: 'center' }}><input type="number" min="0" max="5" value={h.flowRating || 0} onChange={e => { const v = Number(e.target.value); setHistory(prev => { const next = prev.map(x => x.id === h.id ? { ...x, flowRating: v } : x); localStorage.setItem('cf_grind_v4', JSON.stringify(next)); return next; }); }} style={{ width: 40, padding: '4px 6px', borderRadius: 6, textAlign: 'center', fontFamily: 'monospace', fontSize: 12, background: 'color-mix(in srgb, var(--bg-base) 40%, transparent)', border: `1px solid ${T.border}`, color: T.accent, outline: 'none' }} /></td>
                           <td style={{ padding: '10px 14px' }}><button onClick={() => saveHistory(history.filter(x => x.id !== h.id))} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: T.dim, fontSize: 12, padding: '2px 6px', borderRadius: 4, transition: 'color 0.15s' }} onMouseEnter={e => e.currentTarget.style.color = T.red} onMouseLeave={e => e.currentTarget.style.color = T.dim}>✕</button></td>
                         </tr>
                       ))}
