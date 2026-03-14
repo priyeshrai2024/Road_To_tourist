@@ -3,6 +3,7 @@
 import { useState, useMemo } from "react";
 import { Line, Bar } from 'react-chartjs-2';
 import { CF_SCORE_MAP, SQUAD_COLORS } from "@/lib/constants";
+import { STORAGE_KEYS } from "@/lib/storage-keys";
 import type { SquadMemberData } from "@/lib/types";
 
 // ── Chart helpers ─────────────────────────────────────────────────────────────
@@ -71,6 +72,10 @@ interface SquadOpsTabProps {
 
 export default function SquadOpsTab({ squadMatrix, config, squadCharts, bounties }: SquadOpsTabProps) {
   const [sprintMode, setSprintMode] = useState<'7D' | '30D'>('7D');
+  
+  // Stealth Add State
+  const [isAdding, setIsAdding] = useState(false);
+  const [newHandle, setNewHandle] = useState("");
 
   const allPlayers = [config.main, ...config.squad]
     .filter(h => squadMatrix[h])
@@ -78,6 +83,40 @@ export default function SquadOpsTab({ squadMatrix, config, squadCharts, bounties
 
   const COLORS = allPlayers.map((p, i) => p === config.main ? 'var(--accent)' : SQUAD_COLORS[i % SQUAD_COLORS.length]);
   const cc = squadCharts?.comparisonCharts;
+
+  // ── Stealth Add Logic ─────────────────────────────────────────────────────
+  const handleAddMember = () => {
+    if (!newHandle.trim()) return;
+    // Supports comma separated lists! (e.g. "tourist, benq, jiangly")
+    const handles = newHandle.split(',').map(h => h.trim().toLowerCase()).filter(Boolean);
+    
+    try {
+      const savedConfig = localStorage.getItem(STORAGE_KEYS.CONFIG);
+      if (savedConfig) {
+         const parsed = JSON.parse(savedConfig);
+         let updated = false;
+         
+         handles.forEach(h => {
+           // Only add if not already in the squad and not the main user
+           if (!parsed.squad.map((s: string) => s.toLowerCase()).includes(h) && parsed.main.toLowerCase() !== h) {
+             parsed.squad.push(h);
+             updated = true;
+           }
+         });
+
+         if (updated) {
+           localStorage.setItem(STORAGE_KEYS.CONFIG, JSON.stringify(parsed));
+           // Reloading leverages the main page.tsx data fetcher to perfectly build charts/bounties
+           window.location.reload();
+         } else {
+           setNewHandle("");
+           setIsAdding(false);
+         }
+      }
+    } catch(e) {
+      console.error("Failed to add to squad", e);
+    }
+  };
 
   // ── Contest-style standings ───────────────────────────────────────────────
   const standings = useMemo(() => {
@@ -122,7 +161,33 @@ export default function SquadOpsTab({ squadMatrix, config, squadCharts, bounties
       {/* ── STANDINGS ── */}
       <Card>
         <div className="flex items-center justify-between mb-5">
-          <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--text-muted)' }}>Sprint Standings</p>
+          
+          <div className="flex items-center gap-3">
+            <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--text-muted)' }}>Sprint Standings</p>
+            
+            {/* STEALTH ADD TARGET UI */}
+            <div
+              className="flex items-center transition-all duration-500"
+              style={{ width: isAdding ? '140px' : '10px', opacity: isAdding ? 1 : 0.05 }}
+              onMouseEnter={() => setIsAdding(true)}
+              onMouseLeave={() => !newHandle && setIsAdding(false)}
+            >
+              {isAdding ? (
+                <input
+                  value={newHandle}
+                  onChange={e => setNewHandle(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleAddMember()}
+                  placeholder="handle1, handle2..."
+                  className="w-full bg-transparent outline-none font-mono text-[10px]"
+                  style={{ color: 'var(--text-main)', borderBottom: '1px dashed var(--border)' }}
+                  autoFocus
+                />
+              ) : (
+                <span className="text-[10px] cursor-default select-none font-bold" style={{ color: 'var(--text-main)' }}>+</span>
+              )}
+            </div>
+          </div>
+
           <div className="flex rounded-lg overflow-hidden" style={{ border: '1px solid var(--border)' }}>
             {(['7D', '30D'] as const).map(m => (
               <button key={m} onClick={() => setSprintMode(m)}
@@ -135,6 +200,7 @@ export default function SquadOpsTab({ squadMatrix, config, squadCharts, bounties
             ))}
           </div>
         </div>
+        
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
