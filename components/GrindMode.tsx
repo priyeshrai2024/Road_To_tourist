@@ -509,6 +509,35 @@ export default function GrindMode({ handle }: { handle: string }) {
   }, [history]);
   const weekPct = Math.min(100, Math.round((weekSecs / (targetHrs * 3600)) * 100));
 
+  // ── Update Missing Problem Ratings Automatically ──
+  useEffect(() => {
+    if (viewingSession && viewingSession.isContest) {
+       const hasMissingRatings = viewingSession.details.some(d => !d.rating || d.rating === 0);
+       if (hasMissingRatings) {
+          fetch(`https://codeforces.com/api/contest.status?contestId=${viewingSession.contestId}&handle=${handle}&from=1&count=50`)
+            .then(res => res.json())
+            .then(data => {
+               if (data.status === 'OK') {
+                  let updated = false;
+                  const newDetails = viewingSession.details.map(d => {
+                     const sub = data.result.find((s: any) => s.verdict === 'OK' && s.problem.index === d.index);
+                     if (sub && sub.problem.rating && (!d.rating || d.rating === 0)) {
+                        updated = true;
+                        return { ...d, rating: sub.problem.rating };
+                     }
+                     return d;
+                  });
+                  if (updated) {
+                     const updatedSession = { ...viewingSession, details: newDetails };
+                     setViewingSession(updatedSession);
+                     saveHistory(history.map(h => h.id === updatedSession.id ? updatedSession : h));
+                  }
+               }
+            }).catch(() => {});
+       }
+    }
+  }, [viewingSession, handle, history, saveHistory]);
+
   // ════════════════════════════════════════════════════════════════════════════
   // PHASE: INTENT
   // ════════════════════════════════════════════════════════════════════════════
@@ -553,35 +582,6 @@ export default function GrindMode({ handle }: { handle: string }) {
   // PHASE: RATE OR VIEWING A PAST SESSION
   // ════════════════════════════════════════════════════════════════════════════
   if (phase === 'RATE' || viewingSession !== null) {
-    // ── Update Missing Problem Ratings Automatically ──
-    useEffect(() => {
-      if (viewingSession && viewingSession.isContest) {
-         const hasMissingRatings = viewingSession.details.some(d => !d.rating || d.rating === 0);
-         if (hasMissingRatings) {
-            fetch(`https://codeforces.com/api/contest.status?contestId=${viewingSession.contestId}&handle=${handle}&from=1&count=50`)
-              .then(res => res.json())
-              .then(data => {
-                 if (data.status === 'OK') {
-                    let updated = false;
-                    const newDetails = viewingSession.details.map(d => {
-                       const sub = data.result.find((s: any) => s.verdict === 'OK' && s.problem.index === d.index);
-                       if (sub && sub.problem.rating && (!d.rating || d.rating === 0)) {
-                          updated = true;
-                          return { ...d, rating: sub.problem.rating };
-                       }
-                       return d;
-                    });
-                    if (updated) {
-                       const updatedSession = { ...viewingSession, details: newDetails };
-                       setViewingSession(updatedSession);
-                       saveHistory(history.map(h => h.id === updatedSession.id ? updatedSession : h));
-                    }
-                 }
-              }).catch(() => {});
-         }
-      }
-   }, [viewingSession, handle, history, saveHistory]);
-
     const isRate = phase === 'RATE'; const r = isRate ? lastReport : viewingSession; const solvedDetails = r?.details ?? [];
     const focusMins = r ? Math.round(r.workMins) : 0;
     const eff = focusMins > 0 && (r?.problemsSolved || 0) > 0 ? Math.round(focusMins / r!.problemsSolved) : 0;
