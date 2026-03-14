@@ -131,8 +131,10 @@ export default function Nemesis({ mySubs, myRating, myHandle, myHistory, myInfo 
   const [nemeses, setNemeses] = useState<string[]>([]);
   const [activeNemesis, setActiveNemesis] = useState<string | null>(null);
   const [newNemesis, setNewNemesis] = useState('');
-  const [targetData, setTargetData] = useState<{subs: any[], history: any[], info: any} | null>(null);
-  const [loading, setLoading] = useState(false);
+  
+  // We now use a cache to hold loaded targets so switching is instant!
+  const [nemesisCache, setNemesisCache] = useState<Record<string, {subs: any[], history: any[], info: any}>>({});
+  const [isSyncing, setIsSyncing] = useState(false);
 
   // Load saved nemeses
   useEffect(() => {
@@ -156,15 +158,15 @@ export default function Nemesis({ mySubs, myRating, myHandle, myHistory, myInfo 
     const updated = nemeses.filter(n => n !== handle);
     setNemeses(updated);
     localStorage.setItem('cf_nemeses', JSON.stringify(updated));
-    if (activeNemesis === handle) { setActiveNemesis(null); setTargetData(null); }
+    if (activeNemesis === handle) { setActiveNemesis(null); }
   };
 
-  // Fetch target data independently
+  // Fetch target data independently and update the cache
   useEffect(() => {
-    if (!activeNemesis) { setTargetData(null); return; }
+    if (!activeNemesis) return;
     let isMounted = true;
     const fetchData = async () => {
-      setLoading(true);
+      setIsSyncing(true);
       try {
         const [subsRes, histRes, infoRes] = await Promise.all([
           fetch(`https://codeforces.com/api/user.status?handle=${activeNemesis}&from=1&count=2000`),
@@ -173,14 +175,20 @@ export default function Nemesis({ mySubs, myRating, myHandle, myHistory, myInfo 
         ]);
         const subs = await subsRes.json(); const hist = await histRes.json(); const info = await infoRes.json();
         if (isMounted && subs.status === 'OK' && info.status === 'OK') {
-          setTargetData({ subs: subs.result, history: hist.result || [], info: info.result[0] });
+          setNemesisCache(prev => ({
+            ...prev,
+            [activeNemesis]: { subs: subs.result, history: hist.result || [], info: info.result[0] }
+          }));
         }
       } catch (e) { console.error("Error fetching nemesis", e); }
-      if (isMounted) setLoading(false);
+      if (isMounted) setIsSyncing(false);
     };
     fetchData();
     return () => { isMounted = false; };
   }, [activeNemesis]);
+
+  // Point to the active target's cached data
+  const targetData = activeNemesis ? nemesisCache[activeNemesis] : null;
 
   // ─── METRICS CALCULATION ──────────────────────────────────────────────────────
   const metrics = useMemo(() => {
@@ -341,6 +349,17 @@ export default function Nemesis({ mySubs, myRating, myHandle, myHistory, myInfo 
     };
   }, [metrics]);
 
+  const barData = useMemo(() => {
+      if (!metrics) return null;
+      return { 
+          labels: metrics.sortedTags, 
+          datasets: [
+              { label: myHandle, data: metrics.myTagData, backgroundColor: 'var(--accent)', borderRadius: 4 }, 
+              { label: metrics.targetHandle, data: metrics.theirTagData, backgroundColor: metrics.theirTagColors, borderRadius: 4 }
+          ] 
+      };
+  }, [metrics, myHandle]);
+
 
   return (
     <div className="flex flex-col gap-6 animate-in fade-in duration-300">
@@ -372,14 +391,27 @@ export default function Nemesis({ mySubs, myRating, myHandle, myHistory, myInfo 
         )}
       </div>
 
-      {loading && <div className="text-center py-20 font-bold uppercase tracking-widest animate-pulse" style={{ color: 'var(--status-wa)' }}>Acquiring Target Intel...</div>}
+      {/* ONLY show full-page loading if we don't have the target cached yet */}
+      {isSyncing && !targetData && activeNemesis && (
+        <div className="text-center py-20 font-bold uppercase tracking-widest animate-pulse" style={{ color: 'var(--status-wa)' }}>
+          Acquiring Target Intel...
+        </div>
+      )}
 
-      {/* ── SCOUTING REPORT (Requires Active Nemesis) ── */}
-      {metrics && !loading && (
+      {/* ── SCOUTING REPORT ── */}
+      {metrics && targetData && (
         <div className="flex flex-col gap-5 animate-in slide-in-from-bottom-4 duration-500">
           
-          {/* VS HEADER (Original) */}
+          {/* VS HEADER with Stealthy Background Sync Ping */}
           <div className="flex items-center justify-center gap-8 py-8 px-6 rounded-xl relative overflow-hidden" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+            
+            {isSyncing && (
+              <div className="absolute top-3 right-4 flex items-center gap-2 opacity-70">
+                <div className="w-1.5 h-1.5 rounded-full bg-[var(--status-wa)] animate-ping" />
+                <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: 'var(--status-wa)' }}>Syncing</span>
+              </div>
+            )}
+
             <div className="absolute top-0 left-0 right-0 h-px" style={{ background: 'linear-gradient(90deg, var(--accent), transparent, var(--status-wa))' }} />
             <div className="text-right flex-1">
               <p className="text-xs font-bold uppercase tracking-widest mb-1" style={{ color: 'var(--accent)' }}>You</p>
@@ -392,7 +424,7 @@ export default function Nemesis({ mySubs, myRating, myHandle, myHistory, myInfo 
             </div>
           </div>
 
-          {/* HEAD-TO-HEAD STATS (Original) */}
+          {/* HEAD-TO-HEAD STATS */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <StatDiffCard label="Rating" myVal={metrics.myRatingNow} theirVal={metrics.theirRatingNow} myHandle={myHandle} theirHandle={metrics.targetHandle} />
             <StatDiffCard label="Weighted ACs" myVal={metrics.myWeightedAC} theirVal={metrics.theirWeightedAC} myHandle={myHandle} theirHandle={metrics.targetHandle} />
@@ -400,7 +432,7 @@ export default function Nemesis({ mySubs, myRating, myHandle, myHistory, myInfo 
             <StatDiffCard label="First-Try Acc." myVal={metrics.myAccuracy} theirVal={metrics.tAccuracy} myHandle={myHandle} theirHandle={metrics.targetHandle} suffix="%" />
           </div>
 
-          {/* CALIBER + VELOCITY + THREAT (Original) */}
+          {/* CALIBER + VELOCITY + THREAT */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Card>
               <CardTitle>30-Day Caliber</CardTitle>
@@ -420,13 +452,13 @@ export default function Nemesis({ mySubs, myRating, myHandle, myHistory, myInfo 
             <ThreatMeter score={metrics.threatScore} winProb={metrics.winProb} />
           </div>
 
-          {/* RATING HISTORY (Original) */}
+          {/* RATING HISTORY */}
           <Card>
             <CardTitle>📡 Rating History</CardTitle>
             <div className="h-[280px]"><Line data={metrics.ratingLineData} options={lineOpts} /></div>
           </Card>
 
-          {/* TAG COMPARISON (Original) */}
+          {/* TAG COMPARISON */}
           <Card>
             <CardTitle>🏷 Tag Mastery Comparison</CardTitle>
             <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
@@ -434,12 +466,12 @@ export default function Nemesis({ mySubs, myRating, myHandle, myHistory, myInfo 
             </p>
             <div className="overflow-y-auto pr-2" style={{ maxHeight: '600px' }}>
               <div style={{ height: `${Math.max(400, metrics.sortedTags.length * 28)}px`, position: 'relative' }}>
-                <Bar data={{ labels: metrics.sortedTags, datasets: [{ label: myHandle, data: metrics.myTagData, backgroundColor: 'var(--accent)', borderRadius: 4 }, { label: metrics.targetHandle, data: metrics.theirTagData, backgroundColor: metrics.theirTagColors, borderRadius: 4 }] }} options={tagOpts} />
+                {barData && <Bar data={barData} options={tagOpts} />}
               </div>
             </div>
           </Card>
 
-          {/* EXECUTION SPEED (Original) */}
+          {/* EXECUTION SPEED */}
           {scatterDataObj && scatterOptsObj && (
             <Card>
               <CardTitle>⚡ Execution Speed — Shared problems</CardTitle>
@@ -451,7 +483,7 @@ export default function Nemesis({ mySubs, myRating, myHandle, myHistory, myInfo 
             </Card>
           )}
 
-          {/* ── TACTICAL INTEL & DIRECT CLASHES (NEW FEATURES MOVED TO BOTTOM) ── */}
+          {/* ── TACTICAL INTEL & DIRECT CLASHES ── */}
           <div className="mt-8 pt-8" style={{ borderTop: '1px solid var(--border)' }}>
             <h3 className="text-xl font-black italic tracking-tight mb-6" style={{ color: 'var(--text-main)' }}>TACTICAL INTEL & HEAD-TO-HEAD CLASHES</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
