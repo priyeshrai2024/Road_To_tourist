@@ -106,7 +106,6 @@ export default function Home() {
   const [updateToast, setUpdateToast] = useState(false);
 
   const [activeTab, setActiveTab] = useState("COMMAND");
-  const [nemesisTarget, setNemesisTarget] = useState("");
   const [contextFilter, setContextFilter] = useState("ALL");
   const [timeFilter, setTimeFilter] = useState("ALL");
   const [showSettings, setShowSettings] = useState(false);
@@ -133,7 +132,6 @@ export default function Home() {
     if (savedConfig) {
       const parsed = JSON.parse(savedConfig);
       setConfig(parsed); setHandle(parsed.main || "");
-      if (parsed.squad && parsed.squad.length > 0) setNemesisTarget(parsed.squad[0]);
       const cachedSquad = localStorage.getItem(STORAGE_KEYS.SQUAD_CACHE);
       if (cachedSquad) {
         try {
@@ -527,30 +525,13 @@ export default function Home() {
             {activeTab === "SQUAD OPS" && <SquadOpsTab squadMatrix={squadMatrix} config={config} squadCharts={squadCharts} bounties={bounties} />}
             {activeTab === "NEMESIS"   && (
               <div className="animate-in fade-in">
-                <div className="mb-6 flex gap-3 items-center flex-wrap">
-                  <span className="text-xs uppercase tracking-widest font-mono" style={{ color: 'var(--text-muted)' }}>Target:</span>
-                  {config.squad.map(h => (
-                    <button key={h} onClick={() => setNemesisTarget(h)}
-                      className="px-4 py-2 rounded-lg font-mono text-xs transition-colors cursor-pointer border"
-                      style={{
-                        background: nemesisTarget === h ? 'rgba(248,81,73,0.1)' : 'transparent',
-                        color: nemesisTarget === h ? '#f85149' : 'var(--text-muted)',
-                        borderColor: nemesisTarget === h ? '#f85149' : 'var(--border)',
-                      }}>{h}</button>
-                  ))}
-                </div>
-                {nemesisTarget && squadData[nemesisTarget] ? (
-                  <Nemesis
-                    mySubs={squadData[config.main].rawSubs} targetSubs={squadData[nemesisTarget].rawSubs}
-                    targetHandle={nemesisTarget} myRating={squadData[config.main].info.rating || 1200}
-                    myHandle={config.main} myHistory={squadData[config.main].history} targetHistory={squadData[nemesisTarget].history}
-                    myInfo={squadData[config.main].info} targetInfo={squadData[nemesisTarget].info}
-                  />
-                ) : (
-                  <div className="text-center py-20 font-mono text-sm" style={{ color: 'var(--text-muted)' }}>
-                    Select a squad target to initiate Nemesis protocol.
-                  </div>
-                )}
+                <Nemesis
+                  mySubs={squadData[config.main].rawSubs}
+                  myRating={squadData[config.main].info.rating || 1200}
+                  myHandle={config.main}
+                  myHistory={squadData[config.main].history}
+                  myInfo={squadData[config.main].info}
+                />
               </div>
             )}
             {activeTab === "GRIND"    && <GrindMode handle={config.main} />}
