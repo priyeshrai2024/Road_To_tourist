@@ -3,9 +3,9 @@ import { useState, useEffect, useMemo } from 'react';
 import { Line, Bar, Scatter } from 'react-chartjs-2';
 import { CF_SCORE_MAP } from "@/lib/constants";
 
+// Types
 interface NemesisProps {
   mySubs: any[]; myHistory: any[]; myRating: number; myHandle: string; myInfo: any;
-  // Notice we removed target props because Nemesis now fetches its own targets independently!
 }
 
 function recencyWeightedAC(subs: any[], now: number): number {
@@ -142,8 +142,8 @@ export default function Nemesis({ mySubs, myRating, myHandle, myHistory, myInfo 
     let wins = 0, losses = 0, ties = 0;
     const clashes: any[] = [];
     const myContests: Record<number, any> = {};
-    myHistory.forEach(h => myContests[h.contestId] = h);
-    targetHistory.forEach(th => {
+    if (myHistory) myHistory.forEach(h => myContests[h.contestId] = h);
+    if (targetHistory) targetHistory.forEach(th => {
       if (myContests[th.contestId]) {
         const mh = myContests[th.contestId];
         clashes.push({ id: th.contestId, name: th.contestName, myRank: mh.rank, theirRank: th.rank, date: th.ratingUpdateTimeSeconds });
@@ -201,6 +201,83 @@ export default function Nemesis({ mySubs, myRating, myHandle, myHistory, myInfo 
     };
   }, [mySubs, myHistory, myRating, targetData]);
 
+  // Clean Chart Configurations
+  const scatterData = useMemo(() => {
+    if (!metrics || metrics.overlapPoints.length === 0) return null;
+    return {
+      datasets: [
+        { 
+          type: 'line' as const, 
+          label: 'Tie', 
+          data: [{ x: 0, y: 0 }, { x: metrics.maxSpeed, y: metrics.maxSpeed }], 
+          borderColor: 'var(--border)', 
+          borderWidth: 1, 
+          borderDash: [5, 5], 
+          pointRadius: 0, 
+          fill: false 
+        },
+        { 
+          type: 'scatter' as const, 
+          label: 'H2H', 
+          data: metrics.overlapPoints, 
+          backgroundColor: metrics.overlapPoints.map((p: any) => p.x < p.y ? 'var(--accent)' : (p.x > p.y ? 'var(--status-wa)' : '#555')), 
+          pointRadius: 4 
+        }
+      ]
+    };
+  }, [metrics]);
+
+  const scatterOptions = useMemo(() => {
+    if (!metrics) return {};
+    return {
+      responsive: true, 
+      maintainAspectRatio: false, 
+      plugins: { 
+        legend: { display: false }, 
+        tooltip: { callbacks: { label: (ctx: any) => ` [${ctx.raw.pid}] You: ${ctx.raw.x}ms | Them: ${ctx.raw.y}ms` } } 
+      }, 
+      scales: { 
+        x: { 
+          title: { display: true, text: `Your Time (ms)`, color: '#8b949e', font: { size: 10 } }, 
+          grid: { color: 'rgba(255,255,255,0.04)' }, 
+          ticks: { color: '#666' }, 
+          min: 0, 
+          max: metrics.maxSpeed 
+        }, 
+        y: { 
+          title: { display: true, text: `${metrics.targetHandle} Time (ms)`, color: '#8b949e', font: { size: 10 } }, 
+          grid: { color: 'rgba(255,255,255,0.04)' }, 
+          ticks: { color: '#666' }, 
+          min: 0, 
+          max: metrics.maxSpeed 
+        } 
+      }
+    };
+  }, [metrics]);
+
+  const barData = useMemo(() => {
+      if (!metrics) return null;
+      return { 
+          labels: metrics.sortedTags, 
+          datasets: [
+              { label: myHandle, data: metrics.myTagData, backgroundColor: 'var(--accent)', borderRadius: 4 }, 
+              { label: metrics.targetHandle, data: metrics.theirTagData, backgroundColor: metrics.theirTagColors, borderRadius: 4 }
+          ] 
+      };
+  }, [metrics, myHandle]);
+
+  const barOptions = { 
+      indexAxis: 'y' as const, 
+      responsive: true, 
+      maintainAspectRatio: false, 
+      plugins: { legend: { labels: { color: '#8b949e', font: { size: 10 } } } }, 
+      scales: { 
+          x: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#8b949e', font: { size: 10 } } }, 
+          y: { grid: { display: false }, ticks: { color: 'var(--text-main)', font: { size: 10 } } } 
+      } 
+  };
+
+
   return (
     <div className="flex flex-col gap-6 animate-in fade-in duration-300 relative">
       
@@ -233,7 +310,7 @@ export default function Nemesis({ mySubs, myRating, myHandle, myHistory, myInfo 
 
       {loading && <div className="text-center py-20 font-bold uppercase tracking-widest animate-pulse" style={{ color: 'var(--status-wa)' }}>Acquiring Target Intel...</div>}
 
-      {/* --- SCOUTING REPORT (Only shows if nemesis selected and loaded) --- */}
+      {/* --- SCOUTING REPORT --- */}
       {metrics && !loading && (
         <div className="flex flex-col gap-5 animate-in slide-in-from-bottom-4 duration-500">
           
@@ -250,9 +327,7 @@ export default function Nemesis({ mySubs, myRating, myHandle, myHistory, myInfo 
             </div>
           </div>
 
-          {/* CLASH RECORD & META */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            
             {/* Direct Clashes */}
             <Card className="md:col-span-1 relative overflow-hidden border-none" style={{ background: 'linear-gradient(145deg, var(--bg-card), var(--bg-base))' }}>
               <div className="absolute inset-0 opacity-5" style={{ background: 'repeating-linear-gradient(45deg, transparent, transparent 10px, var(--status-wa) 10px, var(--status-wa) 20px)' }}/>
@@ -307,10 +382,8 @@ export default function Nemesis({ mySubs, myRating, myHandle, myHistory, myInfo 
                 </div>
               </div>
             </Card>
-
           </div>
 
-          {/* THREAT & RATINGS */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
              <Card className="flex flex-col justify-center">
                 <p className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: 'var(--text-muted)' }}>Rating Differential</p>
@@ -338,23 +411,24 @@ export default function Nemesis({ mySubs, myRating, myHandle, myHistory, myInfo 
              </div>
           </div>
 
-          {/* EXECUTION SPEED & TAGS */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-             {metrics.overlapPoints.length > 0 && (
+             {metrics.overlapPoints.length > 0 && scatterData && (
               <Card>
                 <CardTitle>⚡ Speed — Shared Problems</CardTitle>
                 <div className="flex justify-between text-sm mb-4 font-bold font-mono">
                   <span style={{ color: 'var(--accent)' }}>You faster: {metrics.mySpeedWins}</span>
                   <span style={{ color: 'var(--status-wa)' }}>Target faster: {metrics.theirSpeedWins}</span>
                 </div>
-                <div className="h-[250px]"><Scatter data={{ datasets: [{ type: 'line', label: 'Tie', data: [{ x: 0, y: 0 }, { x: metrics.maxSpeed, y: metrics.maxSpeed }], borderColor: 'var(--border)', borderWidth: 1, borderDash: [5, 5], pointRadius: 0, fill: false }, { type: 'scatter', label: 'H2H', data: metrics.overlapPoints, backgroundColor: metrics.overlapPoints.map((p: any) => p.x < p.y ? 'var(--accent)' : (p.x > p.y ? 'var(--status-wa)' : '#555')), pointRadius: 4 }] } as any} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx: any) => ` [${ctx.raw.pid}] You: ${ctx.raw.x}ms | Them: ${ctx.raw.y}ms` } } }, scales: { x: { title: { display: true, text: `Your Time (ms)`, color: '#8b949e', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#666' }, min: 0, max: metrics.maxSpeed }, y: { title: { display: true, text: `${metrics.targetHandle} Time (ms)`, color: '#8b949e', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#666' }, min: 0, max: metrics.maxSpeed } } } /></div>
+                <div className="h-[250px]">
+                  <Scatter data={scatterData as any} options={scatterOptions as any} />
+                </div>
               </Card>
             )}
             <Card className={metrics.overlapPoints.length > 0 ? '' : 'md:col-span-2'}>
               <CardTitle>🏷 Tag Mastery</CardTitle>
               <div className="overflow-y-auto pr-2 h-[285px]">
                 <div style={{ height: `${Math.max(400, metrics.sortedTags.length * 28)}px`, position: 'relative' }}>
-                  <Bar data={{ labels: metrics.sortedTags, datasets: [{ label: myHandle, data: metrics.myTagData, backgroundColor: 'var(--accent)', borderRadius: 4 }, { label: metrics.targetHandle, data: metrics.theirTagData, backgroundColor: metrics.theirTagColors, borderRadius: 4 }] }} options={{ indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#8b949e', font: { size: 10 } } } }, scales: { x: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#8b949e', font: { size: 10 } } }, y: { grid: { display: false }, ticks: { color: 'var(--text-main)', font: { size: 10 } } } } }} />
+                  {barData && <Bar data={barData} options={barOptions} />}
                 </div>
               </div>
             </Card>
