@@ -58,9 +58,9 @@ function getMeta(subs: any[]): string {
 }
 
 // ─── UI COMPONENTS ────────────────────────────────────────────────────────────
-function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+function Card({ children, className = '', style }: { children: React.ReactNode; className?: string; style?: React.CSSProperties }) {
   return (
-    <div className={`rounded-xl p-5 ${className}`} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+    <div className={`rounded-xl p-5 ${className}`} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', ...style }}>
       {children}
     </div>
   );
