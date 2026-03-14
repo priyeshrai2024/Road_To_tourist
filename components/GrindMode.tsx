@@ -5,12 +5,25 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { CF_SCORE_MAP } from "@/lib/constants";
 
 // ── Types ────────────────────────────────────────────────────────────────────
-interface ProbDetail { pid: string; name: string; timeTakenSecs: number; rating: number; }
+interface ProbDetail { 
+  pid: string; 
+  name: string; 
+  index?: string; 
+  timeTakenSecs: number; 
+  rating: number; 
+}
 interface SessionLog {
   id: string; date: string; startTs: number; endTs: number; workMins: number;
   problemsSolved: number; pointsEarned: number; type: string; avgTimeSecs: number;
   details: ProbDetail[]; flowRating?: number; intent?: string; breakCount: number;
   plannedMins?: number;
+  isContest?: boolean;
+  contestId?: number;
+  contestType?: string;
+  ratingChange?: number;
+  oldRating?: number;
+  newRating?: number;
+  rank?: number;
 }
 interface GrindTask { id: number; text: string; done: boolean; pinned: boolean; priority: 'high' | 'normal'; estMins?: number; }
 interface TmrPlan { id: number; text: string; }
@@ -39,7 +52,7 @@ const T = {
   accent: 'var(--accent)',
   accentDim: 'var(--accent-10)',
   accentGlow: 'color-mix(in srgb, var(--accent) 25%, transparent)',
-  red: '#f85149', // Kept hardcoded for semantic warning/error signals
+  red: '#f85149',
   redDim: 'rgba(248,81,73,0.12)',
   green: 'var(--status-ac, #2ea043)',
   greenDim: 'color-mix(in srgb, var(--status-ac, #2ea043) 15%, transparent)',
@@ -175,14 +188,14 @@ function SessionRow({ log, onView }: { log: SessionLog, onView: (l: SessionLog) 
   const stars = log.flowRating || 0;
   return (
     <div onClick={() => onView(log)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', cursor: 'pointer', transition: 'background 0.15s', borderBottom: `1px solid ${T.border}` }} onMouseEnter={e => (e.currentTarget.style.background = 'color-mix(in srgb, var(--text-main) 5%, transparent)')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-      <div style={{ width: 3, height: 32, borderRadius: 2, background: log.type === 'RETROACTIVE RECON' ? T.purple : T.accent, flexShrink: 0 }} />
+      <div style={{ width: 3, height: 32, borderRadius: 2, background: log.isContest ? T.blue : log.type === 'RETROACTIVE RECON' ? T.purple : T.accent, flexShrink: 0 }} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 12, fontWeight: 600, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{log.intent || 'Free Grind'}</div>
         <div style={{ fontSize: 10, color: T.muted, fontFamily: 'monospace', marginTop: 2 }}>{date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} · {date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</div>
       </div>
       <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexShrink: 0 }}>
-        <div style={{ textAlign: 'right' }}><div style={{ fontSize: 13, fontWeight: 700, fontFamily: 'monospace', color: T.accent }}>{Math.round(log.workMins)}m</div><div style={{ fontSize: 10, color: T.muted }}>{log.problemsSolved} ACs</div></div>
-        {stars > 0 && <div style={{ display: 'flex', gap: 1 }}>{[1, 2, 3, 4, 5].map(n => <span key={n} style={{ fontSize: 9, color: n <= stars ? T.accent : T.dim }}>★</span>)}</div>}
+        <div style={{ textAlign: 'right' }}><div style={{ fontSize: 13, fontWeight: 700, fontFamily: 'monospace', color: log.isContest ? T.blue : T.accent }}>{Math.round(log.workMins)}m</div><div style={{ fontSize: 10, color: T.muted }}>{log.problemsSolved} ACs</div></div>
+        {stars > 0 && <div style={{ display: 'flex', gap: 1 }}>{[1, 2, 3, 4, 5].map(n => <span key={n} style={{ fontSize: 9, color: n <= stars ? (log.isContest ? T.blue : T.accent) : T.dim }}>★</span>)}</div>}
         <span style={{ fontSize: 10, color: T.dim }}>▶</span>
       </div>
     </div>
@@ -216,6 +229,7 @@ export default function GrindMode({ handle }: { handle: string }) {
   const [targetHrs, setTargetHrs] = useState(15);
   const [showSettings, setShowSettings] = useState(false);
   const [rogueACs, setRogueACs] = useState<any[]>([]);
+  const [untrackedContests, setUntrackedContests] = useState<any[]>([]);
   const [wrActiveTab, setWrActiveTab] = useState(0);
   const [activeIdleTab, setActiveIdleTab] = useState<'tasks' | 'history'>('tasks');
   
@@ -247,11 +261,12 @@ export default function GrindMode({ handle }: { handle: string }) {
 
         if (data.status === 'OK') {
           const now = Date.now() / 1000;
-          const recent = data.result.filter((s: any) => s.verdict === 'OK' && s.author.participantType === 'PRACTICE' && (now - s.creationTimeSeconds) < 86400 * 2);
           const dismissedRogues = JSON.parse(localStorage.getItem('cf_grind_dismissed') || '[]');
           const liveHistory = historyRef.current;
 
-          const missing = recent.filter((s: any) => {
+          // 1. Standard Practice Rogues
+          const practiceSubs = data.result.filter((s: any) => s.verdict === 'OK' && s.author.participantType === 'PRACTICE' && (now - s.creationTimeSeconds) < 86400 * 2);
+          const missingPractice = practiceSubs.filter((s: any) => {
             const pid = s.problem ? `${s.problem.contestId}-${s.problem.index}` : '';
             if (!pid || dismissedRogues.includes(pid)) return false;
             const alreadyLogged = liveHistory.some(h => h.details && h.details.some(d => d.pid === pid));
@@ -259,7 +274,52 @@ export default function GrindMode({ handle }: { handle: string }) {
             const inTimeWindow = liveHistory.some(h => s.creationTimeSeconds >= (h.startTs - 1200) && s.creationTimeSeconds <= (h.endTs + 1200));
             return !inTimeWindow;
           });
-          setRogueACs(missing);
+          setRogueACs(missingPractice);
+
+          // 2. Untracked Contests (Live, Virtual, Out of Comp)
+          const contestSubs = data.result.filter((s: any) => 
+            (s.author.participantType === 'CONTESTANT' || s.author.participantType === 'VIRTUAL' || s.author.participantType === 'OUT_OF_COMPETITION') && 
+            (now - s.creationTimeSeconds) < 86400 * 7 // Look back a week for contests
+          );
+
+          const contestsMap = new Map();
+          contestSubs.forEach((s: any) => {
+            const cid = s.problem.contestId;
+            if (dismissedRogues.includes(`contest-${cid}`)) return;
+            // Check if we already logged this contest
+            if (liveHistory.some(h => h.contestId === cid)) return;
+
+            if (!contestsMap.has(cid)) {
+              contestsMap.set(cid, {
+                contestId: cid,
+                type: s.author.participantType,
+                startTimeSeconds: s.author.startTimeSeconds || (s.creationTimeSeconds - 7200), // Fallback
+                subs: []
+              });
+            }
+            if (s.verdict === 'OK') contestsMap.get(cid).subs.push(s);
+          });
+
+          // Fetch rating changes if there are live contests
+          const pendingContests = Array.from(contestsMap.values());
+          for (const c of pendingContests) {
+             if (c.type === 'CONTESTANT') {
+                try {
+                   const rRes = await fetch(`https://codeforces.com/api/user.rating?handle=${handle}`);
+                   const rData = await rRes.json();
+                   if (rData.status === 'OK') {
+                      const change = rData.result.find((r: any) => r.contestId === c.contestId);
+                      if (change) {
+                         c.ratingChange = change.newRating - change.oldRating;
+                         c.oldRating = change.oldRating;
+                         c.newRating = change.newRating;
+                         c.rank = change.rank;
+                      }
+                   }
+                } catch(e) {}
+             }
+          }
+          setUntrackedContests(pendingContests);
         }
       } catch {}
     };
@@ -275,6 +335,55 @@ export default function GrindMode({ handle }: { handle: string }) {
     } catch {}
     setRogueACs([]);
   }, [rogueACs]);
+
+  const logUntrackedContest = useCallback((contest: any) => {
+    const details: ProbDetail[] = contest.subs.map((s: any) => ({
+      pid: `${s.problem.contestId}-${s.problem.index}`,
+      name: s.problem.name,
+      index: s.problem.index,
+      timeTakenSecs: s.creationTimeSeconds - contest.startTimeSeconds,
+      rating: s.problem.rating || 0
+    })).sort((a: any, b: any) => a.timeTakenSecs - b.timeTakenSecs);
+
+    const pts = details.reduce((sum, d) => sum + (CF_SCORE_MAP[d.rating ? Math.floor(d.rating / 100) * 100 : 800] || 10), 0);
+    const durationMins = details.length > 0 ? Math.ceil(details[details.length - 1].timeTakenSecs / 60) : 120;
+    
+    const typeLabel = contest.type === 'CONTESTANT' ? 'LIVE CONTEST' : contest.type === 'VIRTUAL' ? 'VIRTUAL CONTEST' : 'OUT OF COMP';
+
+    const report: SessionLog = {
+      id: `contest-${contest.contestId}`, 
+      date: new Date(contest.startTimeSeconds * 1000).toISOString(), 
+      startTs: contest.startTimeSeconds, 
+      endTs: contest.startTimeSeconds + (durationMins * 60),
+      workMins: durationMins, 
+      problemsSolved: details.length, 
+      pointsEarned: pts, 
+      type: typeLabel,
+      avgTimeSecs: details.length > 0 ? Math.round(details.reduce((a, p) => a + p.timeTakenSecs, 0) / details.length) : 0, 
+      details, 
+      flowRating: 5, 
+      intent: `Codeforces Round #${contest.contestId}`, 
+      breakCount: 0,
+      isContest: true,
+      contestId: contest.contestId,
+      contestType: contest.type,
+      ratingChange: contest.ratingChange,
+      oldRating: contest.oldRating,
+      newRating: contest.newRating,
+      rank: contest.rank
+    };
+
+    saveHistory([report, ...history].sort((a, b) => b.endTs - a.endTs)); 
+    setUntrackedContests(prev => prev.filter(c => c.contestId !== contest.contestId));
+  }, [history]);
+
+  const dismissContest = useCallback((cid: number) => {
+    try {
+      const existing = JSON.parse(localStorage.getItem('cf_grind_dismissed') || '[]');
+      localStorage.setItem('cf_grind_dismissed', JSON.stringify([...existing, `contest-${cid}`]));
+      setUntrackedContests(prev => prev.filter(c => c.contestId !== cid));
+    } catch {}
+  }, []);
 
   const saveTasks = useCallback((t: GrindTask[]) => { setTasks(t); try { localStorage.setItem('cf_grind_tasks_v4', JSON.stringify(t)); } catch {} }, []);
   const saveHistory = useCallback((h: SessionLog[]) => { setHistory(h); try { localStorage.setItem('cf_grind_v4', JSON.stringify(h)); } catch {} }, []);
@@ -336,7 +445,7 @@ export default function GrindMode({ handle }: { handle: string }) {
                 seen.add(pid);
                 const r = s.problem.rating ? Math.floor(s.problem.rating / 100) * 100 : 800;
                 points += CF_SCORE_MAP[r > 2400 ? 2400 : r] || 10;
-                details.push({ pid, name: s.problem.name, timeTakenSecs: s.creationTimeSeconds - mark, rating: s.problem.rating || 800 });
+                details.push({ pid, name: s.problem.name, index: s.problem.index, timeTakenSecs: s.creationTimeSeconds - mark, rating: s.problem.rating || 800 });
                 mark = s.creationTimeSeconds;
               }
             }
@@ -365,7 +474,7 @@ export default function GrindMode({ handle }: { handle: string }) {
   const logRogueACs = () => {
     if (rogueACs.length === 0) return;
     const pts = rogueACs.reduce((sum, s) => sum + (CF_SCORE_MAP[s.problem?.rating ? Math.floor(s.problem.rating / 100) * 100 : 800] || 10), 0);
-    const details = rogueACs.map(s => ({ pid: `${s.problem.contestId}-${s.problem.index}`, name: s.problem.name, timeTakenSecs: 0, rating: s.problem.rating || 800 }));
+    const details = rogueACs.map(s => ({ pid: `${s.problem.contestId}-${s.problem.index}`, name: s.problem.name, index: s.problem.index, timeTakenSecs: 0, rating: s.problem.rating || 800 }));
     const assumedMins = rogueACs.length * 20; const ts = rogueACs[rogueACs.length - 1].creationTimeSeconds;
     const report: SessionLog = {
       id: Date.now().toString(), date: new Date(ts * 1000).toISOString(), startTs: ts - (assumedMins * 60), endTs: ts,
@@ -444,6 +553,35 @@ export default function GrindMode({ handle }: { handle: string }) {
   // PHASE: RATE OR VIEWING A PAST SESSION
   // ════════════════════════════════════════════════════════════════════════════
   if (phase === 'RATE' || viewingSession !== null) {
+    // ── Update Missing Problem Ratings Automatically ──
+    useEffect(() => {
+      if (viewingSession && viewingSession.isContest) {
+         const hasMissingRatings = viewingSession.details.some(d => !d.rating || d.rating === 0);
+         if (hasMissingRatings) {
+            fetch(`https://codeforces.com/api/contest.status?contestId=${viewingSession.contestId}&handle=${handle}&from=1&count=50`)
+              .then(res => res.json())
+              .then(data => {
+                 if (data.status === 'OK') {
+                    let updated = false;
+                    const newDetails = viewingSession.details.map(d => {
+                       const sub = data.result.find((s: any) => s.verdict === 'OK' && s.problem.index === d.index);
+                       if (sub && sub.problem.rating && (!d.rating || d.rating === 0)) {
+                          updated = true;
+                          return { ...d, rating: sub.problem.rating };
+                       }
+                       return d;
+                    });
+                    if (updated) {
+                       const updatedSession = { ...viewingSession, details: newDetails };
+                       setViewingSession(updatedSession);
+                       saveHistory(history.map(h => h.id === updatedSession.id ? updatedSession : h));
+                    }
+                 }
+              }).catch(() => {});
+         }
+      }
+   }, [viewingSession, handle, history, saveHistory]);
+
     const isRate = phase === 'RATE'; const r = isRate ? lastReport : viewingSession; const solvedDetails = r?.details ?? [];
     const focusMins = r ? Math.round(r.workMins) : 0;
     const eff = focusMins > 0 && (r?.problemsSolved || 0) > 0 ? Math.round(focusMins / r!.problemsSolved) : 0;
@@ -477,8 +615,8 @@ export default function GrindMode({ handle }: { handle: string }) {
         <div style={{ width: 280, flexShrink: 0, background: `linear-gradient(160deg, ${T.surface} 0%, var(--bg-base) 100%)`, borderRight: `1px solid ${T.border}`, display: 'flex', flexDirection: 'column', padding: 32 }}>
           <div style={{ marginBottom: 32 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-              <div style={{ width: 8, height: 8, borderRadius: '50%', background: isRate ? T.green : T.accent, boxShadow: `0 0 12px ${isRate ? T.green : T.accent}` }} />
-              <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '2.5px', textTransform: 'uppercase', color: isRate ? T.green : T.accent }}>{isRate ? 'Extraction Complete' : 'Session Record'}</span>
+              <div style={{ width: 8, height: 8, borderRadius: '50%', background: isRate ? T.green : (r?.isContest ? T.blue : T.accent), boxShadow: `0 0 12px ${isRate ? T.green : (r?.isContest ? T.blue : T.accent)}` }} />
+              <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '2.5px', textTransform: 'uppercase', color: isRate ? T.green : (r?.isContest ? T.blue : T.accent) }}>{isRate ? 'Extraction Complete' : 'Session Record'}</span>
             </div>
             <div style={{ fontSize: 28, fontWeight: 900, color: T.text, lineHeight: 1.1, letterSpacing: '-0.5px' }}>Session<br/>Debrief</div>
             {r?.intent && <div style={{ marginTop: 10, fontSize: 12, color: T.muted, fontStyle: 'italic', borderLeft: `2px solid ${T.borderHi}`, paddingLeft: 10 }}>"{r.intent}"</div>}
@@ -491,9 +629,9 @@ export default function GrindMode({ handle }: { handle: string }) {
             <>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 32 }}>
                 {[
-                  { l: 'Focus Time', v: `${focusMins}m`, sub: plannedM > 0 ? `of ${plannedM}m planned` : undefined, c: T.accent },
+                  { l: r?.isContest ? 'Duration' : 'Focus Time', v: `${focusMins}m`, sub: plannedM > 0 ? `of ${plannedM}m planned` : undefined, c: r?.isContest ? T.blue : T.accent },
                   { l: 'Problems AC\'d', v: String(r?.problemsSolved ?? 0), sub: (r?.problemsSolved ?? 0) > 0 ? `${acRate}/hr rate` : 'none this session', c: T.green },
-                  { l: 'XP Earned', v: `+${r?.pointsEarned ?? 0}`, sub: xpPerHour > 0 ? `${xpPerHour} xp/hr` : undefined, c: T.blue },
+                  { l: 'XP Earned', v: `+${r?.pointsEarned ?? 0}`, sub: xpPerHour > 0 ? `${xpPerHour} xp/hr` : undefined, c: T.text },
                 ].map(s => (
                   <div key={s.l} style={{ padding: '14px 16px', borderRadius: 12, background: 'color-mix(in srgb, var(--bg-base) 40%, transparent)', border: `1px solid ${T.border}`, transition: 'transform 0.2s, background 0.2s' }} onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.background = 'color-mix(in srgb, var(--text-main) 5%, transparent)'; }} onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.background = 'color-mix(in srgb, var(--bg-base) 40%, transparent)'; }}>
                     <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: T.muted, marginBottom: 4 }}>{s.l}</div>
@@ -508,12 +646,13 @@ export default function GrindMode({ handle }: { handle: string }) {
                 <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
                   {[1, 2, 3, 4, 5].map(n => {
                     const active = isRate ? n <= (hoverRating || flowRating) : n <= (r?.flowRating || 0);
+                    const color = r?.isContest ? T.blue : T.accent;
                     return (
                       <button key={n} onClick={() => isRate && setFlowRating(n)} onMouseEnter={() => isRate && setHoverRating(n)} onMouseLeave={() => isRate && setHoverRating(0)} style={{
                         fontSize: 28, background: 'transparent', border: 'none', cursor: isRate ? 'pointer' : 'default', padding: 0,
                         transition: 'all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-                        transform: active ? 'scale(1.25)' : 'scale(1)', filter: active ? `drop-shadow(0 0 8px ${T.accent})` : 'none',
-                        opacity: active ? 1 : 0.2, color: T.accent,
+                        transform: active ? 'scale(1.25)' : 'scale(1)', filter: active ? `drop-shadow(0 0 8px ${color})` : 'none',
+                        opacity: active ? 1 : 0.2, color,
                       }}>★</button>
                     )
                   })}
@@ -532,6 +671,28 @@ export default function GrindMode({ handle }: { handle: string }) {
         <div style={{ flex: 1, overflowY: 'auto', padding: '36px 40px', display: 'flex', flexDirection: 'column', gap: 24 }}>
           {syncing ? null : (
             <>
+              {r?.isContest && (
+                <div>
+                  <SectionLabel>Contest Performance</SectionLabel>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+                    <MiniStatCard label="Contest Type" value={r.contestType === 'CONTESTANT' ? 'LIVE' : r.contestType === 'VIRTUAL' ? 'VIRTUAL' : 'OUT OF COMP'} color={r.contestType === 'CONTESTANT' ? T.accent : T.blue} />
+                    <MiniStatCard label="Problems Solved" value={`${r.problemsSolved}`} color={T.green} />
+                    {r.rank && <MiniStatCard label="Rank" value={`#${r.rank}`} color={T.text} icon="🏆" />}
+                    {r.ratingChange !== undefined ? (
+                      <MiniStatCard 
+                        label="Rating Change" 
+                        value={`${r.ratingChange > 0 ? '+' : ''}${r.ratingChange}`} 
+                        sub={`${r.oldRating} → ${r.newRating}`}
+                        color={r.ratingChange > 0 ? T.green : r.ratingChange < 0 ? T.red : T.muted} 
+                        icon={r.ratingChange > 0 ? '▲' : r.ratingChange < 0 ? '▼' : '—'} 
+                      />
+                    ) : (
+                      <MiniStatCard label="Rating Change" value="N/A" sub="Unrated/Virtual" color={T.muted} />
+                    )}
+                  </div>
+                </div>
+              )}
+
               <div>
                 <SectionLabel>Time & Pace</SectionLabel>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
@@ -570,24 +731,26 @@ export default function GrindMode({ handle }: { handle: string }) {
                 )}
               </div>
 
-              <div>
-                <SectionLabel>Session Health</SectionLabel>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
-                  <MiniStatCard label="Breaks Taken" value={String(r?.breakCount ?? 0)} sub={r && r.breakCount > 3 ? 'consider fewer' : 'solid focus'} color={r && (r.breakCount ?? 0) > 3 ? T.red : T.green} icon="⏸" />
-                  <MiniStatCard label="Plan Accuracy" value={planAccuracy !== null ? `${planAccuracy}%` : '—'} sub={planAccuracy !== null ? (planAccuracy > 110 ? 'overran' : planAccuracy < 80 ? 'underran' : 'on target') : 'no plan set'} color={planAccuracy !== null ? (planAccuracy >= 80 && planAccuracy <= 110 ? T.green : T.accent) : T.dim} icon="🎯" />
-                  <MiniStatCard label="XP / Hour" value={xpPerHour > 0 ? String(xpPerHour) : '—'} sub="grind intensity" color={xpPerHour > 80 ? T.green : xpPerHour > 40 ? T.accent : T.muted} icon="⚡" />
-                  <MiniStatCard label="AC Rate" value={acRate > 0 ? `${acRate}/hr` : '—'} sub="problems per hour" color={acRate >= 2 ? T.green : acRate >= 1 ? T.accent : T.muted} icon="📈" />
+              {!r?.isContest && (
+                <div>
+                  <SectionLabel>Session Health</SectionLabel>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+                    <MiniStatCard label="Breaks Taken" value={String(r?.breakCount ?? 0)} sub={r && r.breakCount > 3 ? 'consider fewer' : 'solid focus'} color={r && (r.breakCount ?? 0) > 3 ? T.red : T.green} icon="⏸" />
+                    <MiniStatCard label="Plan Accuracy" value={planAccuracy !== null ? `${planAccuracy}%` : '—'} sub={planAccuracy !== null ? (planAccuracy > 110 ? 'overran' : planAccuracy < 80 ? 'underran' : 'on target') : 'no plan set'} color={planAccuracy !== null ? (planAccuracy >= 80 && planAccuracy <= 110 ? T.green : T.accent) : T.dim} icon="🎯" />
+                    <MiniStatCard label="XP / Hour" value={xpPerHour > 0 ? String(xpPerHour) : '—'} sub="grind intensity" color={xpPerHour > 80 ? T.green : xpPerHour > 40 ? T.accent : T.muted} icon="⚡" />
+                    <MiniStatCard label="AC Rate" value={acRate > 0 ? `${acRate}/hr` : '—'} sub="problems per hour" color={acRate >= 2 ? T.green : acRate >= 1 ? T.accent : T.muted} icon="📈" />
+                  </div>
                 </div>
-              </div>
+              )}
 
               {solvedDetails.length > 0 && (
                 <div>
-                  <SectionLabel>Problem Log</SectionLabel>
+                  <SectionLabel>{r?.isContest ? 'Solve Progression' : 'Problem Log'}</SectionLabel>
                   <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, overflow: 'hidden' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                       <thead>
                         <tr style={{ borderBottom: `1px solid ${T.border}`, background: 'color-mix(in srgb, var(--bg-base) 40%, transparent)' }}>
-                          {['#', 'Problem', 'Rating', 'Time Taken', 'Speed'].map(h => <th key={h} style={{ padding: '12px 16px', textAlign: h === '#' || h === 'Rating' || h === 'Time Taken' || h === 'Speed' ? 'center' : 'left', fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: T.dim, fontFamily: 'monospace' }}>{h}</th>)}
+                          {['#', 'Problem', 'Rating', r?.isContest ? 'Time from Start' : 'Time Taken', 'Speed'].map(h => <th key={h} style={{ padding: '12px 16px', textAlign: h === '#' || h === 'Rating' || h === 'Time Taken' || h === 'Time from Start' || h === 'Speed' ? 'center' : 'left', fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: T.dim, fontFamily: 'monospace' }}>{h}</th>)}
                         </tr>
                       </thead>
                       <tbody>
@@ -599,13 +762,15 @@ export default function GrindMode({ handle }: { handle: string }) {
                             
                           return (
                             <tr key={d.pid} style={{ borderTop: i > 0 ? `1px solid ${T.border}` : 'none', transition: 'background 0.2s' }} onMouseEnter={e => e.currentTarget.style.background = 'color-mix(in srgb, var(--text-main) 5%, transparent)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                              <td style={{ padding: '12px 16px', textAlign: 'center', fontFamily: 'monospace', fontSize: 12, color: T.dim }}>{i + 1}</td>
+                              <td style={{ padding: '12px 16px', textAlign: 'center', fontFamily: 'monospace', fontSize: 14, fontWeight: 700, color: r?.isContest ? T.blue : T.dim }}>
+                                {r?.isContest ? (d.index || '—') : (i + 1)}
+                              </td>
                               <td style={{ padding: '12px 16px' }}>
                                 <a href={`https://codeforces.com/problemset/problem/${d.pid.replace('-', '/')}`} target="_blank" rel="noreferrer" style={{ color: T.text, textDecoration: 'none', fontWeight: 600, fontSize: 13 }} onMouseEnter={e => e.currentTarget.style.color = T.accent} onMouseLeave={e => e.currentTarget.style.color = T.text}>{d.name}</a>
                                 <div style={{ fontSize: 11, color: T.dim, fontFamily: 'monospace', marginTop: 2 }}>{d.pid}</div>
                               </td>
                               <td style={{ padding: '12px 16px', textAlign: 'center' }}>
-                                {d.rating > 0 ? <span style={{ fontSize: 13, fontWeight: 700, fontFamily: 'monospace', color: ratingColor(d.rating) }}>{d.rating}</span> : <span style={{ color: T.dim }}>—</span>}
+                                {d.rating > 0 ? <span style={{ fontSize: 13, fontWeight: 700, fontFamily: 'monospace', color: ratingColor(d.rating) }}>{d.rating}</span> : <span style={{ color: T.dim, fontSize: 11 }}>pending</span>}
                               </td>
                               <td style={{ padding: '12px 16px', textAlign: 'center', fontFamily: 'monospace', fontSize: 13 }}>
                                 {d.timeTakenSecs > 30 ? (
@@ -699,6 +864,22 @@ export default function GrindMode({ handle }: { handle: string }) {
           <div style={{ display: 'flex', gap: 8 }}><button onClick={dismissRogues} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'transparent', border: `1px solid ${T.border}`, color: T.muted, transition: 'all 0.15s', textTransform: 'uppercase', letterSpacing: '1px' }}>Dismiss</button><button onClick={logRogueACs} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: T.red, border: 'none', color: '#fff', transition: 'all 0.15s', textTransform: 'uppercase', letterSpacing: '1px' }}>Log as Session</button></div>
         </div>
       )}
+
+      {untrackedContests.length > 0 && untrackedContests.map(c => (
+        <div key={c.contestId} style={{ padding: '14px 18px', marginBottom: 16, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(88,166,255,0.12)', border: `1px solid color-mix(in srgb, #58a6ff 40%, transparent)` }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#58a6ff', animation: 'pulse-dot 1.5s ease-in-out infinite' }} />
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', color: '#58a6ff' }}>Untracked {c.type}</div>
+              <div style={{ fontSize: 12, color: T.text, marginTop: 2 }}>We detected participation in <strong>Contest #{c.contestId}</strong>. Log it to update your stats?</div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={() => dismissContest(c.contestId)} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'transparent', border: `1px solid ${T.border}`, color: T.muted, transition: 'all 0.15s', textTransform: 'uppercase', letterSpacing: '1px' }}>Dismiss</button>
+            <button onClick={() => logUntrackedContest(c)} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: '#58a6ff', border: 'none', color: '#fff', transition: 'all 0.15s', textTransform: 'uppercase', letterSpacing: '1px' }}>Log Contest</button>
+          </div>
+        </div>
+      ))}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
         <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 16, padding: 28, position: 'relative', overflow: 'hidden' }}>
