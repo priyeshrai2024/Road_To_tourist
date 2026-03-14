@@ -3,6 +3,7 @@
 import { useState, useMemo } from "react";
 import { Bar, Doughnut } from "react-chartjs-2";
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Legend } from "chart.js";
+import { STORAGE_KEYS } from "@/lib/storage-keys";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Legend);
 
@@ -25,7 +26,7 @@ function getSection(id: string) {
 }
 
 // ── Charts ────────────────────────────────────────────────────────────────────
-function BadgeDistChart({ badges, players, mainHandle }: { badges: BadgeDef[]; players: string[]; mainHandle: string }) {
+function BadgeDistChart({ badges, players, mainHandle, stealthUI }: { badges: BadgeDef[]; players: string[]; mainHandle: string; stealthUI?: React.ReactNode }) {
   const counts = useMemo(() => {
     const c: Record<string, number> = {};
     players.forEach(p => c[p] = 0);
@@ -36,7 +37,10 @@ function BadgeDistChart({ badges, players, mainHandle }: { badges: BadgeDef[]; p
   const COLORS = ['#e3b341','#58a6ff','#56d364','#f85149','#d2a8ff','#e879f9'];
   return (
     <div className="rounded-xl p-4" style={{ background:'var(--bg-base)', border:'1px solid var(--border)' }}>
-      <p className="text-xs font-semibold uppercase tracking-widest mb-3" style={{ color: 'var(--text-muted)' }}>🏅 Badge Leaderboard</p>
+      <div className="flex items-center gap-3 mb-3">
+        <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--text-muted)' }}>🏅 Badge Leaderboard</p>
+        {stealthUI}
+      </div>
       <div className="flex flex-col gap-2">
         {sorted.map(([p, count], i) => (
           <div key={p} className="flex items-center gap-3">
@@ -163,10 +167,46 @@ function BadgeModal({ b, mainHandle, onClose }: { b: BadgeDef; mainHandle: strin
 // ── Main Armory ───────────────────────────────────────────────────────────────
 export default function Armory({ badges, mainHandle, variant = 'full', players }: { badges: BadgeDef[]; mainHandle: string; variant?: 'full' | 'mini'; players?: string[] }) {
   const [modal, setModal] = useState<BadgeDef | null>(null);
+  
+  // Stealth Add State
+  const [isAdding, setIsAdding] = useState(false);
+  const [newHandle, setNewHandle] = useState("");
+
   const allPlayers = useMemo(() => players ?? [mainHandle], [players, mainHandle]);
   const bySection = useMemo(() => { const map: Record<string, BadgeDef[]> = {}; SECTIONS.forEach(s => map[s.key] = []); badges.forEach(b => { const sec = getSection(b.id); map[sec.key].push(b); }); return map; }, [badges]);
   const myTotal = badges.filter(b => b.owner === mainHandle).length;
   const totalClaimed = badges.filter(b => b.owner !== null).length;
+
+  const handleAddMember = () => {
+    if (!newHandle.trim()) return;
+    // Supports comma separated lists!
+    const handles = newHandle.split(',').map(h => h.trim().toLowerCase()).filter(Boolean);
+    
+    try {
+      const savedConfig = localStorage.getItem(STORAGE_KEYS.CONFIG);
+      if (savedConfig) {
+         const parsed = JSON.parse(savedConfig);
+         let updated = false;
+         
+         handles.forEach(h => {
+           if (!parsed.squad.map((s: string) => s.toLowerCase()).includes(h) && parsed.main.toLowerCase() !== h) {
+             parsed.squad.push(h);
+             updated = true;
+           }
+         });
+
+         if (updated) {
+           localStorage.setItem(STORAGE_KEYS.CONFIG, JSON.stringify(parsed));
+           window.location.reload();
+         } else {
+           setNewHandle("");
+           setIsAdding(false);
+         }
+      }
+    } catch(e) {
+      console.error("Failed to add to squad", e);
+    }
+  };
 
   if (variant === 'mini') {
     const myBadges = badges.filter(b => b.owner === mainHandle);
@@ -185,6 +225,29 @@ export default function Armory({ badges, mainHandle, variant = 'full', players }
     );
   }
 
+  const stealthUI = (
+    <div
+      className="flex items-center transition-all duration-500"
+      style={{ width: isAdding ? '140px' : '10px', opacity: isAdding ? 1 : 0.05 }}
+      onMouseEnter={() => setIsAdding(true)}
+      onMouseLeave={() => !newHandle && setIsAdding(false)}
+    >
+      {isAdding ? (
+        <input
+          value={newHandle}
+          onChange={e => setNewHandle(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && handleAddMember()}
+          placeholder="handle1, handle2..."
+          className="w-full bg-transparent outline-none font-mono text-[10px]"
+          style={{ color: 'var(--text-main)', borderBottom: '1px dashed var(--border)' }}
+          autoFocus
+        />
+      ) : (
+        <span className="text-[10px] cursor-default select-none font-bold" style={{ color: 'var(--text-main)' }}>+</span>
+      )}
+    </div>
+  );
+
   return (
     <>
       {modal && <BadgeModal b={modal} mainHandle={mainHandle} onClose={() => setModal(null)} />}
@@ -201,7 +264,7 @@ export default function Armory({ badges, mainHandle, variant = 'full', players }
 
       {/* Charts row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-        <BadgeDistChart badges={badges} players={allPlayers} mainHandle={mainHandle} />
+        <BadgeDistChart badges={badges} players={allPlayers} mainHandle={mainHandle} stealthUI={stealthUI} />
         <SectionBreakdownChart badges={badges} mainHandle={mainHandle} />
         <NegativeVsPositiveChart badges={badges} mainHandle={mainHandle} />
       </div>
