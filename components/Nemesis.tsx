@@ -3,11 +3,12 @@ import { useState, useEffect, useMemo } from 'react';
 import { Line, Bar, Scatter } from 'react-chartjs-2';
 import { CF_SCORE_MAP } from "@/lib/constants";
 
-// Types
+// ─── TYPES ────────────────────────────────────────────────────────────────────
 interface NemesisProps {
   mySubs: any[]; myHistory: any[]; myRating: number; myHandle: string; myInfo: any;
 }
 
+// ─── HELPER FUNCTIONS ─────────────────────────────────────────────────────────
 function recencyWeightedAC(subs: any[], now: number): number {
   const λ = 0.03; const seen = new Set<string>(); let score = 0;
   [...subs].reverse().forEach(s => {
@@ -56,14 +57,76 @@ function getMeta(subs: any[]): string {
   return `Spamming ${topRating ? topRating + '-rated' : 'unrated'} ${topTag || 'problems'}`;
 }
 
+// ─── UI COMPONENTS ────────────────────────────────────────────────────────────
 function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return <div className={`rounded-xl p-5 ${className}`} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>{children}</div>;
+  return (
+    <div className={`rounded-xl p-5 ${className}`} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+      {children}
+    </div>
+  );
 }
 
 function CardTitle({ children }: { children: React.ReactNode }) {
   return <p className="text-xs font-semibold uppercase tracking-widest mb-4" style={{ color: 'var(--text-muted)' }}>{children}</p>;
 }
 
+function StatDiffCard({ label, myVal, theirVal, myHandle, theirHandle, higherIsBetter = true, suffix = '' }: {
+  label: string; myVal: number; theirVal: number; myHandle: string; theirHandle: string;
+  higherIsBetter?: boolean; suffix?: string;
+}) {
+  const diff = myVal - theirVal;
+  const ahead = higherIsBetter ? diff > 0 : diff < 0;
+  const diffAbs = Math.abs(diff);
+  return (
+    <div className="rounded-xl p-4 flex flex-col gap-2 relative overflow-hidden group transition-all" style={{ background: 'var(--bg-card)', border: `1px solid ${ahead ? 'rgba(62,207,142,0.3)' : 'var(--border)'}` }}>
+      {ahead && <div className="absolute top-0 right-0 w-16 h-16 bg-green-500 opacity-5 blur-xl rounded-full" />}
+      <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: 'var(--text-muted)' }}>{label}</p>
+      <div className="flex justify-between items-end gap-1 mt-1 relative z-10">
+        <div>
+          <p className="text-[9px] font-mono mb-1 uppercase" style={{ color: 'var(--accent)' }}>{myHandle}</p>
+          <p className="text-xl font-black font-mono leading-none" style={{ color: 'var(--text-main)' }}>{myVal.toLocaleString()}{suffix}</p>
+        </div>
+        {diffAbs > 0 && (
+          <span className="text-[10px] font-black px-1.5 py-0.5 rounded font-mono mb-0.5"
+            style={{ color: ahead ? 'var(--status-ac)' : 'var(--status-wa)', background: ahead ? 'rgba(62,207,142,0.1)' : 'rgba(248,81,73,0.1)' }}>
+            {ahead ? '▲' : '▼'} {diffAbs.toLocaleString()}{suffix}
+          </span>
+        )}
+        <div className="text-right">
+          <p className="text-[9px] font-mono mb-1 uppercase" style={{ color: 'var(--status-wa)' }}>{theirHandle}</p>
+          <p className="text-xl font-black font-mono leading-none" style={{ color: 'var(--text-muted)' }}>{theirVal.toLocaleString()}{suffix}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ThreatMeter({ score, winProb }: { score: number; winProb: number }) {
+  const level = score >= 80 ? 'Critical' : score >= 60 ? 'High' : score >= 40 ? 'Moderate' : 'Low';
+  const color = score >= 80 ? 'var(--status-wa)' : score >= 60 ? '#fb923c' : score >= 40 ? 'var(--accent)' : 'var(--status-ac)';
+  const bars = 10;
+  const filled = Math.round((score / 100) * bars);
+  return (
+    <div className="rounded-xl p-5 flex flex-col gap-3" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+      <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--text-muted)' }}>Threat Assessment</p>
+      <div className="flex items-end gap-4">
+        <div>
+          <p className="text-5xl font-bold font-mono" style={{ color }}>{score}</p>
+          <p className="text-xs font-semibold uppercase tracking-wider mt-1" style={{ color }}>{level}</p>
+        </div>
+        <div className="flex-1 flex flex-col gap-[3px] pb-1">
+          {Array.from({ length: bars }).map((_, i) => (
+            <div key={i} className="w-full h-1.5 rounded-full"
+              style={{ background: i < filled ? color : 'var(--border)' }} />
+          )).reverse()}
+        </div>
+      </div>
+      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Elo win probability: {(winProb * 100).toFixed(1)}%</p>
+    </div>
+  );
+}
+
+// ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 export default function Nemesis({ mySubs, myRating, myHandle, myHistory, myInfo }: NemesisProps) {
   const [nemeses, setNemeses] = useState<string[]>([]);
   const [activeNemesis, setActiveNemesis] = useState<string | null>(null);
@@ -119,26 +182,113 @@ export default function Nemesis({ mySubs, myRating, myHandle, myHistory, myInfo 
     return () => { isMounted = false; };
   }, [activeNemesis]);
 
+  // ─── METRICS CALCULATION ──────────────────────────────────────────────────────
   const metrics = useMemo(() => {
     if (!mySubs || !targetData) return null;
     const now = Date.now() / 1000;
     const { subs: targetSubs, history: targetHistory, info: targetInfo } = targetData;
     const targetHandle = targetInfo.handle;
+
+    // --- My Stats (Original) ---
+    const myTagsAll: Record<string, number> = {}; 
+    const myAttempts = new Set<string>(); let myFirstTryCount = 0; let myWeek0Score = 0;
+    const mySpeed: Record<string, number> = {}; const myACSet = new Set<string>();
+
+    [...mySubs].reverse().forEach(s => {
+      if (!s.problem) return;
+      const pid = `${s.problem.contestId}-${s.problem.index}`;
+      if (!myAttempts.has(pid)) { myAttempts.add(pid); if (s.verdict === 'OK') myFirstTryCount++; }
+      if (s.verdict === 'OK') {
+        if (!myACSet.has(pid)) {
+          myACSet.add(pid);
+          s.problem.tags?.forEach((t: string) => { myTagsAll[t] = (myTagsAll[t] || 0) + 1; });
+          const daysAgo = (now - s.creationTimeSeconds) / 86400;
+          if (daysAgo <= 7) { const r = s.problem.rating ? Math.floor(s.problem.rating / 100) * 100 : 800; myWeek0Score += CF_SCORE_MAP[r > 2400 ? 2400 : r] || 10; }
+        }
+        if (s.timeConsumedMillis !== undefined) { if (!mySpeed[pid] || s.timeConsumedMillis < mySpeed[pid]) mySpeed[pid] = s.timeConsumedMillis; }
+      }
+    });
+
+    // --- Target Stats (Original) ---
+    const tACSet = new Set<string>(); const tAttempts = new Set<string>(); let tFirstTryCount = 0;
+    let currentSum = 0; let currentCount = 0; let week0Score = 0;
+    const weekScores = [0, 0, 0, 0, 0]; const theirSpeed: Record<string, number> = {};
+    const targetTagsAll: Record<string, number> = {};
+
+    [...targetSubs].reverse().forEach(s => {
+      if (!s.problem) return;
+      const pid = `${s.problem.contestId}-${s.problem.index}`;
+      if (!tAttempts.has(pid)) { tAttempts.add(pid); if (s.verdict === 'OK') tFirstTryCount++; }
+      if (s.verdict === 'OK') {
+        if (!tACSet.has(pid)) {
+          tACSet.add(pid);
+          const daysAgo = (now - s.creationTimeSeconds) / 86400;
+          const r = s.problem.rating ? Math.floor(s.problem.rating / 100) * 100 : 800;
+          const pts = CF_SCORE_MAP[r > 2400 ? 2400 : r] || 10;
+          s.problem.tags?.forEach((t: string) => { targetTagsAll[t] = (targetTagsAll[t] || 0) + 1; });
+          if (daysAgo <= 7) { week0Score += pts; weekScores[0] += pts; }
+          else if (daysAgo <= 14) weekScores[1] += pts;
+          else if (daysAgo <= 21) weekScores[2] += pts;
+          else if (daysAgo <= 28) weekScores[3] += pts;
+          else if (daysAgo <= 35) weekScores[4] += pts;
+          if (daysAgo <= 30 && s.problem.rating) { currentSum += s.problem.rating; currentCount++; }
+        }
+        if (s.timeConsumedMillis !== undefined) { if (!theirSpeed[pid] || s.timeConsumedMillis < theirSpeed[pid]) theirSpeed[pid] = s.timeConsumedMillis; }
+      }
+    });
+
+    const activePastWeeks = weekScores.slice(1).filter(w => w > 0);
+    const avgPastWeekScore = activePastWeeks.length > 0 ? activePastWeeks.reduce((a, b) => a + b, 0) / activePastWeeks.length : 0;
+
+    const myRatingNow = myRating || 1200; const theirRatingNow = targetInfo?.rating || 1200;
+    const myWeightedAC = recencyWeightedAC(mySubs, now); const theirWeightedAC = recencyWeightedAC(targetSubs, now);
+    const myAccuracy = myAttempts.size > 0 ? parseFloat(((myFirstTryCount / myAttempts.size) * 100).toFixed(1)) : 0;
+    const tAccuracy = tAttempts.size > 0 ? parseFloat(((tFirstTryCount / tAttempts.size) * 100).toFixed(1)) : 0;
+    const eloExpected = 1 / (1 + Math.pow(10, (myRatingNow - theirRatingNow) / 400));
+    const momentumRatio = theirWeightedAC / Math.max(0.1, myWeightedAC);
+    let momentumThreat = 50;
+    if (momentumRatio > 2) momentumThreat = 100;
+    else if (momentumRatio > 1) momentumThreat = 50 + ((momentumRatio - 1) * 50);
+    else momentumThreat = momentumRatio * 50;
+    const threatScore = Math.min(100, Math.max(1, Math.round((eloExpected * 100 * 0.7) + (momentumThreat * 0.3))));
+
+    const allTags = Array.from(new Set([...Object.keys(targetTagsAll), ...Object.keys(myTagsAll)]));
+    const sortedTags = allTags.sort((a, b) => (targetTagsAll[b] || 0) + (myTagsAll[b] || 0) - ((targetTagsAll[a] || 0) + (myTagsAll[a] || 0)));
+    const myTagData = sortedTags.map(t => myTagsAll[t] || 0);
+    const theirTagData = sortedTags.map(t => targetTagsAll[t] || 0);
+    const theirTagColors = theirTagData.map((val, i) => val > myTagData[i] ? '#f85149' : '#3ecf8e');
+
+    let allTS = new Set<number>();
+    if (myHistory) myHistory.forEach((h: any) => allTS.add(h.ratingUpdateTimeSeconds));
+    if (targetHistory) targetHistory.forEach((h: any) => allTS.add(h.ratingUpdateTimeSeconds));
+    const sortedTS = Array.from(allTS).sort((a, b) => a - b);
+    const buildLine = (hist: any[]) => { 
+        if (!hist) return [];
+        const hMap: Record<number, number> = {}; hist.forEach((h: any) => hMap[h.ratingUpdateTimeSeconds] = h.newRating); let last: number | null = null; return sortedTS.map(ts => { if (hMap[ts]) last = hMap[ts]; return last; }); 
+    };
     
-    // Base Stats
-    const myWeightedAC = recencyWeightedAC(mySubs, now); 
-    const theirWeightedAC = recencyWeightedAC(targetSubs, now);
-    const myRatingNow = myRating || 1200; 
-    const theirRatingNow = targetInfo.rating || 1200;
-    
-    // Streaks & Meta
+    const ratingLineData = {
+      labels: sortedTS.map(ts => { const d = new Date(ts * 1000); return `${d.getMonth() + 1}/${d.getFullYear().toString().slice(2)}`; }),
+      datasets: [
+        { label: myHandle, data: buildLine(myHistory), borderColor: 'var(--accent)', backgroundColor: 'transparent', borderWidth: 2, pointRadius: 1, tension: 0.2, spanGaps: false },
+        { label: targetHandle, data: buildLine(targetHistory), borderColor: 'var(--status-wa)', backgroundColor: 'transparent', borderWidth: 2, pointRadius: 1, tension: 0.2, spanGaps: false },
+      ],
+    };
+
+    const overlapPids = [...myACSet].filter(p => theirSpeed[p] && mySpeed[p]);
+    const overlapPoints = overlapPids.map(pid => ({ x: mySpeed[pid], y: theirSpeed[pid], pid }));
+    const maxSpeed = overlapPoints.length > 0 ? Math.max(3000, ...overlapPoints.map((p: any) => Math.max(p.x, p.y))) : 3000;
+    const mySpeedWins = overlapPoints.filter((p: any) => p.x < p.y).length;
+    const theirSpeedWins = overlapPoints.filter((p: any) => p.x > p.y).length;
+    const velTrendingUp = (week0Score / 7) * 7 > avgPastWeekScore;
+
+    // --- New Stats (Streaks, Peaks, Clashes, Meta) ---
     const myStreak = getStreak(mySubs);
     const theirStreak = getStreak(targetSubs);
     const myPeak = getPeakTime(mySubs);
     const theirPeak = getPeakTime(targetSubs);
     const theirMeta = getMeta(targetSubs);
 
-    // Direct Clashes (Shared Contests)
     let wins = 0, losses = 0, ties = 0;
     const clashes: any[] = [];
     const myContests: Record<number, any> = {};
@@ -152,136 +302,50 @@ export default function Nemesis({ mySubs, myRating, myHandle, myHistory, myInfo 
     });
     clashes.sort((a, b) => b.date - a.date);
 
-    // Speed & Tags Overlap
-    const myTagsAll: Record<string, number> = {}; const targetTagsAll: Record<string, number> = {};
-    const mySpeed: Record<string, number> = {}; const theirSpeed: Record<string, number> = {};
-    const myACSet = new Set<string>(); const tACSet = new Set<string>();
-
-    mySubs.forEach(s => {
-      if (s.verdict === 'OK' && s.problem) {
-        const pid = `${s.problem.contestId}-${s.problem.index}`;
-        if (!myACSet.has(pid)) { myACSet.add(pid); s.problem.tags?.forEach((t: string) => { myTagsAll[t] = (myTagsAll[t] || 0) + 1; }); }
-        if (s.timeConsumedMillis !== undefined) { if (!mySpeed[pid] || s.timeConsumedMillis < mySpeed[pid]) mySpeed[pid] = s.timeConsumedMillis; }
-      }
-    });
-    targetSubs.forEach(s => {
-      if (s.verdict === 'OK' && s.problem) {
-        const pid = `${s.problem.contestId}-${s.problem.index}`;
-        if (!tACSet.has(pid)) { tACSet.add(pid); s.problem.tags?.forEach((t: string) => { targetTagsAll[t] = (targetTagsAll[t] || 0) + 1; }); }
-        if (s.timeConsumedMillis !== undefined) { if (!theirSpeed[pid] || s.timeConsumedMillis < theirSpeed[pid]) theirSpeed[pid] = s.timeConsumedMillis; }
-      }
-    });
-
-    const overlapPids = [...myACSet].filter(p => theirSpeed[p] && mySpeed[p]);
-    const overlapPoints = overlapPids.map(pid => ({ x: mySpeed[pid], y: theirSpeed[pid], pid }));
-    const maxSpeed = overlapPoints.length > 0 ? Math.max(3000, ...overlapPoints.map((p: any) => Math.max(p.x, p.y))) : 3000;
-    const mySpeedWins = overlapPoints.filter((p: any) => p.x < p.y).length;
-    const theirSpeedWins = overlapPoints.filter((p: any) => p.x > p.y).length;
-
-    // Tags
-    const allTags = Array.from(new Set([...Object.keys(targetTagsAll), ...Object.keys(myTagsAll)]));
-    const sortedTags = allTags.sort((a, b) => (targetTagsAll[b] || 0) + (myTagsAll[b] || 0) - ((targetTagsAll[a] || 0) + (myTagsAll[a] || 0)));
-    const myTagData = sortedTags.map(t => myTagsAll[t] || 0);
-    const theirTagData = sortedTags.map(t => targetTagsAll[t] || 0);
-    const theirTagColors = theirTagData.map((val, i) => val > myTagData[i] ? '#f85149' : '#3ecf8e');
-
-    // Threat Logic
-    const eloExpected = 1 / (1 + Math.pow(10, (myRatingNow - theirRatingNow) / 400));
-    const momentumRatio = theirWeightedAC / Math.max(0.1, myWeightedAC);
-    const momentumThreat = momentumRatio > 2 ? 100 : momentumRatio > 1 ? 50 + ((momentumRatio - 1) * 50) : momentumRatio * 50;
-    const threatScore = Math.min(100, Math.max(1, Math.round((eloExpected * 100 * 0.7) + (momentumThreat * 0.3))));
-
     return {
-      targetHandle, myRatingNow, theirRatingNow, myWeightedAC, theirWeightedAC,
-      myStreak, theirStreak, myPeak, theirPeak, theirMeta,
-      wins, losses, ties, clashes,
-      threatScore, winProb: 1 - eloExpected,
+      targetHandle, avgRating30D: currentCount > 0 ? Math.round(currentSum / currentCount) : 0,
       sortedTags, myTagData, theirTagData, theirTagColors,
-      overlapPoints, mySpeedWins, theirSpeedWins, maxSpeed
+      ratingLineData, overlapPoints, mySpeedWins, theirSpeedWins, maxSpeed,
+      scorePerDayCurrent: parseFloat((week0Score / 7).toFixed(1)),
+      avgScorePerWeekPast: parseFloat(avgPastWeekScore.toFixed(1)),
+      myRatingNow, theirRatingNow, myWeightedAC, theirWeightedAC,
+      myWeekScore: myWeek0Score, theirWeekScore: week0Score,
+      myAccuracy, tAccuracy, threatScore, winProb: 1 - eloExpected, velTrendingUp,
+      myStreak, theirStreak, myPeak, theirPeak, theirMeta, wins, losses, ties, clashes
     };
-  }, [mySubs, myHistory, myRating, targetData]);
+  }, [mySubs, myHistory, myRating, targetData, myHandle]);
 
-  // Clean Chart Configurations
-  const scatterData = useMemo(() => {
+  // ─── CHART CONFIGS ────────────────────────────────────────────────────────────
+  const lineOpts = useMemo(() => ({ responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#8b949e', font: { size: 10 }, boxWidth: 10 } } }, scales: { x: { display: false }, y: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#666', font: { size: 10 } } } } }), []);
+  const tagOpts = useMemo(() => ({ indexAxis: 'y' as const, responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#8b949e', font: { size: 10 }, boxWidth: 10 } } }, scales: { x: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#8b949e', font: { size: 10 } } }, y: { grid: { display: false }, ticks: { color: 'var(--text-main)', font: { size: 10 } } } } }), []);
+  
+  const scatterDataObj = useMemo(() => {
     if (!metrics || metrics.overlapPoints.length === 0) return null;
     return {
       datasets: [
-        { 
-          type: 'line' as const, 
-          label: 'Tie', 
-          data: [{ x: 0, y: 0 }, { x: metrics.maxSpeed, y: metrics.maxSpeed }], 
-          borderColor: 'var(--border)', 
-          borderWidth: 1, 
-          borderDash: [5, 5], 
-          pointRadius: 0, 
-          fill: false 
-        },
-        { 
-          type: 'scatter' as const, 
-          label: 'H2H', 
-          data: metrics.overlapPoints, 
-          backgroundColor: metrics.overlapPoints.map((p: any) => p.x < p.y ? 'var(--accent)' : (p.x > p.y ? 'var(--status-wa)' : '#555')), 
-          pointRadius: 4 
-        }
-      ]
+        { type: 'line' as const, label: 'Tie Line', data: [{ x: 0, y: 0 }, { x: metrics.maxSpeed, y: metrics.maxSpeed }], borderColor: 'var(--border)', borderWidth: 1, borderDash: [5, 5], pointRadius: 0, fill: false },
+        { type: 'scatter' as const, label: 'Head-to-Head', data: metrics.overlapPoints, backgroundColor: metrics.overlapPoints.map((p: any) => p.x < p.y ? 'var(--accent)' : (p.x > p.y ? 'var(--status-wa)' : '#555')), pointRadius: 4, pointHoverRadius: 6 },
+      ],
     };
   }, [metrics]);
 
-  const scatterOptions = useMemo(() => {
-    if (!metrics) return {};
-    return {
-      responsive: true, 
-      maintainAspectRatio: false, 
-      plugins: { 
-        legend: { display: false }, 
-        tooltip: { callbacks: { label: (ctx: any) => ` [${ctx.raw.pid}] You: ${ctx.raw.x}ms | Them: ${ctx.raw.y}ms` } } 
-      }, 
-      scales: { 
-        x: { 
-          title: { display: true, text: `Your Time (ms)`, color: '#8b949e', font: { size: 10 } }, 
-          grid: { color: 'rgba(255,255,255,0.04)' }, 
-          ticks: { color: '#666' }, 
-          min: 0, 
-          max: metrics.maxSpeed 
-        }, 
-        y: { 
-          title: { display: true, text: `${metrics.targetHandle} Time (ms)`, color: '#8b949e', font: { size: 10 } }, 
-          grid: { color: 'rgba(255,255,255,0.04)' }, 
-          ticks: { color: '#666' }, 
-          min: 0, 
-          max: metrics.maxSpeed 
+  const scatterOptsObj = useMemo(() => {
+    if (!metrics) return null;
+    return { 
+        responsive: true, maintainAspectRatio: false, 
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx: any) => ` [${ctx.raw.pid}] You: ${ctx.raw.x}ms | Them: ${ctx.raw.y}ms` } } }, 
+        scales: { 
+            x: { title: { display: true, text: `Your Time (ms)`, color: '#8b949e', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#666' }, min: 0, max: metrics.maxSpeed }, 
+            y: { title: { display: true, text: `${metrics.targetHandle} Time (ms)`, color: '#8b949e', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#666' }, min: 0, max: metrics.maxSpeed } 
         } 
-      }
     };
   }, [metrics]);
-
-  const barData = useMemo(() => {
-      if (!metrics) return null;
-      return { 
-          labels: metrics.sortedTags, 
-          datasets: [
-              { label: myHandle, data: metrics.myTagData, backgroundColor: 'var(--accent)', borderRadius: 4 }, 
-              { label: metrics.targetHandle, data: metrics.theirTagData, backgroundColor: metrics.theirTagColors, borderRadius: 4 }
-          ] 
-      };
-  }, [metrics, myHandle]);
-
-  const barOptions = { 
-      indexAxis: 'y' as const, 
-      responsive: true, 
-      maintainAspectRatio: false, 
-      plugins: { legend: { labels: { color: '#8b949e', font: { size: 10 } } } }, 
-      scales: { 
-          x: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#8b949e', font: { size: 10 } } }, 
-          y: { grid: { display: false }, ticks: { color: 'var(--text-main)', font: { size: 10 } } } 
-      } 
-  };
 
 
   return (
-    <div className="flex flex-col gap-6 animate-in fade-in duration-300 relative">
-      
-      {/* --- INDEPENDENT ROSTER SELECTION --- */}
+    <div className="flex flex-col gap-6 animate-in fade-in duration-300">
+
+      {/* ── INDEPENDENT ROSTER SELECTION ── */}
       <div className="rounded-xl p-5" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
         <div className="flex flex-col md:flex-row gap-6 items-start md:items-center justify-between mb-4">
           <div>
@@ -310,128 +374,143 @@ export default function Nemesis({ mySubs, myRating, myHandle, myHistory, myInfo 
 
       {loading && <div className="text-center py-20 font-bold uppercase tracking-widest animate-pulse" style={{ color: 'var(--status-wa)' }}>Acquiring Target Intel...</div>}
 
-      {/* --- SCOUTING REPORT --- */}
+      {/* ── SCOUTING REPORT (Requires Active Nemesis) ── */}
       {metrics && !loading && (
         <div className="flex flex-col gap-5 animate-in slide-in-from-bottom-4 duration-500">
           
-          <div className="flex items-center justify-center gap-8 py-8 px-6 rounded-xl relative overflow-hidden" style={{ background: 'var(--bg-card)', border: '1px solid var(--status-wa)' }}>
-            <div className="absolute top-0 left-0 right-0 h-1" style={{ background: 'linear-gradient(90deg, var(--accent), var(--status-wa))' }} />
+          {/* VS HEADER (Original) */}
+          <div className="flex items-center justify-center gap-8 py-8 px-6 rounded-xl relative overflow-hidden" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+            <div className="absolute top-0 left-0 right-0 h-px" style={{ background: 'linear-gradient(90deg, var(--accent), transparent, var(--status-wa))' }} />
             <div className="text-right flex-1">
               <p className="text-xs font-bold uppercase tracking-widest mb-1" style={{ color: 'var(--accent)' }}>You</p>
-              <p className="text-3xl font-black font-mono" style={{ color: 'var(--text-main)' }}>{myHandle}</p>
+              <p className="text-3xl font-bold font-mono" style={{ color: 'var(--text-main)' }}>{myHandle}</p>
             </div>
-            <p className="text-3xl font-black italic" style={{ color: 'var(--text-muted)' }}>VS</p>
+            <p className="text-2xl font-black italic" style={{ color: 'var(--border)' }}>VS</p>
             <div className="text-left flex-1">
-              <p className="text-xs font-bold uppercase tracking-widest mb-1 animate-pulse" style={{ color: 'var(--status-wa)' }}>Target</p>
-              <p className="text-3xl font-black font-mono" style={{ color: 'var(--text-main)' }}>{metrics.targetHandle}</p>
+              <p className="text-xs font-bold uppercase tracking-widest mb-1" style={{ color: 'var(--status-wa)' }}>Nemesis</p>
+              <p className="text-3xl font-bold font-mono" style={{ color: 'var(--text-main)' }}>{metrics.targetHandle}</p>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Direct Clashes */}
-            <Card className="md:col-span-1 relative overflow-hidden border-none" style={{ background: 'linear-gradient(145deg, var(--bg-card), var(--bg-base))' }}>
-              <div className="absolute inset-0 opacity-5" style={{ background: 'repeating-linear-gradient(45deg, transparent, transparent 10px, var(--status-wa) 10px, var(--status-wa) 20px)' }}/>
-              <CardTitle>Direct Clashes (Shared Contests)</CardTitle>
-              <div className="flex justify-center items-center gap-4 mb-4 relative z-10">
-                <div className="text-center"><p className="text-4xl font-black" style={{ color: 'var(--status-ac)' }}>{metrics.wins}</p><p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: 'var(--text-muted)' }}>Wins</p></div>
-                <div className="text-center text-3xl font-black" style={{ color: 'var(--text-muted)' }}>-</div>
-                <div className="text-center"><p className="text-4xl font-black" style={{ color: 'var(--status-wa)' }}>{metrics.losses}</p><p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: 'var(--text-muted)' }}>Losses</p></div>
-                <div className="text-center text-3xl font-black" style={{ color: 'var(--text-muted)' }}>-</div>
-                <div className="text-center"><p className="text-4xl font-black" style={{ color: 'var(--text-muted)' }}>{metrics.ties}</p><p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: 'var(--text-muted)' }}>Ties</p></div>
-              </div>
-              <div className="h-[120px] overflow-y-auto pr-2 relative z-10 space-y-2">
-                {metrics.clashes.length === 0 ? <p className="text-xs text-center italic" style={{ color: 'var(--text-muted)' }}>No shared contests yet. Cowards.</p> : 
-                  metrics.clashes.map(c => (
-                    <div key={c.id} className="flex justify-between items-center text-xs p-2 rounded" style={{ background: 'var(--bg-base)' }}>
-                      <span className="truncate w-32" style={{ color: 'var(--text-main)' }}>#{c.id}</span>
-                      <div className="flex gap-3 font-mono">
-                        <span style={{ color: c.myRank < c.theirRank ? 'var(--status-ac)' : 'var(--text-muted)' }}>{c.myRank}</span>
-                        <span style={{ color: 'var(--border)' }}>vs</span>
-                        <span style={{ color: c.myRank > c.theirRank ? 'var(--status-wa)' : 'var(--text-muted)' }}>{c.theirRank}</span>
-                      </div>
-                    </div>
-                  ))
-                }
-              </div>
-            </Card>
+          {/* HEAD-TO-HEAD STATS (Original) */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <StatDiffCard label="Rating" myVal={metrics.myRatingNow} theirVal={metrics.theirRatingNow} myHandle={myHandle} theirHandle={metrics.targetHandle} />
+            <StatDiffCard label="Weighted ACs" myVal={metrics.myWeightedAC} theirVal={metrics.theirWeightedAC} myHandle={myHandle} theirHandle={metrics.targetHandle} />
+            <StatDiffCard label="7-Day Score" myVal={metrics.myWeekScore} theirVal={metrics.theirWeekScore} myHandle={myHandle} theirHandle={metrics.targetHandle} />
+            <StatDiffCard label="First-Try Acc." myVal={metrics.myAccuracy} theirVal={metrics.tAccuracy} myHandle={myHandle} theirHandle={metrics.targetHandle} suffix="%" />
+          </div>
 
-            {/* Tactical Intel */}
-            <Card className="md:col-span-2 grid grid-cols-2 gap-6">
-              <div className="col-span-2">
-                <CardTitle>Tactical Intel: Current Meta</CardTitle>
-                <div className="p-4 rounded-lg font-mono text-sm border-l-4" style={{ background: 'rgba(248,81,73,0.05)', borderColor: 'var(--status-wa)', color: 'var(--text-main)' }}>
-                  " {metrics.theirMeta} "
-                </div>
+          {/* CALIBER + VELOCITY + THREAT (Original) */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Card>
+              <CardTitle>30-Day Caliber</CardTitle>
+              <p className="text-4xl font-bold font-mono" style={{ color: 'var(--text-main)' }}>{metrics.avgRating30D || '—'}</p>
+              <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>Avg rating {metrics.targetHandle} is clearing lately</p>
+            </Card>
+            <Card>
+              <CardTitle>Velocity / Week</CardTitle>
+              <p className="text-4xl font-bold font-mono" style={{ color: metrics.velTrendingUp ? 'var(--status-wa)' : 'var(--status-ac)' }}>
+                {(metrics.scorePerDayCurrent * 7).toFixed(0)}
+                <span className="text-sm font-normal ml-1" style={{ color: 'var(--text-muted)' }}>pts</span>
+              </p>
+              <p className="text-xs mt-2 font-semibold" style={{ color: metrics.velTrendingUp ? 'var(--status-wa)' : 'var(--status-ac)' }}>
+                {metrics.velTrendingUp ? '▲ Accelerating' : '▼ Slowing'} vs {metrics.avgScorePerWeekPast.toFixed(0)} pts avg
+              </p>
+            </Card>
+            <ThreatMeter score={metrics.threatScore} winProb={metrics.winProb} />
+          </div>
+
+          {/* RATING HISTORY (Original) */}
+          <Card>
+            <CardTitle>📡 Rating History</CardTitle>
+            <div className="h-[280px]"><Line data={metrics.ratingLineData} options={lineOpts} /></div>
+          </Card>
+
+          {/* TAG COMPARISON (Original) */}
+          <Card>
+            <CardTitle>🏷 Tag Mastery Comparison</CardTitle>
+            <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
+              <span style={{ color: 'var(--status-wa)' }}>Red</span> = they beat you. <span style={{ color: 'var(--status-ac)' }}>Green</span> = you hold the line.
+            </p>
+            <div className="overflow-y-auto pr-2" style={{ maxHeight: '600px' }}>
+              <div style={{ height: `${Math.max(400, metrics.sortedTags.length * 28)}px`, position: 'relative' }}>
+                <Bar data={{ labels: metrics.sortedTags, datasets: [{ label: myHandle, data: metrics.myTagData, backgroundColor: 'var(--accent)', borderRadius: 4 }, { label: metrics.targetHandle, data: metrics.theirTagData, backgroundColor: metrics.theirTagColors, borderRadius: 4 }] }} options={tagOpts} />
               </div>
+            </div>
+          </Card>
+
+          {/* EXECUTION SPEED (Original) */}
+          {scatterDataObj && scatterOptsObj && (
+            <Card>
+              <CardTitle>⚡ Execution Speed — Shared problems</CardTitle>
+              <div className="flex gap-6 mb-4 text-sm">
+                <span style={{ color: 'var(--accent)' }}>You faster: {metrics.mySpeedWins}</span>
+                <span style={{ color: 'var(--status-wa)' }}>{metrics.targetHandle} faster: {metrics.theirSpeedWins}</span>
+              </div>
+              <div className="h-[280px]"><Scatter data={scatterDataObj as any} options={scatterOptsObj as any} /></div>
+            </Card>
+          )}
+
+          {/* ── TACTICAL INTEL & DIRECT CLASHES (NEW FEATURES MOVED TO BOTTOM) ── */}
+          <div className="mt-8 pt-8" style={{ borderTop: '1px solid var(--border)' }}>
+            <h3 className="text-xl font-black italic tracking-tight mb-6" style={{ color: 'var(--text-main)' }}>TACTICAL INTEL & HEAD-TO-HEAD CLASHES</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               
-              <div>
-                <CardTitle>Endurance (Daily Streak)</CardTitle>
-                <div className="flex items-end justify-between">
-                  <div><p className="text-xs uppercase mb-1" style={{ color: 'var(--accent)' }}>You</p><p className="text-2xl font-black font-mono" style={{ color: 'var(--text-main)' }}>{metrics.myStreak} <span className="text-sm font-normal text-gray-500">days</span></p></div>
-                  <p className="text-lg font-black" style={{ color: 'var(--border)' }}>vs</p>
-                  <div className="text-right"><p className="text-xs uppercase mb-1" style={{ color: 'var(--status-wa)' }}>Target</p><p className="text-2xl font-black font-mono" style={{ color: 'var(--text-main)' }}>{metrics.theirStreak} <span className="text-sm font-normal text-gray-500">days</span></p></div>
+              {/* Direct Clashes List */}
+              <Card className="md:col-span-1 relative overflow-hidden border-none" style={{ background: 'linear-gradient(145deg, var(--bg-card), var(--bg-base))' }}>
+                <div className="absolute inset-0 opacity-5" style={{ background: 'repeating-linear-gradient(45deg, transparent, transparent 10px, var(--status-wa) 10px, var(--status-wa) 20px)' }}/>
+                <CardTitle>Shared Contests Record</CardTitle>
+                <div className="flex justify-center items-center gap-4 mb-4 relative z-10">
+                  <div className="text-center"><p className="text-4xl font-black" style={{ color: 'var(--status-ac)' }}>{metrics.wins}</p><p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: 'var(--text-muted)' }}>Wins</p></div>
+                  <div className="text-center text-3xl font-black" style={{ color: 'var(--text-muted)' }}>-</div>
+                  <div className="text-center"><p className="text-4xl font-black" style={{ color: 'var(--status-wa)' }}>{metrics.losses}</p><p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: 'var(--text-muted)' }}>Losses</p></div>
+                  <div className="text-center text-3xl font-black" style={{ color: 'var(--text-muted)' }}>-</div>
+                  <div className="text-center"><p className="text-4xl font-black" style={{ color: 'var(--text-muted)' }}>{metrics.ties}</p><p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: 'var(--text-muted)' }}>Ties</p></div>
                 </div>
-              </div>
-
-              <div>
-                <CardTitle>Time of Day Clash</CardTitle>
-                <div className="flex items-end justify-between">
-                  <div><p className="text-xs uppercase mb-1" style={{ color: 'var(--accent)' }}>You</p><p className="text-sm font-bold font-mono" style={{ color: 'var(--text-main)' }}>{metrics.myPeak}</p></div>
-                  <p className="text-lg font-black" style={{ color: 'var(--border)' }}>vs</p>
-                  <div className="text-right"><p className="text-xs uppercase mb-1" style={{ color: 'var(--status-wa)' }}>Target</p><p className="text-sm font-bold font-mono" style={{ color: 'var(--text-main)' }}>{metrics.theirPeak}</p></div>
-                </div>
-              </div>
-            </Card>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-             <Card className="flex flex-col justify-center">
-                <p className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: 'var(--text-muted)' }}>Rating Differential</p>
-                <div className="flex justify-between items-end">
-                  <div><p className="text-2xl font-black font-mono" style={{ color: 'var(--accent)' }}>{metrics.myRatingNow}</p></div>
-                  {metrics.myRatingNow !== metrics.theirRatingNow && (
-                     <span className="text-xs font-black px-2 py-1 rounded font-mono mb-1" style={{ color: metrics.myRatingNow > metrics.theirRatingNow ? 'var(--status-ac)' : 'var(--status-wa)', background: metrics.myRatingNow > metrics.theirRatingNow ? 'rgba(62,207,142,0.1)' : 'rgba(248,81,73,0.1)' }}>
-                        {metrics.myRatingNow > metrics.theirRatingNow ? '▲' : '▼'} {Math.abs(metrics.myRatingNow - metrics.theirRatingNow)}
-                     </span>
-                  )}
-                  <div><p className="text-2xl font-black font-mono" style={{ color: 'var(--status-wa)' }}>{metrics.theirRatingNow}</p></div>
-                </div>
-             </Card>
-             <Card className="flex flex-col justify-center">
-                <p className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: 'var(--text-muted)' }}>Weighted Activity Score</p>
-                <div className="flex justify-between items-end">
-                  <div><p className="text-2xl font-black font-mono" style={{ color: 'var(--accent)' }}>{metrics.myWeightedAC}</p></div>
-                  <div><p className="text-2xl font-black font-mono" style={{ color: 'var(--status-wa)' }}>{metrics.theirWeightedAC}</p></div>
-                </div>
-             </Card>
-             <div className="rounded-xl p-5 relative overflow-hidden flex flex-col justify-center" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-               <p className="text-[10px] font-bold uppercase tracking-widest relative z-10" style={{ color: 'var(--text-muted)' }}>Expected Win Rate vs Target</p>
-               <p className="text-4xl font-black font-mono mt-2 relative z-10" style={{ color: metrics.winProb >= 0.5 ? 'var(--status-ac)' : 'var(--status-wa)' }}>{(metrics.winProb * 100).toFixed(1)}%</p>
-               <div className="absolute -right-4 -bottom-4 opacity-10 blur-2xl" style={{ width: 100, height: 100, background: metrics.winProb >= 0.5 ? 'var(--status-ac)' : 'var(--status-wa)', borderRadius: '50%' }} />
-             </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-             {metrics.overlapPoints.length > 0 && scatterData && (
-              <Card>
-                <CardTitle>⚡ Speed — Shared Problems</CardTitle>
-                <div className="flex justify-between text-sm mb-4 font-bold font-mono">
-                  <span style={{ color: 'var(--accent)' }}>You faster: {metrics.mySpeedWins}</span>
-                  <span style={{ color: 'var(--status-wa)' }}>Target faster: {metrics.theirSpeedWins}</span>
-                </div>
-                <div className="h-[250px]">
-                  <Scatter data={scatterData as any} options={scatterOptions as any} />
+                <div className="h-[120px] overflow-y-auto pr-2 relative z-10 space-y-2">
+                  {metrics.clashes.length === 0 ? <p className="text-xs text-center italic mt-6" style={{ color: 'var(--text-muted)' }}>No shared contests yet. Cowards.</p> : 
+                    metrics.clashes.map(c => (
+                      <div key={c.id} className="flex justify-between items-center text-xs p-2 rounded" style={{ background: 'var(--bg-base)' }}>
+                        <span className="truncate w-32" style={{ color: 'var(--text-main)' }}>#{c.id}</span>
+                        <div className="flex gap-3 font-mono">
+                          <span style={{ color: c.myRank < c.theirRank ? 'var(--status-ac)' : 'var(--text-muted)' }}>{c.myRank}</span>
+                          <span style={{ color: 'var(--border)' }}>vs</span>
+                          <span style={{ color: c.myRank > c.theirRank ? 'var(--status-wa)' : 'var(--text-muted)' }}>{c.theirRank}</span>
+                        </div>
+                      </div>
+                    ))
+                  }
                 </div>
               </Card>
-            )}
-            <Card className={metrics.overlapPoints.length > 0 ? '' : 'md:col-span-2'}>
-              <CardTitle>🏷 Tag Mastery</CardTitle>
-              <div className="overflow-y-auto pr-2 h-[285px]">
-                <div style={{ height: `${Math.max(400, metrics.sortedTags.length * 28)}px`, position: 'relative' }}>
-                  {barData && <Bar data={barData} options={barOptions} />}
+
+              {/* Meta & Endurance */}
+              <Card className="md:col-span-2 grid grid-cols-2 gap-6">
+                <div className="col-span-2">
+                  <CardTitle>Current Target Meta</CardTitle>
+                  <div className="p-4 rounded-lg font-mono text-sm border-l-4" style={{ background: 'rgba(248,81,73,0.05)', borderColor: 'var(--status-wa)', color: 'var(--text-main)' }}>
+                    " {metrics.theirMeta} "
+                  </div>
                 </div>
-              </div>
-            </Card>
+                
+                <div>
+                  <CardTitle>Endurance (Daily Streak)</CardTitle>
+                  <div className="flex items-end justify-between">
+                    <div><p className="text-xs uppercase mb-1" style={{ color: 'var(--accent)' }}>You</p><p className="text-2xl font-black font-mono" style={{ color: 'var(--text-main)' }}>{metrics.myStreak} <span className="text-sm font-normal text-gray-500">days</span></p></div>
+                    <p className="text-lg font-black" style={{ color: 'var(--border)' }}>vs</p>
+                    <div className="text-right"><p className="text-xs uppercase mb-1" style={{ color: 'var(--status-wa)' }}>Target</p><p className="text-2xl font-black font-mono" style={{ color: 'var(--text-main)' }}>{metrics.theirStreak} <span className="text-sm font-normal text-gray-500">days</span></p></div>
+                  </div>
+                </div>
+
+                <div>
+                  <CardTitle>Time of Day Clash</CardTitle>
+                  <div className="flex items-end justify-between">
+                    <div><p className="text-xs uppercase mb-1" style={{ color: 'var(--accent)' }}>You</p><p className="text-sm font-bold font-mono" style={{ color: 'var(--text-main)' }}>{metrics.myPeak}</p></div>
+                    <p className="text-lg font-black" style={{ color: 'var(--border)' }}>vs</p>
+                    <div className="text-right"><p className="text-xs uppercase mb-1" style={{ color: 'var(--status-wa)' }}>Target</p><p className="text-sm font-bold font-mono" style={{ color: 'var(--text-main)' }}>{metrics.theirPeak}</p></div>
+                  </div>
+                </div>
+              </Card>
+            </div>
           </div>
 
         </div>
