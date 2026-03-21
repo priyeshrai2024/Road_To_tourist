@@ -132,7 +132,7 @@ export default function Nemesis({ mySubs, myRating, myHandle, myHistory, myInfo 
   const [activeNemesis, setActiveNemesis] = useState<string | null>(null);
   const [newNemesis, setNewNemesis] = useState('');
   
-  // We now use a cache to hold loaded targets so switching is instant!
+  // Cache to hold loaded targets so switching is instant
   const [nemesisCache, setNemesisCache] = useState<Record<string, {subs: any[], history: any[], info: any}>>({});
   const [isSyncing, setIsSyncing] = useState(false);
 
@@ -252,14 +252,49 @@ export default function Nemesis({ mySubs, myRating, myHandle, myHistory, myInfo 
     const myWeightedAC = recencyWeightedAC(mySubs, now); const theirWeightedAC = recencyWeightedAC(targetSubs, now);
     const myAccuracy = myAttempts.size > 0 ? parseFloat(((myFirstTryCount / myAttempts.size) * 100).toFixed(1)) : 0;
     const tAccuracy = tAttempts.size > 0 ? parseFloat(((tFirstTryCount / tAttempts.size) * 100).toFixed(1)) : 0;
-    const eloExpected = 1 / (1 + Math.pow(10, (myRatingNow - theirRatingNow) / 400));
-    const momentumRatio = theirWeightedAC / Math.max(0.1, myWeightedAC);
-    let momentumThreat = 50;
-    if (momentumRatio > 2) momentumThreat = 100;
-    else if (momentumRatio > 1) momentumThreat = 50 + ((momentumRatio - 1) * 50);
-    else momentumThreat = momentumRatio * 50;
-    const threatScore = Math.min(100, Math.max(1, Math.round((eloExpected * 100 * 0.7) + (momentumThreat * 0.3))));
+    
+    // ─── 1. HOIST CLASHES (Needed for Head-to-Head Threat) ──────────────────────
+    let wins = 0, losses = 0, ties = 0;
+    const clashes: any[] = [];
+    const myContests: Record<number, any> = {};
+    if (myHistory) myHistory.forEach(h => myContests[h.contestId] = h);
+    if (targetHistory) targetHistory.forEach(th => {
+      if (myContests[th.contestId]) {
+        const mh = myContests[th.contestId];
+        clashes.push({ id: th.contestId, name: th.contestName, myRank: mh.rank, theirRank: th.rank, date: th.ratingUpdateTimeSeconds });
+        if (mh.rank < th.rank) wins++; else if (mh.rank > th.rank) losses++; else ties++;
+      }
+    });
+    clashes.sort((a, b) => b.date - a.date);
 
+    // ─── 2. THREAT ASSESSMENT 3.0 (The Realist Model) ───────────────────────────
+    
+    // Pillar A: Expected Elo Win Probability (35% weight)
+    const theirWinProb = 1 / (1 + Math.pow(10, (myRatingNow - theirRatingNow) / 400));
+    const baseEloThreat = theirWinProb * 100;
+
+    // Pillar B: Lethality / Caliber (25% weight)
+    const theirRecentCaliber = currentCount > 0 ? (currentSum / currentCount) : theirRatingNow;
+    const lethality = Math.max(0, Math.min(100, 50 + (theirRecentCaliber - myRatingNow) / 4));
+
+    // Pillar C: Momentum / Outwork Delta (15% weight)
+    const outworkScore = Math.max(0, Math.min(100, 50 + ((theirWeightedAC - myWeightedAC) * 5)));
+
+    // Pillar D: Head-to-Head Trauma (15% weight)
+    const netLosses = losses - wins; 
+    const h2hThreat = clashes.length > 0 ? Math.max(0, Math.min(100, 50 + (netLosses * 15))) : 50;
+
+    // Pillar E: Precision (10% weight)
+    const precisionThreat = tAccuracy;
+
+    // The Ghost Penalty (Dormancy Multiplier)
+    const dormancyMultiplier = Math.max(0.1, Math.min(1, theirWeightedAC / 1.5));
+
+    // Final Composite 
+    const rawThreat = (baseEloThreat * 0.35) + (lethality * 0.25) + (outworkScore * 0.15) + (h2hThreat * 0.15) + (precisionThreat * 0.10);
+    const threatScore = Math.max(1, Math.min(100, Math.round(rawThreat * dormancyMultiplier)));
+
+    // ─── CHARTS & REMAINING METRICS ─────────────────────────────────────────────────
     const allTags = Array.from(new Set([...Object.keys(targetTagsAll), ...Object.keys(myTagsAll)]));
     const sortedTags = allTags.sort((a, b) => (targetTagsAll[b] || 0) + (myTagsAll[b] || 0) - ((targetTagsAll[a] || 0) + (myTagsAll[a] || 0)));
     const myTagData = sortedTags.map(t => myTagsAll[t] || 0);
@@ -290,25 +325,12 @@ export default function Nemesis({ mySubs, myRating, myHandle, myHistory, myInfo 
     const theirSpeedWins = overlapPoints.filter((p: any) => p.x > p.y).length;
     const velTrendingUp = (week0Score / 7) * 7 > avgPastWeekScore;
 
-    // --- New Stats (Streaks, Peaks, Clashes, Meta) ---
+    // --- New Stats (Streaks, Peaks, Meta) ---
     const myStreak = getStreak(mySubs);
     const theirStreak = getStreak(targetSubs);
     const myPeak = getPeakTime(mySubs);
     const theirPeak = getPeakTime(targetSubs);
     const theirMeta = getMeta(targetSubs);
-
-    let wins = 0, losses = 0, ties = 0;
-    const clashes: any[] = [];
-    const myContests: Record<number, any> = {};
-    if (myHistory) myHistory.forEach(h => myContests[h.contestId] = h);
-    if (targetHistory) targetHistory.forEach(th => {
-      if (myContests[th.contestId]) {
-        const mh = myContests[th.contestId];
-        clashes.push({ id: th.contestId, name: th.contestName, myRank: mh.rank, theirRank: th.rank, date: th.ratingUpdateTimeSeconds });
-        if (mh.rank < th.rank) wins++; else if (mh.rank > th.rank) losses++; else ties++;
-      }
-    });
-    clashes.sort((a, b) => b.date - a.date);
 
     return {
       targetHandle, avgRating30D: currentCount > 0 ? Math.round(currentSum / currentCount) : 0,
@@ -318,7 +340,7 @@ export default function Nemesis({ mySubs, myRating, myHandle, myHistory, myInfo 
       avgScorePerWeekPast: parseFloat(avgPastWeekScore.toFixed(1)),
       myRatingNow, theirRatingNow, myWeightedAC, theirWeightedAC,
       myWeekScore: myWeek0Score, theirWeekScore: week0Score,
-      myAccuracy, tAccuracy, threatScore, winProb: 1 - eloExpected, velTrendingUp,
+      myAccuracy, tAccuracy, threatScore, winProb: 1 - theirWinProb, velTrendingUp,
       myStreak, theirStreak, myPeak, theirPeak, theirMeta, wins, losses, ties, clashes
     };
   }, [mySubs, myHistory, myRating, targetData, myHandle]);
